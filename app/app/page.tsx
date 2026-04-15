@@ -19,7 +19,6 @@ import templates from '@/lib/templates'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from 'ai/react'
-import { useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { SetStateAction, useEffect, useState } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
@@ -77,9 +76,10 @@ export default function Home() {
   }, [languageModel.model])
 
   // Prefill chat input from landing-page prompt (?prompt=...)
-  const searchParams = useSearchParams()
+  // Read directly from window to avoid forcing /app out of static prerender.
   useEffect(() => {
-    const incoming = searchParams?.get('prompt')
+    if (typeof window === 'undefined') return
+    const incoming = new URLSearchParams(window.location.search).get('prompt')
     if (incoming && incoming.length > 0) {
       setChatInput(incoming)
     }
