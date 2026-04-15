@@ -1,0 +1,28 @@
+app/app/page.tsx
+  2400cf6ee08324ca 79,81-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "c901c727acdb6f517bac39d27b4d0c17dcb535b3",
+  "prompts": {
+    "2400cf6ee08324ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae96a56d-61a5-4327-9190-b8fa9e2e6dd1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Suhaib",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 3,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_9624eddad780c8": {
+      "author": "Suhaib"
+    }
+  }
+}
