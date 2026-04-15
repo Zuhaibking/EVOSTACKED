@@ -1,6 +1,5 @@
 'use client'
 
-import { RepoBanner } from './repo-banner'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -173,28 +172,46 @@ export function ChatInput({
         </div>
       )}
       <div className="relative">
-        <RepoBanner className="absolute bottom-full inset-x-2 translate-y-1 z-0 pb-2" />
+        {/* offset block shadow */}
         <div
-          className={`shadow-md rounded-2xl relative z-10 bg-background border ${
+          aria-hidden
+          className="absolute inset-0 translate-x-1 translate-y-1 bg-foreground/10 pointer-events-none"
+        />
+        <div
+          className={`relative z-10 bg-card border border-foreground ${
             dragActive
-              ? 'before:absolute before:inset-0 before:rounded-2xl before:border-2 before:border-dashed before:border-primary'
+              ? 'before:absolute before:inset-0 before:border-2 before:border-dashed before:border-brand'
               : ''
           }`}
         >
-          <div className="flex items-center px-3 py-2 gap-1">{children}</div>
+          <header className="flex items-center justify-between border-b border-border px-3 py-1.5 bg-background/40">
+            <span className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground">
+              § Brief · Single candidate
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75 animate-ping" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-accent" />
+              </span>
+              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
+                Ready
+              </span>
+            </div>
+          </header>
+          <div className="flex items-center px-3 py-2 gap-1 border-b border-border/60">{children}</div>
           <TextareaAutosize
             autoFocus={true}
             minRows={1}
             maxRows={5}
-            className="text-normal px-3 resize-none ring-0 bg-inherit w-full m-0 outline-none"
+            className="font-display text-lg leading-snug px-4 py-3 resize-none ring-0 bg-inherit w-full m-0 outline-none placeholder:font-display placeholder:italic placeholder:text-muted-foreground/60"
             required={true}
-            placeholder="Describe your app..."
+            placeholder="Describe a project, a constraint, an iteration…"
             disabled={isErrored}
             value={input}
             onChange={handleInputChange}
             onPaste={isMultiModal ? handlePaste : undefined}
           />
-          <div className="flex p-3 gap-2 items-center">
+          <div className="flex p-3 gap-2 items-center border-t border-border/60 bg-background/40">
             <input
               type="file"
               id="multimodal"
@@ -213,16 +230,16 @@ export function ChatInput({
                       type="button"
                       variant="outline"
                       size="icon"
-                      className="rounded-xl h-10 w-10"
+                      className="rounded-none h-9 w-9 border-border"
                       onClick={(e) => {
                         e.preventDefault()
                         document.getElementById('multimodal')?.click()
                       }}
                     >
-                      <Paperclip className="h-5 w-5" />
+                      <Paperclip className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Add attachments</TooltipContent>
+                  <TooltipContent>Attach image</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               {files.length > 0 && filePreview}
@@ -234,15 +251,15 @@ export function ChatInput({
                     <TooltipTrigger asChild>
                       <Button
                         disabled={isErrored}
-                        variant="default"
-                        size="icon"
+                        size="sm"
                         type="submit"
-                        className="rounded-xl h-10 w-10"
+                        className="rounded-none font-mono text-[11px] tracking-[0.2em] uppercase h-9 px-3 bg-foreground text-background hover:bg-brand hover:text-brand-foreground"
                       >
-                        <ArrowUp className="h-5 w-5" />
+                        Submit
+                        <ArrowUp className="h-3.5 w-3.5 ml-1.5" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Send message</TooltipContent>
+                    <TooltipContent>Submit specimen</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               ) : (
@@ -250,18 +267,19 @@ export function ChatInput({
                   <Tooltip delayDuration={0}>
                     <TooltipTrigger asChild>
                       <Button
+                        size="sm"
                         variant="secondary"
-                        size="icon"
-                        className="rounded-xl h-10 w-10"
+                        className="rounded-none font-mono text-[11px] tracking-[0.2em] uppercase h-9 px-3"
                         onClick={(e) => {
                           e.preventDefault()
                           stop()
                         }}
                       >
-                        <Square className="h-5 w-5" />
+                        Halt
+                        <Square className="h-3.5 w-3.5 ml-1.5" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Stop generation</TooltipContent>
+                    <TooltipContent>Halt generation</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
@@ -269,10 +287,15 @@ export function ChatInput({
           </div>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground mt-2 text-center">
-        Fragments is an open-source project made by{' '}
-        <a href="https://e2b.dev" target="_blank" className="text-[#ff8800]">
-          ✶ E2B
+      <p className="mt-3 font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground/80 text-center">
+        EvoStack · Apache-2.0 · Forked from{' '}
+        <a
+          href="https://github.com/e2b-dev/fragments"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-4 decoration-border hover:text-foreground hover:decoration-foreground"
+        >
+          E2B Fragments
         </a>
       </p>
     </form>
