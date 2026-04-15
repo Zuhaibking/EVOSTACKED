@@ -1,0 +1,51 @@
+PLAN.md
+  2400cf6ee08324ca 1-315
+tailwind.config.ts
+  2400cf6ee08324ca 1-95
+LICENSE
+  2400cf6ee08324ca 1-201
+.gitignore
+  2400cf6ee08324ca 1-36
+CODEOWNERS
+  2400cf6ee08324ca 1-3
+.eslintrc.json
+  2400cf6ee08324ca 1-3
+.prettierrc
+  2400cf6ee08324ca 1-5
+package.json
+  2400cf6ee08324ca 1-78
+postcss.config.mjs
+  2400cf6ee08324ca 1-8
+next.config.mjs
+  2400cf6ee08324ca 1-18
+.env.template
+  2400cf6ee08324ca 1-45
+renovate.json5
+  2400cf6ee08324ca 1-36
+tsconfig.json
+  2400cf6ee08324ca 1-26
+middleware.ts
+  2400cf6ee08324ca 1-22
+README.md
+  2400cf6ee08324ca 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "8b89d5da40f0dc111fbf841402f39855521eca98",
+  "prompts": {
+    "2400cf6ee08324ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae96a56d-61a5-4327-9190-b8fa9e2e6dd1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Suhaib",
+      "messages": [],
+      "total_additions": 992,
+      "total_deletions": 0,
+      "accepted_lines": 972,
+      "overriden_lines": 0
+    }
+  }
+}
