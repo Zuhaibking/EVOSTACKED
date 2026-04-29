@@ -1,0 +1,44 @@
+app/app/page.tsx
+  8f6188f6b0eba695 11,18-19,51-53,93-158,242-309,332-334,350-386,436-439,511-525
+app/api/tournament/route.ts
+  8f6188f6b0eba695 1-220
+lib/tournament-client.ts
+  8f6188f6b0eba695 1-221
+components/auth-dialog.tsx
+  8f6188f6b0eba695 40-51,159,161-162,167,169-170
+lib/auth.ts
+  8f6188f6b0eba695 51-53
+app/api/sandbox/route.ts
+  8f6188f6b0eba695 2,26-30,32,34,69,75,87
+components/specimen-strip.tsx
+  8f6188f6b0eba695 1-364
+lib/tournament.ts
+  8f6188f6b0eba695 1-63
+app/globals.css
+  8f6188f6b0eba695 177-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "0e5ce0b4b1a90811665497b121e38fdfb026aadc",
+  "prompts": {
+    "8f6188f6b0eba695": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "848bd9e2-a7e8-460f-bc43-1d76cb25faa8",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Suhaib",
+      "messages": [],
+      "total_additions": 1236,
+      "total_deletions": 141,
+      "accepted_lines": 1130,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_9624eddad780c8": {
+      "author": "Suhaib"
+    }
+  }
+}
