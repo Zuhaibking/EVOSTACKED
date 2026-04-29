@@ -174,4 +174,36 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
   }
+
+  /* Live specimen scanline — soft sweep across active card */
+  .specimen-scan {
+    background-image: linear-gradient(
+      180deg,
+      transparent 0%,
+      hsl(var(--brand) / 0.06) 48%,
+      hsl(var(--brand) / 0.14) 50%,
+      hsl(var(--brand) / 0.06) 52%,
+      transparent 100%
+    );
+    background-size: 100% 220%;
+    background-repeat: no-repeat;
+    animation: specimen-scan 2.4s linear infinite;
+    mix-blend-mode: screen;
+  }
+
+  @keyframes specimen-scan {
+    0%   { background-position: 0 -120%; }
+    100% { background-position: 0 220%; }
+  }
+
+  /* Top-edge shimmer for active candidates */
+  .specimen-shimmer {
+    background-size: 200% 100%;
+    animation: specimen-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes specimen-shimmer {
+    0%   { background-position: -100% 0; }
+    100% { background-position:  100% 0; }
+  }
 }

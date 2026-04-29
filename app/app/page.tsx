@@ -8,12 +8,15 @@ import { ChatSettings } from '@/components/chat-settings'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
 import { RunStatusBar } from '@/components/run-status-bar'
+import { SpecimenStrip } from '@/components/specimen-strip'
 import { useAuth } from '@/lib/auth'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
 import { LLMModelConfig } from '@/lib/models'
 import modelsList from '@/lib/models.json'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import templates from '@/lib/templates'
+import { VariantId } from '@/lib/tournament'
+import { useTournament } from '@/lib/tournament-client'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from 'ai/react'
@@ -45,6 +48,9 @@ export default function Home() {
   const [authView, setAuthView] = useState<ViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [selectedCandidate, setSelectedCandidate] = useState<VariantId | undefined>()
+  const [hasTournament, setHasTournament] = useState(false)
+  const tournament = useTournament()
   const { session, userTeam, signOut } = useAuth(setAuthDialog, setAuthView)
   const [useMorphApply, setUseMorphApply] = useLocalStorage(
     'useMorphApply',
@@ -84,6 +90,72 @@ export default function Home() {
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ---- Persistence (localStorage stopgap until a real DB) ----
+  const RUN_KEY = 'evostack:run:v1'
+  const [hydrated, setHydrated] = useState(false)
+
+  // Hydrate once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = localStorage.getItem(RUN_KEY)
+      if (raw) {
+        const snap = JSON.parse(raw)
+        if (snap?.messages) setMessages(snap.messages)
+        if (snap?.fragment) setFragment(snap.fragment)
+        if (snap?.result) setResult(snap.result)
+        if (snap?.selectedCandidate) setSelectedCandidate(snap.selectedCandidate)
+        if (snap?.hasTournament) setHasTournament(snap.hasTournament)
+        if (snap?.tournament) {
+          tournament.hydrate({
+            candidates: snap.tournament.candidates,
+            verdict: snap.tournament.verdict,
+            phase: snap.tournament.phase ?? 'done',
+          })
+        }
+      }
+    } catch {
+      // ignore corrupted snapshots
+    } finally {
+      setHydrated(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist whenever the meaningful slice changes — but only after the
+  // initial hydrate is complete so we don't overwrite the saved snapshot
+  // with an empty initial state on first render.
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return
+    try {
+      const snap = {
+        messages,
+        fragment,
+        result,
+        selectedCandidate,
+        hasTournament,
+        tournament: {
+          candidates: tournament.candidates,
+          verdict: tournament.verdict,
+          phase: tournament.phase,
+        },
+      }
+      localStorage.setItem(RUN_KEY, JSON.stringify(snap))
+    } catch {
+      // localStorage full or serialization issue — silently drop.
+    }
+  }, [
+    hydrated,
+    messages,
+    fragment,
+    result,
+    selectedCandidate,
+    hasTournament,
+    tournament.candidates,
+    tournament.verdict,
+    tournament.phase,
+  ])
   const currentTemplate =
     selectedTemplate === 'auto'
       ? templates
@@ -167,6 +239,74 @@ export default function Home() {
     if (error) stop()
   }, [error])
 
+  // Auto-select the winning candidate when verdict arrives.
+  useEffect(() => {
+    const winner = Object.values(tournament.candidates).find((c) => c.isWinner)
+    if (winner && !selectedCandidate) {
+      setSelectedCandidate(winner.id)
+    }
+  }, [tournament.candidates, selectedCandidate])
+
+  // Whenever the user picks a candidate (or one is auto-selected), promote
+  // its fragment to the main view and spawn the sandbox for it. Skip the
+  // sandbox call entirely on a hydrate-driven re-run when we already have
+  // a result for the same code (otherwise refresh = duplicate sandbox).
+  useEffect(() => {
+    if (!selectedCandidate) return
+    const c = tournament.candidates[selectedCandidate]
+    if (!c?.fragment || c.status === 'generating') return
+
+    const next = c.fragment as DeepPartial<FragmentSchema>
+    const sameCodeAlreadyRunning =
+      !!result && !!fragment && fragment.code === next.code
+    setFragment(next)
+    if (sameCodeAlreadyRunning) return
+
+    // Append a synthetic assistant message capturing the selected candidate.
+    const content: Message['content'] = [
+      { type: 'text', text: next.commentary || '' },
+      { type: 'code', text: next.code || '' },
+    ]
+    setMessages((prev) => {
+      const last = prev[prev.length - 1]
+      if (last && last.role === 'assistant') {
+        const copy = [...prev]
+        copy[copy.length - 1] = { ...last, content, object: next }
+        return copy
+      }
+      return [...prev, { role: 'assistant', content, object: next }]
+    })
+
+    // Sandbox the selected candidate (skip if the same fragment already lives in result)
+    if (!session) return
+    let cancelled = false
+    setIsPreviewLoading(true)
+    setCurrentTab('code')
+    fetch('/api/sandbox', {
+      method: 'POST',
+      body: JSON.stringify({
+        fragment: next,
+        userID: session?.user?.id,
+        teamID: userTeam?.id,
+        accessToken: session?.access_token,
+      }),
+    })
+      .then((r) => r.json())
+      .then((sandboxResult) => {
+        if (cancelled) return
+        setResult(sandboxResult)
+        setCurrentTab('fragment')
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsPreviewLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCandidate, tournament.candidates[selectedCandidate ?? 'minimal']?.status])
+
   function setMessage(message: Partial<Message>, index?: number) {
     setMessages((previousMessages) => {
       const updatedMessages = [...previousMessages]
@@ -189,6 +329,9 @@ export default function Home() {
     if (isLoading) {
       stop()
     }
+    if (tournament.phase === 'generating') {
+      tournament.stop()
+    }
 
     const content: Message['content'] = [{ type: 'text', text: chatInput }]
     const images = await toMessageImage(files)
@@ -204,24 +347,47 @@ export default function Home() {
       content,
     })
 
-    submit({
-      userID: session?.user?.id,
-      teamID: userTeam?.id,
-      messages: toAISDKMessages(updatedMessages),
-      template: currentTemplate,
-      model: currentModel,
-      config: languageModel,
-      ...(shouldUseMorph && fragment ? { currentFragment: fragment } : {}),
-    })
+    const isFirstGeneration = !fragment && !shouldUseMorph
+
+    if (isFirstGeneration) {
+      // Tournament: 3 specimens generated in parallel, judged by editor.
+      setHasTournament(true)
+      setSelectedCandidate(undefined)
+      setFragment(undefined)
+      setResult(undefined)
+      tournament.submit({
+        userID: session?.user?.id,
+        teamID: userTeam?.id,
+        messages: toAISDKMessages(updatedMessages),
+        template: currentTemplate,
+        model: currentModel,
+        config: languageModel,
+      })
+
+      posthog.capture('tournament_submit', {
+        template: selectedTemplate,
+        model: languageModel.model,
+      })
+    } else {
+      submit({
+        userID: session?.user?.id,
+        teamID: userTeam?.id,
+        messages: toAISDKMessages(updatedMessages),
+        template: currentTemplate,
+        model: currentModel,
+        config: languageModel,
+        ...(shouldUseMorph && fragment ? { currentFragment: fragment } : {}),
+      })
+
+      posthog.capture('chat_submit', {
+        template: selectedTemplate,
+        model: languageModel.model,
+      })
+    }
 
     setChatInput('')
     setFiles([])
     setCurrentTab('code')
-
-    posthog.capture('chat_submit', {
-      template: selectedTemplate,
-      model: languageModel.model,
-    })
   }
 
   function retry() {
@@ -267,6 +433,10 @@ export default function Home() {
 
   function handleClearChat() {
     stop()
+    tournament.stop()
+    tournament.reset()
+    setHasTournament(false)
+    setSelectedCandidate(undefined)
     setChatInput('')
     setFiles([])
     setMessages([])
@@ -338,7 +508,21 @@ export default function Home() {
       </div>
 
       {/* Run meta */}
-      <RunStatusBar isLoading={isLoading} hasFragment={!!fragment} />
+      <RunStatusBar
+        isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
+        hasFragment={!!fragment}
+      />
+
+      {/* Specimen strip — visible once a tournament has been dispatched */}
+      {hasTournament && (
+        <SpecimenStrip
+          candidates={tournament.candidates}
+          selectedId={selectedCandidate}
+          onSelect={setSelectedCandidate}
+          verdictReasoning={tournament.verdict?.reasoning}
+          phase={tournament.phase}
+        />
+      )}
 
       {/* Workspace */}
       <div className="flex-1 grid w-full md:grid-cols-2 overflow-hidden">

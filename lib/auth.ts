@@ -48,10 +48,9 @@ export function useAuth(
         posthog?.capture('sign_in')
         identifiedRef.current = true
       }
-      // Close auth dialog once signed in
-      if (lastSignedInRef.current === false) {
-        setAuthDialog(false)
-      }
+      // Close auth dialog once signed in (covers both fresh sign-in and
+      // pages opened with an already-active session).
+      setAuthDialog(false)
     } else {
       setAccessToken(undefined)
       if (identifiedRef.current) {

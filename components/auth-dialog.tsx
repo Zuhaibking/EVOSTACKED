@@ -37,16 +37,18 @@ const editorialAppearance = {
     header: 'hidden',
     footer: 'hidden',
 
-    socialButtonsBlockButton:
-      'h-10 border border-border rounded-none bg-transparent hover:bg-secondary/40 hover:border-foreground transition-colors normal-case',
-    socialButtonsBlockButtonText:
-      'font-mono text-[11px] tracking-[0.18em] uppercase',
-    socialButtonsProviderIcon: 'h-4 w-4',
+    // Hide all social/SSO buttons — those redirect to accounts.dev and break
+    // the in-page modal flow. Email-only keeps everything inside the dialog.
+    socialButtonsRoot: 'hidden',
+    socialButtons: 'hidden',
+    socialButtonsBlockButton: 'hidden',
+    socialButtonsIconButton: 'hidden',
+    alternativeMethods: 'hidden',
+    alternativeMethodsBlockButton: 'hidden',
 
-    dividerRow: 'my-1',
-    dividerLine: 'bg-border h-px',
-    dividerText:
-      'font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground bg-background px-3',
+    dividerRow: 'hidden',
+    dividerLine: 'hidden',
+    dividerText: 'hidden',
 
     formFieldRow: 'space-y-1.5',
     formFieldLabelRow: 'flex items-baseline justify-between',
@@ -154,14 +156,18 @@ export function AuthDialog({
         <div className="px-6 py-5">
           {mode === 'sign_in' ? (
             <SignIn
-              routing="hash"
+              routing="virtual"
               signUpUrl="#"
+              forceRedirectUrl="/app"
+              fallbackRedirectUrl="/app"
               appearance={editorialAppearance}
             />
           ) : (
             <SignUp
-              routing="hash"
+              routing="virtual"
               signInUrl="#"
+              forceRedirectUrl="/app"
+              fallbackRedirectUrl="/app"
               appearance={editorialAppearance}
             />
           )}

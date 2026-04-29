@@ -1,4 +1,5 @@
 import { FragmentSchema } from '@/lib/schema'
+import { getTemplateId } from '@/lib/templates'
 import { ExecutionResultInterpreter, ExecutionResultWeb } from '@/lib/types'
 import { Sandbox } from '@e2b/code-interpreter'
 
@@ -22,10 +23,15 @@ export async function POST(req: Request) {
   console.log('userID', userID)
   // console.log('apiKey', apiKey)
 
+  // Strip any "-dev" suffix the prompt-side template ids carry in development.
+  // E2B's hosted templates don't have the suffix; the -dev convention only
+  // applies if a user has published a *-dev custom template to their account.
+  const sandboxTemplate = getTemplateId(fragment.template)
+
   // Create an interpreter or a sandbox
-  const sbx = await Sandbox.create(fragment.template, {
+  const sbx = await Sandbox.create(sandboxTemplate, {
     metadata: {
-      template: fragment.template,
+      template: sandboxTemplate,
       userID: userID ?? '',
       teamID: teamID ?? '',
     },
@@ -60,13 +66,13 @@ export async function POST(req: Request) {
   }
 
   // Execute code or return a URL to the running sandbox
-  if (fragment.template === 'code-interpreter-v1') {
+  if (sandboxTemplate === 'code-interpreter-v1') {
     const { logs, error, results } = await sbx.runCode(fragment.code || '')
 
     return new Response(
       JSON.stringify({
         sbxId: sbx?.sandboxId,
-        template: fragment.template,
+        template: sandboxTemplate,
         stdout: logs.stdout,
         stderr: logs.stderr,
         runtimeError: error,
@@ -78,7 +84,7 @@ export async function POST(req: Request) {
   return new Response(
     JSON.stringify({
       sbxId: sbx?.sandboxId,
-      template: fragment.template,
+      template: sandboxTemplate,
       url: `https://${sbx?.getHost(fragment.port || 80)}`,
     } as ExecutionResultWeb),
   )
