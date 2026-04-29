@@ -1,7 +1,6 @@
 'use client'
 
-import { ViewType } from '@/components/auth'
-import { AuthDialog } from '@/components/auth-dialog'
+import { AuthDialog, ViewType } from '@/components/auth-dialog'
 import { Chat } from '@/components/chat'
 import { ChatInput } from '@/components/chat-input'
 import { ChatPicker } from '@/components/chat-picker'
@@ -14,7 +13,6 @@ import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
 import { LLMModelConfig } from '@/lib/models'
 import modelsList from '@/lib/models.json'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
-import { supabase } from '@/lib/supabase'
 import templates from '@/lib/templates'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
@@ -47,7 +45,7 @@ export default function Home() {
   const [authView, setAuthView] = useState<ViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const { session, userTeam } = useAuth(setAuthDialog, setAuthView)
+  const { session, userTeam, signOut } = useAuth(setAuthDialog, setAuthView)
   const [useMorphApply, setUseMorphApply] = useLocalStorage(
     'useMorphApply',
     process.env.NEXT_PUBLIC_USE_MORPH_APPLY === 'true',
@@ -252,9 +250,7 @@ export default function Home() {
   }
 
   function logout() {
-    supabase
-      ? supabase.auth.signOut()
-      : console.warn('Supabase is not initialized')
+    signOut()
   }
 
   function handleLanguageModelChange(e: LLMModelConfig) {
@@ -295,18 +291,39 @@ export default function Home() {
 
   return (
     <main className="flex flex-col min-h-screen max-h-screen bg-background">
-      {supabase && (
-        <AuthDialog
-          open={isAuthDialogOpen}
-          setOpen={setAuthDialog}
-          view={authView}
-          supabase={supabase}
-        />
-      )}
+      <AuthDialog
+        open={isAuthDialogOpen}
+        setOpen={setAuthDialog}
+        view={authView}
+      />
 
-      {/* Top: EvoStack nav */}
-      <div className="shrink-0 border-b border-border">
+      {/* Editorial masthead strip — mirrors landing page */}
+      <div className="shrink-0 border-b border-border bg-background">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6">
+          <div className="flex items-center justify-between py-2 border-b border-border/60">
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+                Vol. 01 — Iss. 04
+              </span>
+              <span className="hidden md:inline text-muted-foreground/40">/</span>
+              <span className="hidden md:inline font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
+                2026 · Q2
+              </span>
+            </div>
+            <div className="flex items-center gap-5">
+              <span className="hidden sm:inline font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
+                Apache-2.0
+              </span>
+              <a
+                href="https://github.com/Zuhaibking/EVOSTACKED"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Source
+              </a>
+            </div>
+          </div>
           <NavBar
             session={session}
             showLogin={() => setAuthDialog(true)}

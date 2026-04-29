@@ -16,8 +16,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import type { AuthSession } from '@/lib/auth'
 import { GitHubLogoIcon } from '@radix-ui/react-icons'
-import { Session } from '@supabase/supabase-js'
 import { ArrowRight, LogOut, Trash, Undo } from 'lucide-react'
 import Link from 'next/link'
 
@@ -31,7 +31,7 @@ export function NavBar({
   onUndo,
   canUndo,
 }: {
-  session: Session | null
+  session: AuthSession | null
   showLogin: () => void
   signOut: () => void
   onClear: () => void
@@ -43,17 +43,17 @@ export function NavBar({
   return (
     <nav className="w-full flex bg-background py-4">
       <div className="flex flex-1 items-center">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo width={26} height={26} className="text-brand" />
-          <h1 className="text-lg font-semibold tracking-tight">
-            Evo<span className="text-brand">Stack</span>
+        <Link href="/" className="flex items-baseline gap-2 group">
+          <Logo width={26} height={26} className="text-foreground translate-y-1" />
+          <h1 className="font-display text-2xl font-black tracking-tight leading-none">
+            Evo<span className="italic font-normal">Stack</span>
           </h1>
         </Link>
-        <span className="ml-3 hidden md:inline text-xs text-muted-foreground">
-          AI code tournament
+        <span className="ml-4 hidden md:inline font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+          § Arena · Live
         </span>
       </div>
-      <div className="flex items-center gap-1 md:gap-4">
+      <div className="flex items-center gap-1 md:gap-3">
         <TooltipProvider>
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -98,7 +98,7 @@ export function NavBar({
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
-                    <Avatar className="w-8 h-8">
+                    <Avatar className="w-8 h-8 ring-1 ring-border hover:ring-foreground transition-colors cursor-pointer">
                       <AvatarImage
                         src={
                           session.user.user_metadata?.avatar_url ||
@@ -112,12 +112,12 @@ export function NavBar({
                 <TooltipContent>My Account</TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <DropdownMenuContent className="w-56" align="end">
-              <DropdownMenuLabel className="flex flex-col">
-                <span className="text-sm">My Account</span>
-                <span className="text-xs text-muted-foreground">
-                  {session.user.email}
+            <DropdownMenuContent className="w-60 rounded-none border-foreground" align="end">
+              <DropdownMenuLabel className="flex flex-col gap-0.5">
+                <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+                  § Identity
                 </span>
+                <span className="text-sm">{session.user.email}</span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => onSocialClick('github')}>
@@ -132,7 +132,11 @@ export function NavBar({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button variant="default" onClick={showLogin}>
+          <Button
+            variant="default"
+            onClick={showLogin}
+            className="rounded-none font-mono text-[11px] tracking-[0.2em] uppercase border border-foreground bg-foreground text-background hover:bg-background hover:text-foreground transition-colors"
+          >
             Sign in
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>

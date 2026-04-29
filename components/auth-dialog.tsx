@@ -1,54 +1,185 @@
-import Auth, { ViewType } from './auth'
-import Logo from './logo'
-import { validateEmail } from '@/app/actions/validate-email'
+'use client'
+
 import {
   Dialog,
   DialogContent,
-  DialogTitle,
   DialogDescription,
+  DialogTitle,
 } from '@/components/ui/dialog'
+import { SignIn, SignUp } from '@clerk/nextjs'
+import { dark } from '@clerk/themes'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { SupabaseClient } from '@supabase/supabase-js'
+import { useState } from 'react'
+
+export type ViewType = 'sign_in' | 'sign_up'
+
+const editorialAppearance = {
+  baseTheme: dark,
+  variables: {
+    colorPrimary: 'hsl(40 28% 92%)',
+    colorBackground: 'hsl(30 12% 7%)',
+    colorText: 'hsl(40 28% 92%)',
+    colorTextSecondary: 'hsl(35 14% 62%)',
+    colorInputBackground: 'hsl(30 10% 10%)',
+    colorInputText: 'hsl(40 28% 92%)',
+    colorNeutral: 'hsl(40 28% 92%)',
+    colorDanger: 'hsl(8 76% 60%)',
+    fontFamily: 'var(--font-body), ui-sans-serif, system-ui',
+    fontFamilyButtons: 'var(--font-mono), ui-monospace, monospace',
+    fontSize: '14px',
+    borderRadius: '0',
+    spacingUnit: '0.875rem',
+  },
+  elements: {
+    rootBox: 'w-full',
+    cardBox: 'w-full shadow-none bg-transparent',
+    card: 'bg-transparent shadow-none p-0 gap-3 w-full',
+    header: 'hidden',
+    footer: 'hidden',
+
+    socialButtonsBlockButton:
+      'h-10 border border-border rounded-none bg-transparent hover:bg-secondary/40 hover:border-foreground transition-colors normal-case',
+    socialButtonsBlockButtonText:
+      'font-mono text-[11px] tracking-[0.18em] uppercase',
+    socialButtonsProviderIcon: 'h-4 w-4',
+
+    dividerRow: 'my-1',
+    dividerLine: 'bg-border h-px',
+    dividerText:
+      'font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground bg-background px-3',
+
+    formFieldRow: 'space-y-1.5',
+    formFieldLabelRow: 'flex items-baseline justify-between',
+    formFieldLabel:
+      'font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground',
+    formFieldAction:
+      'font-mono text-[10px] tracking-[0.18em] uppercase text-brand-accent hover:text-foreground transition-colors no-underline',
+    formFieldHintText:
+      'font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground/80',
+    formFieldErrorText: 'text-destructive text-xs',
+    formFieldInput:
+      'h-10 rounded-none bg-transparent border border-border focus:border-foreground focus:ring-0 focus:outline-none px-3 text-sm placeholder:text-muted-foreground/50',
+    formFieldInputShowPasswordButton: 'text-muted-foreground hover:text-foreground',
+
+    formButtonPrimary:
+      'h-10 rounded-none border border-foreground bg-foreground text-background hover:bg-background hover:text-foreground transition-colors font-mono uppercase tracking-[0.22em] text-[11px] shadow-none after:hidden',
+    formButtonReset:
+      'h-10 rounded-none border border-border bg-transparent text-foreground hover:bg-secondary/40 font-mono uppercase tracking-[0.18em] text-[11px]',
+
+    formResendCodeLink:
+      'font-mono text-[10px] tracking-[0.18em] uppercase text-brand-accent hover:text-foreground transition-colors no-underline',
+    otpCodeFieldInput:
+      'rounded-none bg-transparent border border-border focus:border-foreground',
+
+    identityPreview:
+      'rounded-none border border-border bg-transparent px-3 py-2',
+    identityPreviewText: 'text-sm text-foreground',
+    identityPreviewEditButton:
+      'font-mono text-[10px] tracking-[0.18em] uppercase text-brand-accent hover:text-foreground',
+
+    alert: 'rounded-none border border-border bg-secondary/40',
+    alertText: 'text-xs text-foreground',
+
+    formFieldSuccessText: 'text-brand-accent text-xs',
+
+    userPreviewMainIdentifier: 'text-sm',
+    userPreviewSecondaryIdentifier:
+      'font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground',
+
+    spinner: 'text-foreground',
+  },
+  layout: {
+    socialButtonsPlacement: 'top' as const,
+    socialButtonsVariant: 'blockButton' as const,
+    showOptionalFields: true,
+  },
+}
 
 export function AuthDialog({
   open,
   setOpen,
-  supabase,
-  view,
+  view = 'sign_in',
 }: {
   open: boolean
   setOpen: (open: boolean) => void
-  supabase: SupabaseClient
-  view: ViewType
+  view?: ViewType
 }) {
+  const [mode, setMode] = useState<ViewType>(view)
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent>
+      <DialogContent
+        className="sm:max-w-[440px] w-[calc(100vw-2rem)] p-0 gap-0 overflow-visible rounded-none border border-foreground bg-background shadow-[10px_10px_0_0_hsl(var(--brand)/0.28)]"
+      >
         <VisuallyHidden>
-          <DialogTitle>Sign in to Fragments</DialogTitle>
+          <DialogTitle>Sign in to EvoStack</DialogTitle>
           <DialogDescription>
-            Sign in or create an account to access Fragments
+            Sign in or create an account to enter the arena.
           </DialogDescription>
         </VisuallyHidden>
-        <div className="flex justify-center items-center flex-col">
-          <h1 className="flex items-center gap-4 text-xl font-bold mb-6 w-full">
-            <div className="flex items-center justify-center rounded-md shadow-md bg-black p-2">
-              <Logo className="text-white w-6 h-6" />
-            </div>
-            Sign in to Fragments
-          </h1>
-          <div className="w-full">
-            <Auth
-              supabaseClient={supabase}
-              view={view}
-              providers={['github', 'google']}
-              socialLayout="horizontal"
-              onSignUpValidate={validateEmail}
-              metadata={{
-                is_fragments_user: true,
-              }}
+
+        {/* Masthead strip — magazine binding */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
+          <span className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground">
+            § Credentials · Gate
+          </span>
+          <span className="font-mono text-[10px] tracking-[0.24em] uppercase text-brand-accent">
+            {mode === 'sign_in' ? 'Returning' : 'New entrant'}
+          </span>
+        </div>
+
+        {/* Title block */}
+        <div className="px-6 pt-6 pb-4 border-b border-border/60">
+          <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-muted-foreground mb-2">
+            § 02.1 — Identify
+          </p>
+          <h2 className="font-display text-3xl font-black tracking-tight leading-[1.05]">
+            {mode === 'sign_in' ? (
+              <>
+                Welcome <span className="italic font-normal">back.</span>
+              </>
+            ) : (
+              <>
+                Enter <span className="italic font-normal">the arena.</span>
+              </>
+            )}
+          </h2>
+          <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+            Authentication dispatches a sandbox under your name. Identity
+            travels with the run.
+          </p>
+        </div>
+
+        {/* Clerk form — own its own paddings */}
+        <div className="px-6 py-5">
+          {mode === 'sign_in' ? (
+            <SignIn
+              routing="hash"
+              signUpUrl="#"
+              appearance={editorialAppearance}
             />
-          </div>
+          ) : (
+            <SignUp
+              routing="hash"
+              signInUrl="#"
+              appearance={editorialAppearance}
+            />
+          )}
+        </div>
+
+        {/* Footer rule — view switch */}
+        <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-3">
+          <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+            {mode === 'sign_in' ? 'No record on file?' : 'Already on file?'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'sign_in' ? 'sign_up' : 'sign_in')}
+            className="font-mono text-[10px] tracking-[0.22em] uppercase text-foreground hover:text-brand-accent transition-colors inline-flex items-center gap-1.5"
+          >
+            <span className="inline-block h-px w-6 bg-current" />
+            {mode === 'sign_in' ? 'Sign up' : 'Sign in'}
+          </button>
         </div>
       </DialogContent>
     </Dialog>

@@ -1,8 +1,21 @@
-import { supabase } from './supabase'
-import { ViewType } from '@/components/auth'
-import { Session } from '@supabase/supabase-js'
+'use client'
+
+import { ViewType } from '@/components/auth-dialog'
+import { useAuth as useClerkAuth, useUser } from '@clerk/nextjs'
 import { usePostHog } from 'posthog-js/react'
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+
+export type AuthSession = {
+  user: {
+    id: string
+    email: string
+    user_metadata: {
+      avatar_url?: string
+      is_fragments_user?: boolean
+    }
+  }
+  access_token?: string
+}
 
 type UserTeam = {
   email: string
@@ -11,94 +24,74 @@ type UserTeam = {
   tier: string
 }
 
-export async function getUserTeam(
-  session: Session,
-): Promise<UserTeam | undefined> {
-  const { data: defaultTeam } = await supabase!
-    .from('users_teams')
-    .select('teams (id, name, tier, email)')
-    .eq('user_id', session?.user.id)
-    .eq('is_default', true)
-    .single()
-
-  return defaultTeam?.teams as unknown as UserTeam
-}
-
 export function useAuth(
   setAuthDialog: (value: boolean) => void,
-  setAuthView: (value: ViewType) => void,
+  _setAuthView: (value: ViewType) => void,
 ) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [userTeam, setUserTeam] = useState<UserTeam | undefined>(undefined)
-  const [recovery, setRecovery] = useState(false)
+  const { isSignedIn, isLoaded, signOut: clerkSignOut, getToken } = useClerkAuth()
+  const { user } = useUser()
   const posthog = usePostHog()
+  const [accessToken, setAccessToken] = useState<string | undefined>(undefined)
+  const identifiedRef = useRef(false)
+  const lastSignedInRef = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
-    if (!supabase) {
-      console.warn('Supabase is not initialized')
-      return setSession({ user: { email: 'demo@e2b.dev' } } as Session)
-    }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) {
-        getUserTeam(session).then(setUserTeam)
-        if (!session.user.user_metadata.is_fragments_user) {
-          supabase?.auth.updateUser({
-            data: { is_fragments_user: true },
-          })
-        }
-        posthog.identify(session?.user.id, {
-          email: session?.user.email,
-          supabase_id: session?.user.id,
+    if (!isLoaded) return
+    if (isSignedIn) {
+      // Pull a JWT for downstream API calls (sandbox/headers)
+      getToken().then((t) => setAccessToken(t ?? undefined))
+      if (!identifiedRef.current && user) {
+        posthog?.identify(user.id, {
+          email: user.primaryEmailAddress?.emailAddress,
+          clerk_id: user.id,
         })
-        posthog.capture('sign_in')
+        posthog?.capture('sign_in')
+        identifiedRef.current = true
       }
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-
-      if (_event === 'PASSWORD_RECOVERY') {
-        setRecovery(true)
-        setAuthView('update_password')
-        setAuthDialog(true)
-      }
-
-      if (_event === 'USER_UPDATED' && recovery) {
-        setRecovery(false)
-      }
-
-      if (_event === 'SIGNED_IN' && !recovery) {
-        getUserTeam(session as Session).then(setUserTeam)
+      // Close auth dialog once signed in
+      if (lastSignedInRef.current === false) {
         setAuthDialog(false)
-        if (!session?.user.user_metadata.is_fragments_user) {
-          supabase?.auth.updateUser({
-            data: { is_fragments_user: true },
-          })
-        }
-        posthog.identify(session?.user.id, {
-          email: session?.user.email,
-          supabase_id: session?.user.id,
-        })
-        posthog.capture('sign_in')
       }
-
-      if (_event === 'SIGNED_OUT') {
-        setAuthView('sign_in')
-        posthog.capture('sign_out')
-        posthog.reset()
-        setRecovery(false)
+    } else {
+      setAccessToken(undefined)
+      if (identifiedRef.current) {
+        posthog?.capture('sign_out')
+        posthog?.reset()
+        identifiedRef.current = false
       }
-    })
+    }
+    lastSignedInRef.current = !!isSignedIn
+  }, [isLoaded, isSignedIn, user, getToken, posthog, setAuthDialog])
 
-    return () => subscription.unsubscribe()
-  }, [recovery, setAuthDialog, setAuthView, posthog])
+  const session: AuthSession | null = useMemo(() => {
+    if (!isSignedIn || !user) return null
+    return {
+      user: {
+        id: user.id,
+        email: user.primaryEmailAddress?.emailAddress ?? '',
+        user_metadata: {
+          avatar_url: user.imageUrl,
+          is_fragments_user: true,
+        },
+      },
+      access_token: accessToken,
+    }
+  }, [isSignedIn, user, accessToken])
+
+  // Clerk doesn't have the team concept by default — return a stub team
+  // shaped like the previous Supabase one so downstream code keeps working.
+  const userTeam: UserTeam | undefined = session
+    ? {
+        id: session.user.id,
+        email: session.user.email,
+        name: user?.fullName ?? session.user.email,
+        tier: 'free',
+      }
+    : undefined
 
   return {
     session,
     userTeam,
+    signOut: () => clerkSignOut(),
   }
 }
