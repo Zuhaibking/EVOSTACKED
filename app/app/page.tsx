@@ -7,7 +7,6 @@ import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
-import { RunStatusBar } from '@/components/run-status-bar'
 import { SpecimenStrip } from '@/components/specimen-strip'
 import { useAuth } from '@/lib/auth'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
@@ -467,33 +466,9 @@ export default function Home() {
         view={authView}
       />
 
-      {/* Editorial masthead strip — mirrors landing page */}
+      {/* Editorial app bar — brand + run meta + actions, all in one strip */}
       <div className="shrink-0 border-b border-border bg-background">
-        <div className="max-w-[1400px] mx-auto px-4 md:px-6">
-          <div className="flex items-center justify-between py-2 border-b border-border/60">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
-                Vol. 01 — Iss. 04
-              </span>
-              <span className="hidden md:inline text-muted-foreground/40">/</span>
-              <span className="hidden md:inline font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
-                2026 · Q2
-              </span>
-            </div>
-            <div className="flex items-center gap-5">
-              <span className="hidden sm:inline font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
-                Apache-2.0
-              </span>
-              <a
-                href="https://github.com/Zuhaibking/EVOSTACKED"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Source
-              </a>
-            </div>
-          </div>
+        <div className="max-w-[1400px] mx-auto">
           <NavBar
             session={session}
             showLogin={() => setAuthDialog(true)}
@@ -503,15 +478,11 @@ export default function Home() {
             canClear={messages.length > 0}
             canUndo={messages.length > 1 && !isLoading}
             onUndo={handleUndo}
+            isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
+            hasFragment={!!fragment}
           />
         </div>
       </div>
-
-      {/* Run meta */}
-      <RunStatusBar
-        isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
-        hasFragment={!!fragment}
-      />
 
       {/* Specimen strip — visible once a tournament has been dispatched */}
       {hasTournament && (
@@ -527,16 +498,8 @@ export default function Home() {
       {/* Workspace */}
       <div className="flex-1 grid w-full md:grid-cols-2 overflow-hidden">
         <div
-          className={`flex flex-col w-full max-h-full max-w-[900px] mx-auto px-4 md:px-6 overflow-auto ${fragment ? 'col-span-1 md:border-r md:border-border' : 'col-span-2'}`}
+          className={`flex flex-col w-full max-h-full max-w-[900px] mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 overflow-auto ${fragment ? 'col-span-1 md:border-r md:border-border' : 'col-span-2'}`}
         >
-          <div className="pt-4 pb-2 flex items-center justify-between border-b border-border/60 mb-3">
-            <p className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground">
-              § Dialogue
-            </p>
-            <p className="font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground tabular">
-              {messages.length} msg
-            </p>
-          </div>
           <Chat
             messages={messages}
             isLoading={isLoading}
@@ -576,27 +539,17 @@ export default function Home() {
         </div>
         {fragment && (
           <div className="flex flex-col overflow-hidden">
-            <div className="pt-3 pb-2 px-4 md:px-6 flex items-center justify-between border-b border-border/60">
-              <p className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground">
-                § Specimen · Live sandbox
-              </p>
-              <p className="font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground tabular">
-                {currentTab === 'code' ? 'source' : 'preview'}
-              </p>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <Preview
-                teamID={userTeam?.id}
-                accessToken={session?.access_token}
-                selectedTab={currentTab}
-                onSelectedTabChange={setCurrentTab}
-                isChatLoading={isLoading}
-                isPreviewLoading={isPreviewLoading}
-                fragment={fragment}
-                result={result as ExecutionResult}
-                onClose={() => setFragment(undefined)}
-              />
-            </div>
+            <Preview
+              teamID={userTeam?.id}
+              accessToken={session?.access_token}
+              selectedTab={currentTab}
+              onSelectedTabChange={setCurrentTab}
+              isChatLoading={isLoading}
+              isPreviewLoading={isPreviewLoading}
+              fragment={fragment}
+              result={result as ExecutionResult}
+              onClose={() => setFragment(undefined)}
+            />
           </div>
         )}
       </div>

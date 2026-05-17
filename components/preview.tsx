@@ -1,8 +1,10 @@
+'use client'
+
 import { DeployDialog } from './deploy-dialog'
 import { FragmentCode } from './fragment-code'
 import { FragmentPreview } from './fragment-preview'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import {
   Tooltip,
   TooltipContent,
@@ -13,7 +15,7 @@ import { FragmentSchema } from '@/lib/schema'
 import { getTemplateId } from '@/lib/templates'
 import { ExecutionResult, ExecutionResultWeb } from '@/lib/types'
 import { DeepPartial } from 'ai'
-import { ChevronsRight, LoaderCircle } from 'lucide-react'
+import { LoaderCircle, X } from 'lucide-react'
 import { Dispatch, SetStateAction } from 'react'
 
 export function Preview({
@@ -45,92 +47,130 @@ export function Preview({
     result?.template &&
     getTemplateId(result?.template!) !== 'code-interpreter-v1'
 
+  const fileLabel = fragment.file_path || 'untitled'
+
   return (
-    <div className="absolute md:relative z-10 top-0 left-0 shadow-2xl md:rounded-tl-3xl md:rounded-bl-3xl md:border-l md:border-y bg-popover h-full w-full overflow-auto">
+    <div className="absolute md:relative z-10 top-0 left-0 bg-background h-full w-full overflow-hidden flex flex-col md:border-l md:border-border">
       <Tabs
         value={selectedTab}
         onValueChange={(value) =>
           onSelectedTabChange(value as 'code' | 'fragment')
         }
-        className="h-full flex flex-col items-start justify-start"
+        className="h-full flex flex-col items-stretch"
       >
-        <div className="w-full p-2 grid grid-cols-3 items-center border-b">
-          <TooltipProvider>
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground"
-                  onClick={onClose}
-                >
-                  <ChevronsRight className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Close sidebar</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <div className="flex justify-center">
-            <TabsList className="px-1 py-0 border h-8">
-              <TabsTrigger
-                className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
-                value="code"
-              >
-                {isChatLoading && (
-                  <LoaderCircle
-                    strokeWidth={3}
-                    className="h-3 w-3 animate-spin"
-                  />
-                )}
-                Code
-              </TabsTrigger>
-              <TabsTrigger
-                disabled={!result}
-                className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
-                value="fragment"
-              >
-                Preview
-                {isPreviewLoading && (
-                  <LoaderCircle
-                    strokeWidth={3}
-                    className="h-3 w-3 animate-spin"
-                  />
-                )}
-              </TabsTrigger>
-            </TabsList>
+        {/* Single editorial top bar: filename · segmented tabs · actions */}
+        <header className="shrink-0 flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 md:px-4 h-10 sm:h-11 border-b border-border bg-background/95">
+          {/* Filename / context */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground shrink-0 hidden sm:inline">
+              §
+            </span>
+            <span className="font-mono text-[10px] sm:text-[11px] text-foreground truncate" title={fileLabel}>
+              {fileLabel}
+            </span>
+            {(isChatLoading || isPreviewLoading) && (
+              <span className="flex items-center gap-1 font-mono text-[9px] tracking-[0.2em] uppercase text-brand shrink-0">
+                <LoaderCircle strokeWidth={2.5} className="h-3 w-3 animate-spin" />
+                <span className="hidden md:inline">
+                  {isPreviewLoading ? 'sandboxing' : 'streaming'}
+                </span>
+              </span>
+            )}
           </div>
-          {result && (
-            <div className="flex items-center justify-end gap-2">
-              {isLinkAvailable && (
-                <DeployDialog
-                  url={(result as ExecutionResultWeb).url!}
-                  sbxId={result.sbxId!}
-                  teamID={teamID}
-                  accessToken={accessToken}
-                />
-              )}
-            </div>
-          )}
+
+          {/* Segmented tab control — brutalist hard-edge */}
+          <div
+            role="tablist"
+            aria-label="Specimen view"
+            className="inline-flex border border-border shrink-0"
+          >
+            <button
+              role="tab"
+              type="button"
+              aria-selected={selectedTab === 'code'}
+              onClick={() => onSelectedTabChange('code')}
+              className={`
+                h-6 sm:h-7 px-2 sm:px-3 font-mono text-[9px] sm:text-[10px] tracking-[0.22em] uppercase
+                inline-flex items-center gap-1 transition-colors
+                ${
+                  selectedTab === 'code'
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'
+                }
+              `}
+            >
+              Source
+            </button>
+            <button
+              role="tab"
+              type="button"
+              disabled={!result}
+              aria-selected={selectedTab === 'fragment'}
+              onClick={() => onSelectedTabChange('fragment')}
+              className={`
+                h-6 sm:h-7 px-2 sm:px-3 font-mono text-[9px] sm:text-[10px] tracking-[0.22em] uppercase
+                inline-flex items-center gap-1 transition-colors
+                border-l border-border
+                ${
+                  selectedTab === 'fragment'
+                    ? 'bg-foreground text-background'
+                    : !result
+                      ? 'text-muted-foreground/40 cursor-not-allowed'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'
+                }
+              `}
+            >
+              Preview
+            </button>
+          </div>
+
+          {/* Action cluster */}
+          <div className="flex items-center gap-1 shrink-0">
+            {result && isLinkAvailable && (
+              <DeployDialog
+                url={(result as ExecutionResultWeb).url!}
+                sbxId={result.sbxId!}
+                teamID={teamID}
+                accessToken={accessToken}
+              />
+            )}
+            <TooltipProvider>
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onClose}
+                    className="h-7 w-7 sm:h-8 sm:w-8 rounded-none text-muted-foreground hover:text-foreground"
+                    aria-label="Close specimen"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Close specimen</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </header>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto w-full">
+          <TabsContent value="code" className="h-full m-0">
+            {fragment.code && fragment.file_path && (
+              <FragmentCode
+                files={[
+                  {
+                    name: fragment.file_path,
+                    content: fragment.code,
+                  },
+                ]}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="fragment" className="h-full m-0">
+            {result && <FragmentPreview result={result as ExecutionResult} />}
+          </TabsContent>
         </div>
-        {fragment && (
-          <div className="overflow-y-auto w-full h-full">
-            <TabsContent value="code" className="h-full">
-              {fragment.code && fragment.file_path && (
-                <FragmentCode
-                  files={[
-                    {
-                      name: fragment.file_path,
-                      content: fragment.code,
-                    },
-                  ]}
-                />
-              )}
-            </TabsContent>
-            <TabsContent value="fragment" className="h-full">
-              {result && <FragmentPreview result={result as ExecutionResult} />}
-            </TabsContent>
-          </div>
-        )}
       </Tabs>
     </div>
   )
