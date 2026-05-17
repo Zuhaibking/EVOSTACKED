@@ -111,14 +111,14 @@ export function ChatInput({
         <div className="relative" key={file.name}>
           <span
             onClick={() => handleFileRemove(file)}
-            className="absolute top-[-8] right-[-8] bg-muted rounded-full p-1"
+            className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5 cursor-pointer"
           >
-            <X className="h-3 w-3 cursor-pointer" />
+            <X className="h-2.5 w-2.5" />
           </span>
           <img
             src={URL.createObjectURL(file)}
             alt={file.name}
-            className="rounded-xl w-10 h-10 object-cover"
+            className="rounded-none w-8 h-8 object-cover border border-border"
           />
         </div>
       )
@@ -146,7 +146,7 @@ export function ChatInput({
     <form
       onSubmit={handleSubmit}
       onKeyDown={onEnter}
-      className="mb-2 mt-auto flex flex-col bg-background"
+      className="mb-3 mt-auto pt-3 flex flex-col bg-background"
       onDragEnter={isMultiModal ? handleDrag : undefined}
       onDragLeave={isMultiModal ? handleDrag : undefined}
       onDragOver={isMultiModal ? handleDrag : undefined}
@@ -154,148 +154,153 @@ export function ChatInput({
     >
       {isErrored && (
         <div
-          className={`flex items-center p-1.5 text-sm font-medium mx-4 mb-10 rounded-xl ${
+          className={`flex items-center text-[12px] font-mono tracking-[0.06em] px-3 py-2 mb-2 border ${
             isRateLimited
-              ? 'bg-orange-400/10 text-orange-400'
-              : 'bg-red-400/10 text-red-400'
+              ? 'border-orange-400/40 bg-orange-400/10 text-orange-500'
+              : 'border-red-400/40 bg-red-400/10 text-red-500'
           }`}
         >
-          <span className="flex-1 px-1.5">{errorMessage}</span>
+          <span className="flex-1">{errorMessage}</span>
           <button
-            className={`px-2 py-1 rounded-sm ${
-              isRateLimited ? 'bg-orange-400/20' : 'bg-red-400/20'
+            type="button"
+            className={`ml-2 px-2 py-0.5 border text-[10px] uppercase tracking-[0.18em] ${
+              isRateLimited
+                ? 'border-orange-400/60 hover:bg-orange-400/20'
+                : 'border-red-400/60 hover:bg-red-400/20'
             }`}
             onClick={retry}
           >
-            Try again
+            Retry
           </button>
         </div>
       )}
+
       <div className="relative">
-        {/* offset block shadow */}
+        {/* Brutalist offset block shadow */}
         <div
           aria-hidden
           className="absolute inset-0 translate-x-1 translate-y-1 bg-foreground/10 pointer-events-none"
         />
         <div
-          className={`relative z-10 bg-card border border-foreground ${
-            dragActive
-              ? 'before:absolute before:inset-0 before:border-2 before:border-dashed before:border-brand'
-              : ''
+          className={`relative z-10 bg-card border border-foreground transition-colors ${
+            dragActive ? 'ring-2 ring-brand ring-offset-0' : ''
           }`}
         >
-          <header className="flex items-center justify-between border-b border-border px-3 py-1.5 bg-background/40">
-            <span className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground">
-              § Brief · Single candidate
+          {/* Composer surface — no header, just typing space */}
+          <div className="relative">
+            <TextareaAutosize
+              autoFocus
+              minRows={2}
+              maxRows={6}
+              className="font-display text-[17px] sm:text-[18px] leading-[1.35] px-4 sm:px-5 pt-4 pb-3 resize-none ring-0 bg-inherit w-full m-0 outline-none placeholder:font-display placeholder:italic placeholder:text-muted-foreground/55"
+              required
+              placeholder="Describe a project, a constraint, an iteration…"
+              disabled={isErrored}
+              value={input}
+              onChange={handleInputChange}
+              onPaste={isMultiModal ? handlePaste : undefined}
+            />
+            {/* Editorial gutter mark */}
+            <span
+              aria-hidden
+              className="hidden sm:block absolute left-1.5 top-3.5 font-display italic text-[13px] text-muted-foreground/40 select-none"
+            >
+              ¶
             </span>
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75 animate-ping" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-accent" />
-              </span>
-              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
-                Ready
-              </span>
+          </div>
+
+          {/* Footer: pickers (left) · attachments · send (right) */}
+          <div className="flex items-center gap-2 px-2.5 sm:px-3 py-2 border-t border-border/70 bg-background/40">
+            {/* Pickers cluster — children are <ChatPicker /> + <ChatSettings /> */}
+            <div className="flex items-center gap-1 sm:gap-1.5 flex-1 min-w-0 overflow-hidden">
+              {children}
             </div>
-          </header>
-          <div className="flex items-center px-3 py-2 gap-1 border-b border-border/60">{children}</div>
-          <TextareaAutosize
-            autoFocus={true}
-            minRows={1}
-            maxRows={5}
-            className="font-display text-lg leading-snug px-4 py-3 resize-none ring-0 bg-inherit w-full m-0 outline-none placeholder:font-display placeholder:italic placeholder:text-muted-foreground/60"
-            required={true}
-            placeholder="Describe a project, a constraint, an iteration…"
-            disabled={isErrored}
-            value={input}
-            onChange={handleInputChange}
-            onPaste={isMultiModal ? handlePaste : undefined}
-          />
-          <div className="flex p-3 gap-2 items-center border-t border-border/60 bg-background/40">
+
+            {/* Attach */}
             <input
               type="file"
               id="multimodal"
               name="multimodal"
               accept="image/*"
-              multiple={true}
+              multiple
               className="hidden"
               onChange={handleFileInput}
             />
-            <div className="flex items-center flex-1 gap-2">
-              <TooltipProvider>
-                <Tooltip delayDuration={0}>
-                  <TooltipTrigger asChild>
-                    <Button
-                      disabled={!isMultiModal || isErrored}
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="rounded-none h-9 w-9 border-border"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        document.getElementById('multimodal')?.click()
-                      }}
-                    >
-                      <Paperclip className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Attach image</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {files.length > 0 && filePreview}
-            </div>
-            <div>
-              {!isLoading ? (
-                <TooltipProvider>
-                  <Tooltip delayDuration={0}>
-                    <TooltipTrigger asChild>
-                      <Button
-                        disabled={isErrored}
-                        size="sm"
-                        type="submit"
-                        className="rounded-none font-mono text-[11px] tracking-[0.2em] uppercase h-9 px-3 bg-foreground text-background hover:bg-brand hover:text-brand-foreground"
-                      >
-                        Submit
-                        <ArrowUp className="h-3.5 w-3.5 ml-1.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Submit specimen</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <TooltipProvider>
-                  <Tooltip delayDuration={0}>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="rounded-none font-mono text-[11px] tracking-[0.2em] uppercase h-9 px-3"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          stop()
-                        }}
-                      >
-                        Halt
-                        <Square className="h-3.5 w-3.5 ml-1.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Halt generation</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </div>
+            {files.length > 0 && (
+              <div className="flex items-center gap-1.5 shrink-0">{filePreview}</div>
+            )}
+            <TooltipProvider>
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <Button
+                    disabled={!isMultiModal || isErrored}
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-none h-7 w-7 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground shrink-0"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      document.getElementById('multimodal')?.click()
+                    }}
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Attach image</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {/* Dispatch / Halt */}
+            {!isLoading ? (
+              <Button
+                disabled={isErrored}
+                size="sm"
+                type="submit"
+                className="
+                  group rounded-none font-mono text-[10px] sm:text-[11px] tracking-[0.22em] uppercase
+                  h-7 sm:h-8 px-2.5 sm:px-3 shrink-0
+                  bg-foreground text-background border border-foreground
+                  hover:bg-brand hover:text-brand-foreground hover:border-brand
+                  transition-colors
+                "
+              >
+                <span className="hidden sm:inline">Dispatch</span>
+                <span className="sm:hidden">Send</span>
+                <ArrowUp className="h-3 w-3 sm:h-3.5 sm:w-3.5 ml-1 sm:ml-1.5 transition-transform group-hover:-translate-y-0.5" />
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  stop()
+                }}
+                className="
+                  rounded-none font-mono text-[10px] sm:text-[11px] tracking-[0.22em] uppercase
+                  h-7 sm:h-8 px-2.5 sm:px-3 shrink-0
+                  border border-foreground
+                "
+              >
+                Halt
+                <Square className="h-3 w-3 sm:h-3.5 sm:w-3.5 ml-1 sm:ml-1.5" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
-      <p className="mt-3 font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground/80 text-center">
-        EvoStack · Apache-2.0 · Forked from{' '}
+
+      {/* Tight footnote — single line, low-key */}
+      <p className="mt-2 font-mono text-[9px] tracking-[0.2em] uppercase text-muted-foreground/60 text-center">
+        ⌘+enter to dispatch · Apache-2.0 ·{' '}
         <a
           href="https://github.com/e2b-dev/fragments"
           target="_blank"
           rel="noopener noreferrer"
-          className="underline underline-offset-4 decoration-border hover:text-foreground hover:decoration-foreground"
+          className="hover:text-foreground transition-colors underline underline-offset-2 decoration-border hover:decoration-foreground"
         >
-          E2B Fragments
+          forked from e2b
         </a>
       </p>
     </form>
