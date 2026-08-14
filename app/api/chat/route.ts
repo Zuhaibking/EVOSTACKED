@@ -1,7 +1,7 @@
 import { handleAPIError, createRateLimitResponse } from '@/lib/api-errors'
 import { Duration } from '@/lib/duration'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
-import { toPrompt } from '@/lib/prompt'
+import { buildGenerationPrompt } from '@/lib/prompt'
 import ratelimit from '@/lib/ratelimit'
 import { fragmentSchema as schema } from '@/lib/schema'
 import { Templates } from '@/lib/templates'
@@ -51,14 +51,19 @@ export async function POST(req: Request) {
   console.log('model', model)
   // console.log('config', config)
 
-  const { model: modelNameString, apiKey: modelApiKey, ...modelParams } = config
-  const modelClient = getModelClient(model, config)
+  const { model: _modelNameString, apiKey: _modelApiKey, ...modelParams } = config
 
   try {
+    // Catalog-validated client. Never remaps free → paid providers.
+    const modelClient = getModelClient(model, config)
+
+    // Follow-ups use the same quality rules + internal mental planning.
+    // Full shared ApplicationPlan runs once in /api/tournament to avoid
+    // duplicating expensive planning on every chat turn.
     const stream = await streamObject({
       model: modelClient as LanguageModel,
       schema,
-      system: toPrompt(template),
+      system: buildGenerationPrompt({ template }),
       messages,
       maxRetries: 0, // do not retry on errors
       ...modelParams,

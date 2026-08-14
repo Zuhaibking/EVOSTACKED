@@ -2,6 +2,8 @@
  * Shared error handling utilities for API routes
  */
 
+import { ProviderResolutionError } from '@/lib/model-catalog'
+
 export interface APIError {
   statusCode?: number
   message: string
@@ -40,8 +42,15 @@ export function handleAPIError(
   error: any,
   context?: { hasOwnApiKey?: boolean },
 ): Response {
-  // Log the error for debugging
-  console.error('API Error:', error)
+  // Log the error for debugging (never log secrets — ProviderResolutionError is safe)
+  console.error('API Error:', error?.name || 'Error', error?.message || error)
+
+  if (
+    error instanceof ProviderResolutionError ||
+    error?.name === 'ProviderResolutionError'
+  ) {
+    return new Response(error.message, { status: 400 })
+  }
 
   if (isRateLimitError(error)) {
     const message = context?.hasOwnApiKey

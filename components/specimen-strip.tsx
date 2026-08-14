@@ -1,5 +1,11 @@
 'use client'
 
+import {
+  getFragmentFiles,
+  getPrimaryFileContent,
+  hasFragmentCode,
+  totalCodeLength,
+} from '@/lib/fragment'
 import { Candidate } from '@/lib/tournament-client'
 import { VariantId } from '@/lib/tournament'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
@@ -9,6 +15,20 @@ const STATUS_COPY: Record<Candidate['status'], string> = {
   pending: 'Standby',
   generating: 'Generating',
   done: 'Sequenced',
+  architecture_checking: 'Arch check',
+  architecture_checked: 'Architecture ✓',
+  architecture_partial: 'Architecture partial',
+  architecture_failed: 'Architecture failed',
+  verifying: 'Verifying',
+  verified: 'Verified',
+  verify_failed: 'Runtime fail',
+  repairing: 'Repairing',
+  repaired: 'Repaired',
+  repair_failed: 'Repair failed',
+  testing: 'Testing',
+  tested: 'Smoke ✓',
+  smoke_failed: 'Smoke failed',
+  not_testable: 'Not testable',
   error: 'Failed',
   judging: 'Judging',
 }
@@ -19,9 +39,33 @@ function formatPct(n?: number) {
 }
 
 function statusDot(status: Candidate['status']) {
-  if (status === 'generating') return 'bg-brand animate-pulse'
-  if (status === 'done') return 'bg-brand-accent'
-  if (status === 'error') return 'bg-destructive'
+  if (
+    status === 'generating' ||
+    status === 'architecture_checking' ||
+    status === 'verifying' ||
+    status === 'repairing' ||
+    status === 'testing'
+  ) {
+    return 'bg-brand animate-pulse'
+  }
+  if (
+    status === 'verified' ||
+    status === 'repaired' ||
+    status === 'tested' ||
+    status === 'architecture_checked' ||
+    status === 'done'
+  ) {
+    return 'bg-brand-accent'
+  }
+  if (
+    status === 'error' ||
+    status === 'verify_failed' ||
+    status === 'repair_failed' ||
+    status === 'smoke_failed' ||
+    status === 'architecture_failed'
+  ) {
+    return 'bg-destructive'
+  }
   return 'bg-muted-foreground/40'
 }
 
@@ -42,12 +86,41 @@ export function SpecimenStrip({
   selectedId?: VariantId
   onSelect: (id: VariantId) => void
   verdictReasoning?: string
-  phase: 'idle' | 'generating' | 'judging' | 'done'
+  phase:
+    | 'idle'
+    | 'generating'
+    | 'architecture'
+    | 'verifying'
+    | 'repairing'
+    | 'testing'
+    | 'judging'
+    | 'done'
 }) {
   const list = Object.values(candidates)
   const winner = list.find((c) => c.isWinner)
-  const doneCount = list.filter((c) => c.status === 'done').length
-  const isLive = phase === 'generating' || phase === 'judging'
+  const doneCount = list.filter((c) =>
+    [
+      'done',
+      'architecture_checked',
+      'architecture_partial',
+      'architecture_failed',
+      'verified',
+      'verify_failed',
+      'repaired',
+      'repair_failed',
+      'tested',
+      'smoke_failed',
+      'not_testable',
+      'error',
+    ].includes(c.status),
+  ).length
+  const isLive =
+    phase === 'generating' ||
+    phase === 'architecture' ||
+    phase === 'verifying' ||
+    phase === 'repairing' ||
+    phase === 'testing' ||
+    phase === 'judging'
 
   // Auto-open while live; collapse on verdict. User can still toggle manually.
   const [open, setOpen] = useState(true)
@@ -172,22 +245,46 @@ function CandidateTab({
   onSelect: () => void
 }) {
   const isWin = !!c.isWinner
-  const isGen = c.status === 'generating'
+  const isGen =
+    c.status === 'generating' ||
+    c.status === 'architecture_checking' ||
+    c.status === 'verifying' ||
+    c.status === 'repairing' ||
+    c.status === 'testing'
   const isPending = c.status === 'pending'
-  const isError = c.status === 'error'
+  const isError =
+    c.status === 'error' ||
+    c.status === 'verify_failed' ||
+    c.status === 'repair_failed' ||
+    c.status === 'smoke_failed' ||
+    c.status === 'architecture_failed'
 
   const composite =
     c.scoreComposite != null
       ? c.scoreComposite.toFixed(2)
       : isGen
         ? '·'
-        : c.fragment?.code
+        : hasFragmentCode(c.fragment)
           ? '·'
           : '—'
 
   const title =
     c.fragment?.title ||
-    (isGen ? 'streaming…' : isPending ? 'standby' : isError ? 'failed' : '—')
+    (c.status === 'architecture_checking'
+      ? 'arch check…'
+      : c.status === 'testing'
+        ? 'testing…'
+        : c.status === 'repairing'
+          ? 'repairing…'
+          : c.status === 'verifying'
+            ? 'verifying…'
+            : isGen
+              ? 'streaming…'
+              : isPending
+                ? 'standby'
+                : isError
+                  ? 'failed'
+                  : '—')
 
   return (
     <button
@@ -286,16 +383,43 @@ function CandidateCard({
   onSelect: () => void
 }) {
   const isWin = !!c.isWinner
-  const isGen = c.status === 'generating'
+  const isGen =
+    c.status === 'generating' ||
+    c.status === 'architecture_checking' ||
+    c.status === 'verifying' ||
+    c.status === 'repairing' ||
+    c.status === 'testing'
   const isPending = c.status === 'pending'
-  const isError = c.status === 'error'
-  const isDone = c.status === 'done' || c.status === 'judging' || isWin
+  const isError =
+    c.status === 'error' ||
+    c.status === 'verify_failed' ||
+    c.status === 'repair_failed' ||
+    c.status === 'smoke_failed' ||
+    c.status === 'architecture_failed'
+  const isDone =
+    c.status === 'done' ||
+    c.status === 'architecture_checked' ||
+    c.status === 'architecture_partial' ||
+    c.status === 'architecture_failed' ||
+    c.status === 'verified' ||
+    c.status === 'verify_failed' ||
+    c.status === 'repaired' ||
+    c.status === 'repair_failed' ||
+    c.status === 'tested' ||
+    c.status === 'smoke_failed' ||
+    c.status === 'not_testable' ||
+    c.status === 'judging' ||
+    isWin
 
-  const code = (c.fragment?.code as string | undefined) ?? ''
-  const charCount = code.length
-  const lineCount = code ? code.split('\n').length : 0
+  const files = getFragmentFiles(c.fragment)
+  const primaryCode = getPrimaryFileContent(c.fragment)
+  const charCount = totalCodeLength(c.fragment)
+  const lineCount = files.reduce(
+    (n, f) => n + (f.file_content ? f.file_content.split('\n').length : 0),
+    0,
+  )
   const deps = (c.fragment?.additional_dependencies as string[] | undefined) ?? []
-  const tail = code ? code.split('\n').slice(-3).join('\n') : ''
+  const tail = primaryCode ? primaryCode.split('\n').slice(-3).join('\n') : ''
 
   const [tick, setTick] = useState(0)
   useEffect(() => {
@@ -307,7 +431,7 @@ function CandidateCard({
   const tailRef = useRef<HTMLPreElement>(null)
   useEffect(() => {
     if (tailRef.current) tailRef.current.scrollTop = tailRef.current.scrollHeight
-  }, [code])
+  }, [primaryCode])
 
   return (
     <button
@@ -375,16 +499,21 @@ function CandidateCard({
       {(isGen || (isDone && !c.scoreComposite)) && (
         <div className="px-2.5 lg:px-3 pb-1.5 flex items-center font-mono text-[9px] lg:text-[10px] tracking-[0.14em] uppercase text-muted-foreground tabular gap-x-1.5 lg:gap-x-2 overflow-hidden whitespace-nowrap">
           <span className="shrink-0">
-            <span className="text-foreground">{lineCount.toString().padStart(3, '0')}</span>
-            <span className="text-muted-foreground/60"> ln</span>
+            <span className="text-foreground">{files.length.toString().padStart(2, '0')}</span>
+            <span className="text-muted-foreground/60"> files</span>
           </span>
           <span className="text-muted-foreground/30 shrink-0">·</span>
           <span className="shrink-0">
-            <span className="text-foreground">{charCount.toLocaleString()}</span>
-            <span className="text-muted-foreground/60"> ch</span>
+            <span className="text-foreground">{lineCount.toString().padStart(3, '0')}</span>
+            <span className="text-muted-foreground/60"> ln</span>
           </span>
           <span className="hidden md:inline text-muted-foreground/30 shrink-0">·</span>
           <span className="hidden md:inline shrink-0">
+            <span className="text-foreground">{charCount.toLocaleString()}</span>
+            <span className="text-muted-foreground/60"> ch</span>
+          </span>
+          <span className="hidden lg:inline text-muted-foreground/30 shrink-0">·</span>
+          <span className="hidden lg:inline shrink-0">
             deps <span className="text-foreground">{deps.length}</span>
           </span>
           {isGen && (
@@ -450,6 +579,118 @@ function CandidateCard({
         <Stat label="Polish" value={formatPct(c.scorePolish)} pulsing={c.status === 'judging'} />
       </dl>
 
+      {/* Runtime / repair chips — factual E2B evidence */}
+      {(c.finalVerification ||
+        c.verification ||
+        c.status === 'repairing' ||
+        c.status === 'testing' ||
+        c.status === 'architecture_checking' ||
+        c.architectureCompliance ||
+        c.smoke) && (
+        <div className="px-2.5 lg:px-3 pb-1 flex flex-wrap gap-1">
+          {c.status === 'architecture_checking' && (
+            <span className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
+              Arch…
+            </span>
+          )}
+          {c.architectureCompliance && (
+            <span
+              className={`font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
+                c.architectureCompliance.status === 'passed'
+                  ? 'border-brand-accent/50 text-brand-accent'
+                  : c.architectureCompliance.status === 'partial'
+                    ? 'border-brand/50 text-brand'
+                    : 'border-destructive/50 text-destructive'
+              }`}
+              title={c.architectureCompliance.summary}
+            >
+              {c.architectureCompliance.status === 'passed'
+                ? 'Architecture ✓'
+                : c.architectureCompliance.status === 'partial'
+                  ? 'Architecture partial'
+                  : 'Architecture failed'}
+            </span>
+          )}
+          {c.status === 'repairing' && (
+            <span className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
+              {c.repairReason === 'architecture'
+                ? 'Repairing · Architecture'
+                : c.repairReason === 'combined'
+                  ? 'Repairing · Arch+Runtime'
+                  : c.repairReason === 'runtime'
+                    ? 'Repairing · Runtime'
+                    : 'Repairing…'}
+            </span>
+          )}
+          {c.repairAttempt?.success && (
+            <span
+              className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand-accent/50 text-brand-accent"
+              title={c.repairAttempt.explanation || ''}
+            >
+              Repaired ✓
+            </span>
+          )}
+          {c.repairAttempt && !c.repairAttempt.success && (
+            <span
+              className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-destructive/50 text-destructive"
+              title={c.repairAttempt.error || ''}
+            >
+              Repair failed
+            </span>
+          )}
+          {(c.finalVerification || c.verification) && (
+            <span
+              className={`font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
+                (c.finalVerification || c.verification)!.status === 'passed'
+                  ? 'border-brand-accent/50 text-brand-accent'
+                  : (c.finalVerification || c.verification)!.status ===
+                      'partial'
+                    ? 'border-brand/50 text-brand'
+                    : 'border-destructive/50 text-destructive'
+              }`}
+              title={
+                (c.finalVerification || c.verification)!.errors[0] ||
+                (c.finalVerification || c.verification)!.warnings[0] ||
+                ''
+              }
+            >
+              {(c.finalVerification || c.verification)!.status === 'passed'
+                ? 'Runtime ✓'
+                : (c.finalVerification || c.verification)!.status === 'partial'
+                  ? 'Runtime ~'
+                  : 'Runtime ×'}
+            </span>
+          )}
+          {c.status === 'testing' && (
+            <span className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
+              Testing…
+            </span>
+          )}
+          {c.smoke && (
+            <span
+              className={`font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
+                c.smoke.status === 'passed'
+                  ? 'border-brand-accent/50 text-brand-accent'
+                  : c.smoke.status === 'not_testable'
+                    ? 'border-border text-muted-foreground'
+                    : 'border-destructive/50 text-destructive'
+              }`}
+              title={c.smoke.summary}
+            >
+              {(() => {
+                const total = c.smoke.tests?.length ?? 0
+                const passed =
+                  c.smoke.tests?.filter((t) => t.status === 'passed').length ?? 0
+                if (c.smoke.status === 'not_testable') return 'Not testable'
+                if (total > 0 && passed === total) return `Smoke ✓ ${passed}/${total}`
+                if (total > 0) return `Smoke ${passed}/${total}`
+                return c.smoke.status === 'passed' ? 'Smoke ✓' : 'Smoke failed'
+              })()}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Composite footer + critique on hover */}
       <footer className="border-t border-border/70 px-2.5 lg:px-3 py-1.5 flex items-center justify-between gap-2">
         <span className="font-mono text-[9px] lg:text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
@@ -464,7 +705,7 @@ function CandidateCard({
             ? c.scoreComposite.toFixed(2)
             : isGen
               ? <span className="text-[10px] lg:text-[11px] text-muted-foreground/50">awaiting</span>
-              : c.fragment?.code
+              : hasFragmentCode(c.fragment)
                 ? '·'
                 : '—'}
         </span>

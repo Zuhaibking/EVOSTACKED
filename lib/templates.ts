@@ -21,7 +21,7 @@ const templates = {
     ],
     file: 'script.py',
     instructions:
-      'Runs code as a Jupyter notebook cell. Strong data analysis angle. Can use complex visualisation to explain results.',
+      'Python data analysis / notebook-style execution. Prefer one primary script.py unless helpers clearly help. Strong analysis and visualisation angle.',
     port: null,
   },
   [getTemplateIdSuffix('nextjs-developer')]: {
@@ -38,7 +38,7 @@ const templates = {
     ],
     file: 'pages/index.tsx',
     instructions:
-      'A Next.js 13+ app that reloads automatically. Using the pages router.',
+      'Next.js 13+ Pages Router app with Tailwind/shadcn already available. Split into pages/, components/, and lib/ as the request warrants. When the shared plan requires a backend/database/auth, add pages/api/ (or server modules), a clear data layer under lib/db or similar, and auth helpers — still do NOT overwrite package.json/lockfiles; add packages only via additional_dependencies. When the plan is frontend-only, keep it lean (no Prisma/DB/auth). Hot-reloads automatically. Primary entry is usually pages/index.tsx; add more pages under pages/ when needed.',
     port: 3000,
   },
   [getTemplateIdSuffix('vue-developer')]: {
@@ -46,7 +46,7 @@ const templates = {
     lib: ['vue@latest', 'nuxt@3.13.0', 'tailwindcss'],
     file: 'app/app.vue',
     instructions:
-      'A Vue.js 3+ app that reloads automatically. Only when asked specifically for a Vue app.',
+      'Nuxt 3 / Vue 3 app with Tailwind. Use app/ structure; split components and composables when the request warrants. Prefer this template only when the user asks for Vue/Nuxt. Hot-reloads automatically.',
     port: 3000,
   },
   [getTemplateIdSuffix('streamlit-developer')]: {
@@ -61,7 +61,8 @@ const templates = {
       'plotly',
     ],
     file: 'app.py',
-    instructions: 'A streamlit app that reloads automatically.',
+    instructions:
+      'Streamlit app (primary app.py). Split helpers into extra .py modules when the app grows beyond a simple page. Reloads automatically.',
     port: 8501,
   },
   [getTemplateIdSuffix('gradio-developer')]: {
@@ -77,7 +78,7 @@ const templates = {
     ],
     file: 'app.py',
     instructions:
-      'A gradio app. Gradio Blocks/Interface should be called demo.',
+      'Gradio app. Blocks/Interface must be named demo. Primary file app.py; split helpers into modules when useful.',
     port: 7860,
   },
 }

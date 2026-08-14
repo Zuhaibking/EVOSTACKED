@@ -1,7 +1,13 @@
 'use client'
 
+import type { ArchitectureComplianceResult } from './architecture-compliance'
+import { hasFragmentCode } from './fragment'
+import type { RepairAttemptRecord, RepairReason } from './repair'
 import { FragmentSchema } from './schema'
+import type { SmokeSuiteResult } from './smoke'
 import { TournamentEvent, VARIANTS, VariantId, Verdict } from './tournament'
+import type { ExecutionResult } from './types'
+import type { VerificationResult } from './verification'
 import { DeepPartial } from 'ai'
 import { useCallback, useRef, useState } from 'react'
 
@@ -9,6 +15,20 @@ export type CandidateStatus =
   | 'pending'
   | 'generating'
   | 'done'
+  | 'architecture_checking'
+  | 'architecture_checked'
+  | 'architecture_failed'
+  | 'architecture_partial'
+  | 'verifying'
+  | 'verified'
+  | 'verify_failed'
+  | 'repairing'
+  | 'repaired'
+  | 'repair_failed'
+  | 'testing'
+  | 'tested'
+  | 'smoke_failed'
+  | 'not_testable'
   | 'error'
   | 'judging'
 
@@ -19,6 +39,16 @@ export type Candidate = {
   status: CandidateStatus
   fragment?: DeepPartial<FragmentSchema>
   error?: string
+  verification?: VerificationResult
+  initialVerification?: VerificationResult
+  finalVerification?: VerificationResult
+  repairAttempt?: RepairAttemptRecord | null
+  repairReason?: RepairReason | null
+  smoke?: SmokeSuiteResult | null
+  architectureCompliance?: ArchitectureComplianceResult | null
+  initialArchitectureCompliance?: ArchitectureComplianceResult | null
+  /** Reusable sandbox execution from tournament verification/repair. */
+  execution?: ExecutionResult
   // Judge output
   scoreClarity?: number
   scoreFit?: number
@@ -48,16 +78,25 @@ export type TournamentSubmitArgs = {
   config: any
   userID?: string
   teamID?: string
+  accessToken?: string
 }
+
+export type TournamentPhase =
+  | 'idle'
+  | 'generating'
+  | 'architecture'
+  | 'verifying'
+  | 'repairing'
+  | 'testing'
+  | 'judging'
+  | 'done'
 
 export function useTournament() {
   const [candidates, setCandidates] = useState<Record<VariantId, Candidate>>(
     initialCandidates,
   )
   const [verdict, setVerdict] = useState<Verdict | undefined>()
-  const [phase, setPhase] = useState<'idle' | 'generating' | 'judging' | 'done'>(
-    'idle',
-  )
+  const [phase, setPhase] = useState<TournamentPhase>('idle')
   const [error, setError] = useState<string | undefined>()
   const abortRef = useRef<AbortController | null>(null)
 
@@ -68,23 +107,40 @@ export function useTournament() {
     setPhase('idle')
   }, [])
 
-  // Restore tournament state from a persisted snapshot. Any candidates
-  // mid-generation are settled — done if they produced code, otherwise
-  // marked as error since their stream was killed by the page reload.
   const hydrate = useCallback(
     (snap: {
       candidates: Record<VariantId, Candidate>
       verdict?: Verdict
-      phase: 'idle' | 'generating' | 'judging' | 'done'
+      phase: TournamentPhase
     }) => {
       const next = { ...snap.candidates }
       for (const id of Object.keys(next) as VariantId[]) {
         const c = next[id]
-        if (c.status === 'generating' || c.status === 'judging') {
+        if (
+          c.status === 'generating' ||
+          c.status === 'judging' ||
+          c.status === 'architecture_checking' ||
+          c.status === 'verifying' ||
+          c.status === 'repairing' ||
+          c.status === 'testing'
+        ) {
+          const ready = hasFragmentCode(c.fragment)
+          const final =
+            c.finalVerification || c.verification
           next[id] = {
             ...c,
-            status: c.fragment?.code ? 'done' : 'error',
-            error: c.fragment?.code ? undefined : 'interrupted by reload',
+            status: ready
+              ? final
+                ? final.status === 'failed'
+                  ? c.repairAttempt?.attempted
+                    ? 'repair_failed'
+                    : 'verify_failed'
+                  : c.repairAttempt?.success
+                    ? 'repaired'
+                    : 'verified'
+                : 'done'
+              : 'error',
+            error: ready ? c.error : 'interrupted by reload',
           }
         }
       }
@@ -129,7 +185,6 @@ export function useTournament() {
           if (done) break
           buffer += decoder.decode(value, { stream: true })
 
-          // Parse complete SSE events from the buffer
           let idx
           while ((idx = buffer.indexOf('\n\n')) !== -1) {
             const raw = buffer.slice(0, idx)
@@ -142,7 +197,7 @@ export function useTournament() {
               const evt = JSON.parse(dataLine.slice(6)) as TournamentEvent
               applyEvent(evt)
             } catch {
-              // ignore parse errors on partial frames
+              /* ignore parse errors on partial frames */
             }
           }
         }
@@ -159,6 +214,9 @@ export function useTournament() {
   )
 
   function applyEvent(evt: TournamentEvent) {
+    if (evt.type === 'plan') {
+      return
+    }
     if (evt.type === 'candidate_start') {
       setCandidates((c) => ({
         ...c,
@@ -182,6 +240,129 @@ export function useTournament() {
       setCandidates((c) => ({
         ...c,
         [evt.id]: { ...c[evt.id], status: 'error', error: evt.error },
+      }))
+    } else if (evt.type === 'candidate_architecture_checking') {
+      setPhase('architecture')
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: { ...c[evt.id], status: 'architecture_checking' },
+      }))
+    } else if (evt.type === 'candidate_architecture_checked') {
+      const archStatus = evt.architectureCompliance.status
+      const status: CandidateStatus =
+        archStatus === 'passed'
+          ? 'architecture_checked'
+          : archStatus === 'partial'
+            ? 'architecture_partial'
+            : 'architecture_failed'
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          status,
+          architectureCompliance: evt.architectureCompliance,
+          initialArchitectureCompliance:
+            c[evt.id].initialArchitectureCompliance ??
+            evt.architectureCompliance,
+        },
+      }))
+    } else if (evt.type === 'candidate_verifying') {
+      setPhase('verifying')
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: { ...c[evt.id], status: 'verifying' },
+      }))
+    } else if (evt.type === 'candidate_verified') {
+      const failed = evt.verification.status === 'failed'
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          status: failed ? 'verify_failed' : 'verified',
+          verification: evt.verification,
+          initialVerification: evt.verification,
+          finalVerification: evt.verification,
+          execution: evt.execution,
+          error: failed
+            ? evt.verification.errors[0] || 'Runtime verification failed'
+            : undefined,
+        },
+      }))
+    } else if (evt.type === 'candidate_repairing') {
+      setPhase('repairing')
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          status: 'repairing',
+          repairReason: evt.reason ?? c[evt.id].repairReason,
+        },
+      }))
+    } else if (evt.type === 'candidate_repaired') {
+      const finalFailed = evt.finalVerification.status === 'failed'
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          status: finalFailed ? 'repair_failed' : 'repaired',
+          fragment: evt.fragment,
+          repairAttempt: evt.repairAttempt,
+          repairReason: evt.repairAttempt.reason,
+          initialVerification: evt.initialVerification,
+          finalVerification: evt.finalVerification,
+          verification: evt.finalVerification,
+          architectureCompliance:
+            evt.architectureCompliance ?? c[evt.id].architectureCompliance,
+          execution: evt.execution,
+          error: finalFailed
+            ? evt.finalVerification.errors[0] || 'Repair did not fix runtime'
+            : undefined,
+        },
+      }))
+    } else if (evt.type === 'candidate_repair_failed') {
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          status: 'repair_failed',
+          repairAttempt: evt.repairAttempt,
+          repairReason: evt.repairAttempt.reason,
+          initialVerification: evt.initialVerification,
+          finalVerification: evt.finalVerification,
+          verification: evt.finalVerification,
+          architectureCompliance:
+            evt.architectureCompliance ?? c[evt.id].architectureCompliance,
+          error:
+            evt.repairAttempt.error ||
+            evt.finalVerification.errors[0] ||
+            'Repair failed',
+        },
+      }))
+    } else if (evt.type === 'candidate_testing') {
+      setPhase('testing')
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: { ...c[evt.id], status: 'testing' },
+      }))
+    } else if (evt.type === 'candidate_tested') {
+      const smokeStatus = evt.smoke.status
+      const status: CandidateStatus =
+        smokeStatus === 'passed'
+          ? 'tested'
+          : smokeStatus === 'not_testable'
+            ? 'not_testable'
+            : 'smoke_failed'
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          status,
+          smoke: evt.smoke,
+          error:
+            smokeStatus === 'failed' || smokeStatus === 'timeout'
+              ? evt.smoke.summary || evt.smoke.tests[0]?.error
+              : c[evt.id].error,
+        },
       }))
     } else if (evt.type === 'verdict') {
       setVerdict(evt.verdict)

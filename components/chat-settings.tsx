@@ -14,7 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip'
-import { LLMModelConfig } from '@/lib/models'
+import { LLMModelConfig } from '@/lib/model-catalog'
 import { ExternalLink, Settings2 } from 'lucide-react'
 
 export function ChatSettings({

@@ -11,6 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { getFragmentFiles } from '@/lib/fragment'
 import { FragmentSchema } from '@/lib/schema'
 import { getTemplateId } from '@/lib/templates'
 import { ExecutionResult, ExecutionResultWeb } from '@/lib/types'
@@ -47,7 +48,11 @@ export function Preview({
     result?.template &&
     getTemplateId(result?.template!) !== 'code-interpreter-v1'
 
-  const fileLabel = fragment.file_path || 'untitled'
+  const files = getFragmentFiles(fragment)
+  const fileLabel =
+    files.length > 1
+      ? `${fragment.file_path || files[0]?.file_path || 'untitled'} · ${files.length} files`
+      : fragment.file_path || files[0]?.file_path || 'untitled'
 
   return (
     <div className="absolute md:relative z-10 top-0 left-0 bg-background h-full w-full overflow-hidden flex flex-col md:border-l md:border-border">
@@ -156,14 +161,12 @@ export function Preview({
         {/* Body */}
         <div className="flex-1 overflow-y-auto w-full">
           <TabsContent value="code" className="h-full m-0">
-            {fragment.code && fragment.file_path && (
+            {files.length > 0 && (
               <FragmentCode
-                files={[
-                  {
-                    name: fragment.file_path,
-                    content: fragment.code,
-                  },
-                ]}
+                files={files.map((f) => ({
+                  name: f.file_path,
+                  content: f.file_content,
+                }))}
               />
             )}
           </TabsContent>

@@ -6,7 +6,14 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:repair": "tsx lib/repair.test.ts",
+    "test:smoke": "tsx lib/smoke.test.ts",
+    "test:contracts": "tsx lib/contracts.test.ts",
+    "test:architecture": "tsx lib/architecture.test.ts",
+    "test:compliance": "tsx lib/architecture-compliance.test.ts",
+    "test:unified-repair": "tsx lib/repair.test.ts",
+    "test:models": "tsx lib/models.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.6",
@@ -46,6 +53,7 @@
     "next": "^14.2.35",
     "next-themes": "^0.3.0",
     "ollama-ai-provider": "^1.2.0",
+    "playwright": "^1.62.1",
     "posthog-js": "^1.158.3",
     "prismjs": "^1.30.0",
     "react": "^18.3.1",

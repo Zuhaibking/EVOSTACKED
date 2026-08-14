@@ -1,9 +1,14 @@
 import { handleAPIError, createRateLimitResponse } from '@/lib/api-errors'
 import { Duration } from '@/lib/duration'
+import {
+  applyFileUpdate,
+  getFragmentFiles,
+  getPrimaryFile,
+} from '@/lib/fragment'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
 import { applyPatch } from '@/lib/morph'
 import ratelimit from '@/lib/ratelimit'
-import { FragmentSchema, morphEditSchema, MorphEditSchema } from '@/lib/schema'
+import { FragmentSchema, morphEditSchema } from '@/lib/schema'
 import { generateObject, LanguageModel, CoreMessage } from 'ai'
 
 export const maxDuration = 300
@@ -14,8 +19,6 @@ const rateLimitMaxRequests = process.env.RATE_LIMIT_MAX_REQUESTS
 const ratelimitWindow = process.env.RATE_LIMIT_WINDOW
   ? (process.env.RATE_LIMIT_WINDOW as Duration)
   : '1d'
-
-// System prompt is constructed dynamically below using the current file context
 
 export async function POST(req: Request) {
   const {
@@ -30,7 +33,6 @@ export async function POST(req: Request) {
     currentFragment: FragmentSchema
   } = await req.json()
 
-  // Rate limiting (same as chat route)
   const limit = !config.apiKey
     ? await ratelimit(
         req.headers.get('x-forwarded-for'),
@@ -43,25 +45,43 @@ export async function POST(req: Request) {
     return createRateLimitResponse(limit)
   }
 
-  const { model: modelNameString, apiKey: modelApiKey, ...modelParams } = config
-  const modelClient = getModelClient(model, config)
+  const { model: _modelNameString, apiKey: _modelApiKey, ...modelParams } =
+    config
 
   try {
-    const contextualSystemPrompt = `You are a code editor. Generate a JSON response with exactly these fields:
+    const modelClient = getModelClient(model, config)
+    const files = getFragmentFiles(currentFragment)
+    const primary = getPrimaryFile(currentFragment)
+    const fileTree = files.map((f) => `- ${f.file_path}`).join('\n')
+    // Cap per-file context so multi-file projects fit the editor prompt.
+    const filesContext = files
+      .map((f) => {
+        const content =
+          f.file_content.length > 6000
+            ? `${f.file_content.slice(0, 6000)}\n/* … truncated … */`
+            : f.file_content
+        return `### ${f.file_path}\n\`\`\`\n${content}\n\`\`\``
+      })
+      .join('\n\n')
+
+    const contextualSystemPrompt = `You are a code editor for a multi-file application. Generate a JSON response with exactly these fields:
 
 {
   "commentary": "Explain what changes you are making",
-  "instruction": "One line description of the change", 
+  "instruction": "One line description of the change",
   "edit": "The code changes with // ... existing code ... for unchanged parts",
-  "file_path": "${currentFragment.file_path}"
+  "file_path": "path of the file to edit"
 }
 
-Current file: ${currentFragment.file_path}
-Current code:
-\`\`\`
-${currentFragment.code}
-\`\`\`
+Project files:
+${fileTree || '(none)'}
 
+Primary entry: ${primary?.file_path ?? currentFragment.file_path}
+
+Current project source:
+${filesContext}
+
+Edit the single file that best implements the user's request. Prefer modifying an existing path from the list. You may target a new file_path only when a new module is clearly required.
 `
 
     const result = await generateObject({
@@ -74,23 +94,31 @@ ${currentFragment.code}
     })
 
     const editInstructions = result.object
+    const targetPath = editInstructions.file_path || primary?.file_path
+    if (!targetPath) {
+      throw new Error('No target file_path for morph edit')
+    }
 
-    // Apply edits using Morph
+    const existing =
+      files.find((f) => f.file_path === targetPath)?.file_content ?? ''
+
     const morphResult = await applyPatch({
-      targetFile: currentFragment.file_path,
+      targetFile: targetPath,
       instructions: editInstructions.instruction,
-      initialCode: currentFragment.code,
+      initialCode: existing,
       codeEdit: editInstructions.edit,
     })
 
-    // Return updated fragment in standard format
     const updatedFragment: FragmentSchema = {
       ...currentFragment,
-      code: morphResult.code,
+      architecture:
+        currentFragment.architecture ||
+        'Existing application; incremental edit applied.',
+      file_path: targetPath,
+      code: applyFileUpdate(currentFragment, targetPath, morphResult.code),
       commentary: editInstructions.commentary,
     }
 
-    // Create a streaming response that matches the AI SDK format
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       start(controller) {

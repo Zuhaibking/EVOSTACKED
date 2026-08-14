@@ -10,8 +10,13 @@ import { Preview } from '@/components/preview'
 import { SpecimenStrip } from '@/components/specimen-strip'
 import { useAuth } from '@/lib/auth'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
-import { LLMModelConfig } from '@/lib/models'
+import { LLMModel, LLMModelConfig } from '@/lib/model-catalog'
 import modelsList from '@/lib/models.json'
+import {
+  fragmentCodeEqual,
+  getPrimaryFileContent,
+  hasFragmentCode,
+} from '@/lib/fragment'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import templates from '@/lib/templates'
 import { VariantId } from '@/lib/tournament'
@@ -56,9 +61,14 @@ export default function Home() {
     process.env.NEXT_PUBLIC_USE_MORPH_APPLY === 'true',
   )
 
-  const filteredModels = modelsList.models.filter((model) => {
-    if (process.env.NEXT_PUBLIC_HIDE_LOCAL_MODELS) {
-      return model.providerId !== 'ollama'
+  const hideLocalModels =
+    !!process.env.NEXT_PUBLIC_HIDE_LOCAL_MODELS ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === 'production' ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
+
+  const filteredModels = (modelsList.models as LLMModel[]).filter((model) => {
+    if (hideLocalModels && (model.localOnly || model.providerId === 'ollama')) {
+      return false
     }
     return true
   })
@@ -163,7 +173,7 @@ export default function Home() {
 
   // Determine which API to use based on morph toggle and existing fragment
   const shouldUseMorph =
-    useMorphApply && fragment && fragment.code && fragment.file_path
+    useMorphApply && !!fragment && hasFragmentCode(fragment) && !!fragment.file_path
   const apiEndpoint = shouldUseMorph ? '/api/morph-chat' : '/api/chat'
 
   const { object, submit, isLoading, stop, error } = useObject({
@@ -214,7 +224,7 @@ export default function Home() {
       setFragment(object)
       const content: Message['content'] = [
         { type: 'text', text: object.commentary || '' },
-        { type: 'code', text: object.code || '' },
+        { type: 'code', text: getPrimaryFileContent(object) },
       ]
 
       if (!lastMessage || lastMessage.role !== 'assistant') {
@@ -247,24 +257,32 @@ export default function Home() {
   }, [tournament.candidates, selectedCandidate])
 
   // Whenever the user picks a candidate (or one is auto-selected), promote
-  // its fragment to the main view and spawn the sandbox for it. Skip the
-  // sandbox call entirely on a hydrate-driven re-run when we already have
-  // a result for the same code (otherwise refresh = duplicate sandbox).
+  // its fragment to the main view. Prefer the sandbox already verified during
+  // the tournament; only create a new sandbox when none is reusable.
   useEffect(() => {
     if (!selectedCandidate) return
     const c = tournament.candidates[selectedCandidate]
-    if (!c?.fragment || c.status === 'generating') return
+    if (
+      !c?.fragment ||
+      c.status === 'generating' ||
+      c.status === 'verifying' ||
+      c.status === 'architecture_checking' ||
+      c.status === 'repairing' ||
+      c.status === 'testing'
+    ) {
+      return
+    }
 
     const next = c.fragment as DeepPartial<FragmentSchema>
     const sameCodeAlreadyRunning =
-      !!result && !!fragment && fragment.code === next.code
+      !!result && !!fragment && fragmentCodeEqual(fragment, next)
     setFragment(next)
     if (sameCodeAlreadyRunning) return
 
     // Append a synthetic assistant message capturing the selected candidate.
     const content: Message['content'] = [
       { type: 'text', text: next.commentary || '' },
-      { type: 'code', text: next.code || '' },
+      { type: 'code', text: getPrimaryFileContent(next) },
     ]
     setMessages((prev) => {
       const last = prev[prev.length - 1]
@@ -276,7 +294,15 @@ export default function Home() {
       return [...prev, { role: 'assistant', content, object: next }]
     })
 
-    // Sandbox the selected candidate (skip if the same fragment already lives in result)
+    // Reuse tournament-verified (or repaired) sandbox when available.
+    const runtime = c.finalVerification || c.verification
+    if (c.execution && runtime && runtime.status !== 'failed') {
+      setResult(c.execution)
+      setCurrentTab('fragment')
+      setIsPreviewLoading(false)
+      return
+    }
+
     if (!session) return
     let cancelled = false
     setIsPreviewLoading(true)
@@ -293,6 +319,10 @@ export default function Home() {
       .then((r) => r.json())
       .then((sandboxResult) => {
         if (cancelled) return
+        if (sandboxResult?.error && !sandboxResult?.sbxId) {
+          setIsPreviewLoading(false)
+          return
+        }
         setResult(sandboxResult)
         setCurrentTab('fragment')
       })
@@ -304,7 +334,11 @@ export default function Home() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCandidate, tournament.candidates[selectedCandidate ?? 'minimal']?.status])
+  }, [
+    selectedCandidate,
+    tournament.candidates[selectedCandidate ?? 'minimal']?.status,
+    tournament.candidates[selectedCandidate ?? 'minimal']?.execution,
+  ])
 
   function setMessage(message: Partial<Message>, index?: number) {
     setMessages((previousMessages) => {
@@ -328,7 +362,13 @@ export default function Home() {
     if (isLoading) {
       stop()
     }
-    if (tournament.phase === 'generating') {
+    if (
+      tournament.phase === 'generating' ||
+      tournament.phase === 'verifying' ||
+      tournament.phase === 'architecture' ||
+      tournament.phase === 'repairing' ||
+      tournament.phase === 'testing'
+    ) {
       tournament.stop()
     }
 
@@ -357,6 +397,7 @@ export default function Home() {
       tournament.submit({
         userID: session?.user?.id,
         teamID: userTeam?.id,
+        accessToken: session?.access_token,
         messages: toAISDKMessages(updatedMessages),
         template: currentTemplate,
         model: currentModel,
@@ -478,7 +519,15 @@ export default function Home() {
             canClear={messages.length > 0}
             canUndo={messages.length > 1 && !isLoading}
             onUndo={handleUndo}
-            isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
+            isLoading={
+              isLoading ||
+              tournament.phase === 'generating' ||
+              tournament.phase === 'verifying' ||
+              tournament.phase === 'architecture' ||
+              tournament.phase === 'repairing' ||
+              tournament.phase === 'testing' ||
+              tournament.phase === 'judging'
+            }
             hasFragment={!!fragment}
           />
         </div>

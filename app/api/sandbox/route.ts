@@ -1,9 +1,5 @@
 import { FragmentSchema } from '@/lib/schema'
-import { getTemplateId } from '@/lib/templates'
-import { ExecutionResultInterpreter, ExecutionResultWeb } from '@/lib/types'
-import { Sandbox } from '@e2b/code-interpreter'
-
-const sandboxTimeout = 10 * 60 * 1000 // 10 minute in ms
+import { deployAndVerify } from '@/lib/verify-candidate'
 
 export const maxDuration = 60
 
@@ -19,73 +15,47 @@ export async function POST(req: Request) {
     teamID: string | undefined
     accessToken: string | undefined
   } = await req.json()
-  console.log('fragment', fragment)
-  console.log('userID', userID)
-  // console.log('apiKey', apiKey)
 
-  // Strip any "-dev" suffix the prompt-side template ids carry in development.
-  // E2B's hosted templates don't have the suffix; the -dev convention only
-  // applies if a user has published a *-dev custom template to their account.
-  const sandboxTemplate = getTemplateId(fragment.template)
-
-  // Create an interpreter or a sandbox
-  const sbx = await Sandbox.create(sandboxTemplate, {
-    metadata: {
-      template: sandboxTemplate,
-      userID: userID ?? '',
-      teamID: teamID ?? '',
-    },
-    timeoutMs: sandboxTimeout,
-    ...(teamID && accessToken
-      ? {
-          headers: {
-            'X-Supabase-Team': teamID,
-            'X-Supabase-Token': accessToken,
-          },
-        }
-      : {}),
+  console.log('fragment', {
+    title: fragment?.title,
+    template: fragment?.template,
+    file_path: fragment?.file_path,
   })
+  console.log('userID', userID)
 
-  // Install packages
-  if (fragment.has_additional_dependencies) {
-    await sbx.commands.run(fragment.install_dependencies_command)
-    console.log(
-      `Installed dependencies: ${fragment.additional_dependencies.join(', ')} in sandbox ${sbx.sandboxId}`,
-    )
-  }
-
-  // Copy code to fs
-  if (fragment.code && Array.isArray(fragment.code)) {
-    fragment.code.forEach(async (file) => {
-      await sbx.files.write(file.file_path, file.file_content)
-      console.log(`Copied file to ${file.file_path} in ${sbx.sandboxId}`)
+  try {
+    // Shared deploy path with tournament verification. Preview requests still
+    // return ExecutionResult; verification is included for diagnostics.
+    const { verification, execution } = await deployAndVerify(fragment, {
+      userID,
+      teamID,
+      accessToken,
     })
-  } else {
-    await sbx.files.write(fragment.file_path, fragment.code)
-    console.log(`Copied file to ${fragment.file_path} in ${sbx.sandboxId}`)
-  }
 
-  // Execute code or return a URL to the running sandbox
-  if (sandboxTemplate === 'code-interpreter-v1') {
-    const { logs, error, results } = await sbx.runCode(fragment.code || '')
+    if (!execution) {
+      return new Response(
+        JSON.stringify({
+          error:
+            verification.errors[0] ||
+            'Sandbox failed runtime verification',
+          verification,
+        }),
+        { status: 502 },
+      )
+    }
 
     return new Response(
       JSON.stringify({
-        sbxId: sbx?.sandboxId,
-        template: sandboxTemplate,
-        stdout: logs.stdout,
-        stderr: logs.stderr,
-        runtimeError: error,
-        cellResults: results,
-      } as ExecutionResultInterpreter),
+        ...execution,
+        verification,
+      }),
+    )
+  } catch (e: any) {
+    return new Response(
+      JSON.stringify({
+        error: e?.message || 'Sandbox deploy failed',
+      }),
+      { status: 500 },
     )
   }
-
-  return new Response(
-    JSON.stringify({
-      sbxId: sbx?.sandboxId,
-      template: sandboxTemplate,
-      url: `https://${sbx?.getHost(fragment.port || 80)}`,
-    } as ExecutionResultWeb),
-  )
 }
