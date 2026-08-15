@@ -13,7 +13,8 @@
     "test:architecture": "tsx lib/architecture.test.ts",
     "test:compliance": "tsx lib/architecture-compliance.test.ts",
     "test:unified-repair": "tsx lib/repair.test.ts",
-    "test:models": "tsx lib/models.test.ts"
+    "test:models": "tsx lib/models.test.ts",
+    "test:preview-execution": "tsx lib/preview-execution.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.6",

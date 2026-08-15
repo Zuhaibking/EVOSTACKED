@@ -17,6 +17,7 @@ import {
   getPrimaryFileContent,
   hasFragmentCode,
 } from '@/lib/fragment'
+import { resolveReusablePreviewExecution } from '@/lib/preview-execution'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import templates from '@/lib/templates'
 import { VariantId } from '@/lib/tournament'
@@ -37,7 +38,7 @@ export default function Home() {
   const [languageModel, setLanguageModel] = useLocalStorage<LLMModelConfig>(
     'languageModel',
     {
-      model: 'gpt-5',
+      model: 'gpt-4.1',
     },
   )
 
@@ -74,7 +75,7 @@ export default function Home() {
   })
 
   const defaultModel = filteredModels.find(
-    (model) => model.id === 'gpt-5',
+    (model) => model.id === 'gpt-4.1',
   ) || filteredModels[0]
 
   const currentModel = filteredModels.find(
@@ -295,15 +296,25 @@ export default function Home() {
     })
 
     // Reuse tournament-verified (or repaired) sandbox when available.
-    const runtime = c.finalVerification || c.verification
-    if (c.execution && runtime && runtime.status !== 'failed') {
-      setResult(c.execution)
+    // Runtime ✓ alone does not set `result`; Preview needs ExecutionResult.url.
+    const reusable = resolveReusablePreviewExecution({
+      execution: c.execution,
+      verification: c.verification,
+      finalVerification: c.finalVerification,
+    })
+    if (reusable) {
+      setResult(reusable)
       setCurrentTab('fragment')
       setIsPreviewLoading(false)
       return
     }
 
-    if (!session) return
+    // No reusable sandbox — deploy via existing /api/sandbox path.
+    if (!session) {
+      setAuthDialog(true)
+      return
+    }
+
     let cancelled = false
     setIsPreviewLoading(true)
     setCurrentTab('code')
@@ -311,9 +322,9 @@ export default function Home() {
       method: 'POST',
       body: JSON.stringify({
         fragment: next,
-        userID: session?.user?.id,
+        userID: session.user.id,
         teamID: userTeam?.id,
-        accessToken: session?.access_token,
+        accessToken: session.access_token,
       }),
     })
       .then((r) => r.json())
@@ -333,11 +344,14 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedCandidate,
     tournament.candidates[selectedCandidate ?? 'minimal']?.status,
     tournament.candidates[selectedCandidate ?? 'minimal']?.execution,
+    tournament.candidates[selectedCandidate ?? 'minimal']?.verification,
+    tournament.candidates[selectedCandidate ?? 'minimal']?.finalVerification,
+    session,
+    userTeam?.id,
   ])
 
   function setMessage(message: Partial<Message>, index?: number) {

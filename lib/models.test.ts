@@ -57,19 +57,18 @@ function assertThrowsCode(fn: () => unknown, code: string) {
   }
 }
 
-// ---- Catalog / Asta compatibility ----
+// ---- Catalog / Astra 1.2 (sole paid model) ----
 {
-  const asta = findCatalogModel('gpt-5')
-  assert.ok(asta)
-  assert.equal(asta!.providerId, 'openai')
-  assert.equal(asta!.tier, 'paid')
-  assert.equal(asta!.name, 'Asta 2.0')
-  assert.equal(getModelGroupLabel(asta!), 'PAID')
+  const astra = findCatalogModel('gpt-4.1')
+  assert.ok(astra)
+  assert.equal(astra!.providerId, 'openai')
+  assert.equal(astra!.tier, 'paid')
+  assert.equal(astra!.name, 'Astra 1.2')
+  assert.equal(getModelGroupLabel(astra!), 'PAID')
 }
 
 {
   const catalog = getModelsCatalog()
-  assert.ok(catalog.some((m) => m.id === 'gpt-5'))
   assert.ok(catalog.some((m) => m.providerId === 'google' && m.tier === 'free'))
   assert.ok(catalog.some((m) => m.providerId === 'groq' && m.tier === 'free'))
   assert.ok(catalog.some((m) => m.providerId === 'cerebras' && m.tier === 'free'))
@@ -79,14 +78,54 @@ function assertThrowsCode(fn: () => unknown, code: string) {
   const ollama = findCatalogModel('llama3.2')
   assert.ok(ollama?.localOnly)
   assert.equal(getModelGroupLabel(ollama!), 'LOCAL')
+
+  // Exactly one paid model: Astra 1.2 → gpt-4.1 / openai
+  const paid = catalog.filter((m) => m.tier === 'paid')
+  assert.equal(paid.length, 1)
+  assert.equal(paid[0].id, 'gpt-4.1')
+  assert.equal(paid[0].name, 'Astra 1.2')
+  assert.equal(paid[0].providerId, 'openai')
+  assert.equal(paid[0].tier, 'paid')
+  assert.notEqual(paid[0].localOnly, true)
+  assert.equal(getModelGroupLabel(paid[0]), 'PAID')
+
+  // Removed paid models must not appear
+  for (const id of ['gpt-5', 'o3', 'gpt-5-mini', 'gpt-4o-mini', 'gpt-5-nano']) {
+    assert.equal(findCatalogModel(id), undefined, `paid model ${id} must be removed`)
+  }
+
+  // Free cloud providers unchanged (still present)
+  for (const id of [
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-3.6-flash',
+    'llama-3.1-8b-instant',
+    'openai/gpt-oss-20b',
+    'llama3.1-8b',
+    'openai/gpt-4o-mini',
+    'mistral-small-latest',
+    'minimaxai/minimax-m3',
+    'google/gemma-4-31b-it',
+  ]) {
+    const m = findCatalogModel(id)
+    assert.ok(m, `missing free model ${id}`)
+    assert.equal(m!.tier, 'free')
+    assert.notEqual(m!.providerId, 'openai')
+  }
 }
 
-// 1. OpenAI resolves correctly
+// 1. OpenAI / Astra 1.2 resolves correctly
 withEnv({ OPENAI_API_KEY: 'test-openai-key' }, () => {
-  const client = getModelClient(
-    { id: 'gpt-5', name: 'Asta 2.0', provider: 'EvoStack', providerId: 'openai' },
-    {},
-  )
+  const resolved = resolveCatalogModel({
+    id: 'gpt-4.1',
+    providerId: 'openai',
+    tier: 'paid',
+  })
+  assert.equal(resolved.id, 'gpt-4.1')
+  assert.equal(resolved.providerId, 'openai')
+  assert.equal(resolved.tier, 'paid')
+  assert.equal(resolved.name, 'Astra 1.2')
+  const client = getModelClient(resolved, {})
   assert.ok(client)
   assert.equal(resolveProviderApiKey('openai'), 'test-openai-key')
 })
@@ -109,6 +148,75 @@ withEnv(
     )
     assert.ok(client)
     assert.equal(resolveProviderApiKey('google'), 'test-google-key')
+  },
+)
+
+// gemini-3.6-flash resolves to Google free tier (no live API call)
+withEnv(
+  {
+    OPENAI_API_KEY: 'should-not-be-used-for-gemini-3-6',
+    GOOGLE_GENERATIVE_AI_API_KEY: 'test-google-key-3-6',
+    GOOGLE_AI_API_KEY: undefined,
+  },
+  () => {
+    const resolved = resolveCatalogModel({
+      id: 'gemini-3.6-flash',
+      providerId: 'google',
+    })
+    assert.equal(resolved.providerId, 'google')
+    assert.equal(resolved.tier, 'free')
+    assert.equal(resolved.id, 'gemini-3.6-flash')
+    assert.equal(resolved.name, 'Gemini 3.6 Flash')
+    assert.equal(getModelGroupLabel(resolved), 'FREE')
+    assert.equal(resolveProviderApiKey('google'), 'test-google-key-3-6')
+    assert.ok(getModelClient(resolved, {}))
+  },
+)
+
+assertThrowsCode(
+  () =>
+    resolveCatalogModel({
+      id: 'gemini-3.6-flash',
+      providerId: 'openai',
+    }),
+  'provider_model_mismatch',
+)
+
+assertThrowsCode(
+  () =>
+    resolveCatalogModel({
+      id: 'gemini-3.6-flash',
+      providerId: 'google',
+      tier: 'paid',
+    }),
+  'tier_mismatch',
+)
+
+withEnv(
+  {
+    GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+    GOOGLE_AI_API_KEY: undefined,
+    OPENAI_API_KEY: 'paid-key-present',
+  },
+  () => {
+    try {
+      getModelClient(
+        {
+          id: 'gemini-3.6-flash',
+          name: 'Gemini 3.6 Flash',
+          provider: 'Google',
+          providerId: 'google',
+        },
+        {},
+      )
+      assert.fail('expected missing google key for gemini-3.6-flash')
+    } catch (e: any) {
+      assert.ok(e instanceof ProviderResolutionError)
+      assert.equal(e.providerId, 'google')
+      assert.equal(e.code, 'missing_api_key')
+      assert.notEqual(e.providerId, 'openai')
+      assert.doesNotMatch(e.message, /OPENAI_API_KEY|sk-/)
+    }
   },
 )
 
@@ -521,11 +629,11 @@ withEnv(
   )
 }
 
-// 8. Unknown provider rejected
+// 8. Unknown provider rejected (Astra 1.2 cannot be remapped)
 assertThrowsCode(
   () =>
     resolveCatalogModel({
-      id: 'gpt-5',
+      id: 'gpt-4.1',
       providerId: 'not-a-real-provider',
     }),
   'provider_model_mismatch',
@@ -569,22 +677,23 @@ assertThrowsCode(
 assertThrowsCode(
   () =>
     resolveCatalogModel({
-      id: 'gpt-5',
+      id: 'gpt-4.1',
       providerId: 'openai',
       tier: 'free',
     }),
   'tier_mismatch',
 )
 
-// Catalog remains authoritative when client omits spoofed tier
+// Catalog remains authoritative when client omits spoofed name/tier
 {
   const resolved = resolveCatalogModel({
-    id: 'gpt-5',
+    id: 'gpt-4.1',
     providerId: 'openai',
     name: 'spoofed',
   })
   assert.equal(resolved.tier, 'paid')
-  assert.equal(resolved.name, 'Asta 2.0')
+  assert.equal(resolved.id, 'gpt-4.1')
+  assert.equal(resolved.name, 'Astra 1.2')
 }
 
 // 12–13. localhost / 127.0.0.1 rejected in production
@@ -685,8 +794,8 @@ withEnv({ OPENAI_API_KEY: undefined }, () => {
   try {
     getModelClient(
       {
-        id: 'gpt-5',
-        name: 'Asta 2.0',
+        id: 'gpt-4.1',
+        name: 'Astra 1.2',
         provider: 'EvoStack',
         providerId: 'openai',
       },
@@ -724,20 +833,24 @@ withEnv(
   },
 )
 
-// 17. existing Asta models remain compatible
-for (const id of ['gpt-5', 'o3', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-5-nano']) {
-  const m = resolveCatalogModel({ id })
+// 17. sole paid model Astra 1.2 remains compatible (no fallback to other paid IDs)
+{
+  const m = resolveCatalogModel({ id: 'gpt-4.1' })
   assert.equal(m.providerId, 'openai')
   assert.equal(m.tier, 'paid')
+  assert.equal(m.name, 'Astra 1.2')
+  assert.equal(findCatalogModel('gpt-5'), undefined)
+  assert.equal(findCatalogModel('o3'), undefined)
 }
 
 // 18. tournament modelClient path remains compatible (same getModelClient entrypoint)
 withEnv({ OPENAI_API_KEY: 'tournament-key' }, () => {
   const model = resolveCatalogModel({
-    id: 'gpt-5',
+    id: 'gpt-4.1',
     providerId: 'openai',
     tier: 'paid',
   })
+  assert.equal(model.name, 'Astra 1.2')
   const client = getModelClient(model, { temperature: 0.7 })
   assert.ok(client)
 })

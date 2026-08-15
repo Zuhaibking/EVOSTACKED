@@ -29,6 +29,18 @@
       "description": "Google Gemini 2.5 Flash — free-tier cloud model"
     },
     {
+      "id": "gemini-3.6-flash",
+      "provider": "Google",
+      "providerId": "google",
+      "name": "Gemini 3.6 Flash",
+      "tier": "free",
+      "capabilities": {
+        "structuredOutput": true,
+        "streaming": true
+      },
+      "description": "Google Gemini 3.6 Flash — free-tier cloud model"
+    },
+    {
       "id": "llama-3.1-8b-instant",
       "provider": "Groq",
       "providerId": "groq",
@@ -115,54 +127,10 @@
       "description": "NVIDIA-hosted Gemma 4 31B Instruct — free-tier cloud (text generation)"
     },
     {
-      "id": "gpt-5",
-      "provider": "EvoStack",
-      "providerId": "openai",
-      "name": "Asta 2.0",
-      "tier": "paid",
-      "multiModal": true,
-      "capabilities": {
-        "structuredOutput": true,
-        "streaming": true,
-        "tools": true,
-        "vision": true
-      },
-      "description": "Paid OpenAI model (Asta 2.0)"
-    },
-    {
-      "id": "o3",
-      "provider": "EvoStack",
-      "providerId": "openai",
-      "name": "Asta 1.8 Reasoner",
-      "tier": "paid",
-      "multiModal": true,
-      "capabilities": {
-        "structuredOutput": true,
-        "streaming": true,
-        "tools": true,
-        "vision": true
-      },
-      "description": "Paid OpenAI reasoning model (Asta 1.8)"
-    },
-    {
-      "id": "gpt-5-mini",
-      "provider": "EvoStack",
-      "providerId": "openai",
-      "name": "Asta 1.5",
-      "tier": "paid",
-      "multiModal": true,
-      "capabilities": {
-        "structuredOutput": true,
-        "streaming": true,
-        "vision": true
-      },
-      "description": "Paid OpenAI model (Asta 1.5)"
-    },
-    {
       "id": "gpt-4.1",
       "provider": "EvoStack",
       "providerId": "openai",
-      "name": "Asta 1.2",
+      "name": "Astra 1.2",
       "tier": "paid",
       "multiModal": true,
       "capabilities": {
@@ -170,34 +138,7 @@
         "streaming": true,
         "vision": true
       },
-      "description": "Paid OpenAI model (Asta 1.2)"
-    },
-    {
-      "id": "gpt-4o-mini",
-      "provider": "EvoStack",
-      "providerId": "openai",
-      "name": "Asta 1.0",
-      "tier": "paid",
-      "multiModal": true,
-      "capabilities": {
-        "structuredOutput": true,
-        "streaming": true,
-        "vision": true
-      },
-      "description": "Paid OpenAI model (Asta 1.0)"
-    },
-    {
-      "id": "gpt-5-nano",
-      "provider": "EvoStack",
-      "providerId": "openai",
-      "name": "Asta 1.0 Nano",
-      "tier": "paid",
-      "multiModal": true,
-      "capabilities": {
-        "structuredOutput": true,
-        "streaming": true
-      },
-      "description": "Paid OpenAI model (Asta 1.0 Nano)"
+      "description": "Paid OpenAI model (Astra 1.2)"
     },
     {
       "id": "llama3.2",
