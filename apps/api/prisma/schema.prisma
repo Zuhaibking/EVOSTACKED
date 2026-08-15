@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  runs      Run[]
+}
+
+model Run {
+  id                String   @id
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status            String   @default("active")
+  memoryVersion     Int      @default(0)
+  selectedCandidate String?
+  hasTournament     Boolean  @default(false)
+  activeVersion     Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  messages       Message[]
+  fragments      Fragment[]
+  candidates     Candidate[]
+  projectBrain   ProjectBrain?
+  versions       VersionSnapshot[]
+  memoryItems    MemoryItem[]
+  memoryCaches   MemoryCache[]
+  llmCaches      LlmResponseCache[]
+  requestLogs    RequestLog[]
+
+  @@index([userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  runId     String
+  userId    String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  role      String
+  content   Json
+  createdAt DateTime @default(now())
+
+  @@index([runId, userId, createdAt])
+}
+
+model Fragment {
+  id          String   @id @default(cuid())
+  runId       String
+  userId      String
+  run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  candidateId String?
+  data        Json
+  createdAt   DateTime @default(now())
+
+  @@index([runId, userId])
+}
+
+model Candidate {
+  id        String   @id @default(cuid())
+  runId     String
+  userId    String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  variantId String
+  status    String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([runId, userId])
+}
+
+model ProjectBrain {
+  id        String   @id @default(cuid())
+  runId     String   @unique
+  userId    String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
+model VersionSnapshot {
+  id        String   @id @default(cuid())
+  runId     String
+  userId    String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  version   Int
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@unique([runId, version])
+  @@index([runId, userId])
+}
+
+model MemoryItem {
+  id              String   @id @default(cuid())
+  runId           String
+  userId          String
+  run             Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  kind            String
+  text            String
+  sourceMessageId String?
+  createdAt       DateTime @default(now())
+
+  @@index([runId, userId, createdAt])
+}
+
+model MemoryCache {
+  id            String   @id @default(cuid())
+  cacheKey      String
+  userId        String
+  runId         String
+  run           Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  memoryVersion Int
+  payload       Json
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([userId, runId, memoryVersion])
+  @@index([expiresAt])
+}
+
+model LlmResponseCache {
+  id            String   @id @default(cuid())
+  cacheKey      String
+  userId        String
+  runId         String
+  run           Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  memoryVersion Int
+  model         String
+  payload       Json
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([userId, runId, memoryVersion, cacheKey])
+  @@index([expiresAt])
+}
+
+model RequestLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  runId      String?
+  run        Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  method     String
+  path       String
+  status     Int
+  durationMs Int
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([runId, createdAt])
+}

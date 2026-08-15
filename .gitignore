@@ -1,40 +1,28 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
 node_modules
-/.pnp
+.pnp
 .pnp.js
 .yarn/install-state.gz
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
+coverage
+.next
+out
+build
+dist
 .DS_Store
 *.pem
-
-# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# local env files
-.env*.local
-
-# vercel
+pnpm-debug.log*
 .vercel
-
-# typescript
 *.tsbuildinfo
 next-env.d.ts
-
 .env
 .env.local
 .env.*.local
+apps/api/dist
+packages/shared/dist
+
+# leftover pre-monorepo copy and archive
+EVOSTACKED/
+EVOSTACKED.zip
+_old_EVOSTACKED/
