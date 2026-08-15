@@ -18,7 +18,8 @@ import {
   normalizeApplicationPlan,
 } from '@/lib/plan'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
-import { buildGenerationPrompt } from '@/lib/prompt'
+import { buildEvolutionPrompt, buildGenerationPrompt } from '@/lib/prompt'
+import { formatBaselineFilesForPrompt, buildSingleIterationVerdict } from '@/lib/evolution'
 import ratelimit from '@/lib/ratelimit'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import { Templates } from '@/lib/templates'
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
     userID,
     teamID,
     accessToken,
+    evolution,
   }: {
     messages: CoreMessage[]
     userID: string | undefined
@@ -115,7 +117,54 @@ export async function POST(req: Request) {
     template: Templates
     model: LLMModel
     config: LLMModelConfig
+    evolution?: {
+      mode: 'evolution'
+      candidateMode?: 'single' | 'tournament'
+      activeVariantId?: VariantId
+      userRequest: string
+      parentVersion: number
+      previousScore?: number
+      plan: ApplicationPlan
+      baselineFragment: any
+      iterationContext?: {
+        knownIssues?: string[]
+        fileTree?: string[]
+        summary?: { productName?: string }
+      }
+    }
   } = await req.json()
+
+  const isEvolution = evolution?.mode === 'evolution'
+  const isSingleIteration =
+    isEvolution && (evolution?.candidateMode || 'single') === 'single'
+  if (isEvolution) {
+    if (!evolution?.plan || !evolution?.userRequest?.trim()) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Evolution requires an existing ApplicationPlan and improvement request',
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    if (!evolution.baselineFragment) {
+      return new Response(
+        JSON.stringify({
+          error: 'Evolution requires the current application baselineFragment',
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    if (isSingleIteration && !evolution.activeVariantId) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Single-candidate evolution requires activeVariantId (Use this version first)',
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+  }
 
   const limit = !config.apiKey
     ? await ratelimit(
@@ -140,7 +189,42 @@ export async function POST(req: Request) {
     return handleAPIError(error, { hasOwnApiKey: !!config.apiKey })
   }
 
-  const brief = messagesToBrief(messages)
+  const brief = isEvolution
+    ? evolution!.userRequest
+    : messagesToBrief(messages)
+
+  const baselineFiles = isEvolution
+    ? (() => {
+        const frag = evolution!.baselineFragment
+        const code = frag?.code
+        if (Array.isArray(code)) {
+          return code
+            .filter(
+              (f: any) =>
+                f &&
+                typeof f.file_path === 'string' &&
+                typeof f.file_content === 'string',
+            )
+            .map((f: any) => ({
+              file_path: f.file_path as string,
+              file_content: f.file_content as string,
+            }))
+        }
+        if (typeof code === 'string' && typeof frag?.file_path === 'string') {
+          return [{ file_path: frag.file_path as string, file_content: code }]
+        }
+        return [] as Array<{ file_path: string; file_content: string }>
+      })()
+    : []
+
+  const evolutionMessages: CoreMessage[] = isEvolution
+    ? [
+        {
+          role: 'user',
+          content: `IMPROVEMENT REQUEST:\n${evolution!.userRequest}\n\nEXISTING APPLICATION (modify these files — do not start from scratch):\n\n${formatBaselineFilesForPrompt(baselineFiles)}`,
+        },
+      ]
+    : messages
 
   const encoder = new TextEncoder()
 
@@ -159,24 +243,41 @@ export async function POST(req: Request) {
       }
 
       // ---- Phase 0: shared product plan (once for all 3 candidates) ----
+      // Evolution reuses the existing plan — no planning LLM call.
       let plan: ApplicationPlan | null = null
-      try {
-        const planned = await generateObject({
-          model: modelClient as LanguageModel,
-          schema: applicationPlanSchema,
-          system: PLANNING_SYSTEM_PROMPT,
-          prompt: `User request / conversation brief:\n\n${brief}\n\nProduce the shared ApplicationPlan that all three implementation candidates must satisfy.`,
-          maxRetries: 0,
-          temperature: 0.2,
-        })
-        plan = normalizeApplicationPlan(planned.object)
+      if (isEvolution && evolution?.plan) {
+        plan = normalizeApplicationPlan(evolution.plan)
         send({ type: 'plan', plan })
-      } catch {
-        plan = null
+      } else {
+        try {
+          const planned = await generateObject({
+            model: modelClient as LanguageModel,
+            schema: applicationPlanSchema,
+            system: PLANNING_SYSTEM_PROMPT,
+            prompt: `User request / conversation brief:\n\n${brief}\n\nProduce the shared ApplicationPlan that all three implementation candidates must satisfy.`,
+            maxRetries: 0,
+            temperature: 0.2,
+          })
+          plan = normalizeApplicationPlan(planned.object)
+          send({ type: 'plan', plan })
+        } catch {
+          plan = null
+        }
       }
 
-      // ---- Phase 1: three candidates in parallel ----
-      const genTasks = VARIANTS.map(async (variant) => {
+      // ---- Phase 1: candidates (exactly 3 for initial; exactly 1 for Improve) ----
+      const variantsToGenerate = isSingleIteration
+        ? VARIANTS.filter((v) => v.id === evolution!.activeVariantId)
+        : [...VARIANTS]
+
+      if (variantsToGenerate.length === 0) {
+        send({ type: 'tournament_done' })
+        closed = true
+        controller.close()
+        return
+      }
+
+      const genTasks = variantsToGenerate.map(async (variant) => {
         send({
           type: 'candidate_start',
           id: variant.id,
@@ -185,17 +286,32 @@ export async function POST(req: Request) {
         })
 
         try {
-          const system = buildGenerationPrompt({
-            template,
-            plan,
-            variantDirection: variant.systemSuffix,
-          })
+          const system = isEvolution
+            ? buildEvolutionPrompt({
+                template,
+                plan,
+                variantDirection: variant.systemSuffix,
+                userRequest: evolution!.userRequest,
+                parentVersion: evolution!.parentVersion,
+                productName:
+                  evolution?.iterationContext?.summary?.productName ||
+                  plan?.productName,
+                knownIssues: evolution?.iterationContext?.knownIssues,
+                fileTree:
+                  evolution?.iterationContext?.fileTree ||
+                  baselineFiles.map((f) => f.file_path),
+              })
+            : buildGenerationPrompt({
+                template,
+                plan,
+                variantDirection: variant.systemSuffix,
+              })
 
           const result = await streamObject({
             model: modelClient as LanguageModel,
             schema,
             system,
-            messages,
+            messages: evolutionMessages,
             maxRetries: 0,
             ...modelParams,
             temperature: variant.temperature,
@@ -528,17 +644,44 @@ export async function POST(req: Request) {
         }),
       )
 
-      // ---- Phase 3: judge with plan + runtime + repair + smoke ----
+      // ---- Phase 3: judge / validate ----
+      // Single-candidate Improve: deterministic validation (zero extra LLM calls).
+      // Initial tournament: existing LLM judge over exactly 3 candidates.
       try {
+        if (isSingleIteration) {
+          const only = afterSmoke[0]
+          const verdict = buildSingleIterationVerdict({
+            id: only.id,
+            verification: only.finalVerification,
+            architecture: only.architectureCompliance,
+            smoke: only.smoke,
+            previousScore: evolution?.previousScore,
+            userRequest: evolution?.userRequest,
+          })
+          send({ type: 'verdict', verdict })
+        } else {
         const requirementsBlock = plan
           ? formatPlanForJudge(plan)
           : 'No formal plan available — score fit against the user brief.'
 
-        const judgePrompt = `You are the chief editor of a tournament that judges three competing implementations of ONE shared product spec.
+        const evolutionJudgePreamble = isEvolution
+          ? `
+This is an EVOLUTION / IMPROVEMENT round (parent v${evolution!.parentVersion}).
+Score how well each candidate implements the improvement request while preserving the existing product.
+Improvement request: ${evolution!.userRequest}
+Prefer coherent modifications over unrelated rewrites.
+`
+          : ''
 
+        const judgePrompt = `You are the chief editor of a tournament that judges three competing implementations of ONE shared product spec.
+${evolutionJudgePreamble}
 Score each candidate 0–1 on:
 - clarity: coherent, maintainable structure
-- fit: implements SHARED core features, pages, contracts, AND architectureRequirements (penalize missing requirements; do not reward unnecessary infrastructure)
+- fit: implements SHARED core features, pages, contracts, AND architectureRequirements (penalize missing requirements; do not reward unnecessary infrastructure)${
+          isEvolution
+            ? '; also fulfills the improvement request'
+            : ''
+        }
 - polish: design craft appropriate to the product domain (not generic AI UI)
 
 FACTUAL EVIDENCE (not opinion):
@@ -615,7 +758,22 @@ ${summary}`
           }
         }
         send({ type: 'verdict', verdict })
+        } // end else (multi-candidate LLM judge)
       } catch {
+        if (isSingleIteration && afterSmoke[0]) {
+          const only = afterSmoke[0]
+          send({
+            type: 'verdict',
+            verdict: buildSingleIterationVerdict({
+              id: only.id,
+              verification: only.finalVerification,
+              architecture: only.architectureCompliance,
+              smoke: only.smoke,
+              previousScore: evolution?.previousScore,
+              userRequest: evolution?.userRequest,
+            }),
+          })
+        } else {
         const rank = (r: WithSmoke) => {
           let s = 0
           if (r.finalVerification.status === 'passed') s += 4
@@ -667,6 +825,7 @@ ${summary}`
             scores,
           },
         })
+        } // end else heuristic multi-candidate
       }
 
       send({ type: 'tournament_done' })

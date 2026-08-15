@@ -2,6 +2,7 @@
 
 import type { ArchitectureComplianceResult } from './architecture-compliance'
 import { hasFragmentCode } from './fragment'
+import type { ApplicationPlan } from './plan'
 import type { RepairAttemptRecord, RepairReason } from './repair'
 import { FragmentSchema } from './schema'
 import type { SmokeSuiteResult } from './smoke'
@@ -79,6 +80,30 @@ export type TournamentSubmitArgs = {
   userID?: string
   teamID?: string
   accessToken?: string
+  /** Optional evolution payload — one user-triggered single-candidate improvement. */
+  evolution?: {
+    mode: 'evolution'
+    candidateMode?: 'single' | 'tournament'
+    activeVariantId?: import('./tournament').VariantId
+    userRequest: string
+    parentVersion: number
+    previousScore?: number
+    plan: ApplicationPlan
+    baselineFragment: any
+    iterationContext?: {
+      knownIssues?: string[]
+      fileTree?: string[]
+      summary?: { productName?: string }
+      currentVersion?: number
+      recentRequests?: string[]
+      userRequest?: string
+      parentVersion?: number
+      previousScore?: number
+      baselinePrimaryFile?: string
+      baselineTemplate?: string
+      activeCandidateId?: import('./tournament').VariantId
+    }
+  }
 }
 
 export type TournamentPhase =
@@ -98,6 +123,7 @@ export function useTournament() {
   const [verdict, setVerdict] = useState<Verdict | undefined>()
   const [phase, setPhase] = useState<TournamentPhase>('idle')
   const [error, setError] = useState<string | undefined>()
+  const [plan, setPlan] = useState<ApplicationPlan | undefined>()
   const abortRef = useRef<AbortController | null>(null)
 
   const reset = useCallback(() => {
@@ -105,6 +131,7 @@ export function useTournament() {
     setVerdict(undefined)
     setError(undefined)
     setPhase('idle')
+    setPlan(undefined)
   }, [])
 
   const hydrate = useCallback(
@@ -112,6 +139,7 @@ export function useTournament() {
       candidates: Record<VariantId, Candidate>
       verdict?: Verdict
       phase: TournamentPhase
+      plan?: ApplicationPlan
     }) => {
       const next = { ...snap.candidates }
       for (const id of Object.keys(next) as VariantId[]) {
@@ -147,6 +175,7 @@ export function useTournament() {
       setCandidates(next)
       setVerdict(snap.verdict)
       setPhase(snap.phase === 'idle' ? 'idle' : 'done')
+      if (snap.plan) setPlan(snap.plan)
     },
     [],
   )
@@ -215,6 +244,7 @@ export function useTournament() {
 
   function applyEvent(evt: TournamentEvent) {
     if (evt.type === 'plan') {
+      setPlan(evt.plan)
       return
     }
     if (evt.type === 'candidate_start') {
@@ -394,6 +424,7 @@ export function useTournament() {
     verdict,
     phase,
     error,
+    plan,
     submit,
     stop,
     reset,

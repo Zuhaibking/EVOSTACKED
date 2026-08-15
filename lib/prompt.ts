@@ -95,6 +95,65 @@ export function buildGenerationPrompt(options: {
   return parts.filter(Boolean).join('\n')
 }
 
+/**
+ * Evolution / improve-this-app system prompt.
+ * Candidates must MODIFY the existing application, not recreate from scratch.
+ */
+export function buildEvolutionPrompt(options: {
+  template: Templates
+  plan?: ApplicationPlan | null
+  variantDirection?: string
+  userRequest: string
+  parentVersion: number
+  productName?: string
+  knownIssues?: string[]
+  fileTree?: string[]
+}): string {
+  const issues =
+    options.knownIssues && options.knownIssues.length > 0
+      ? options.knownIssues.map((i) => `- ${i}`).join('\n')
+      : '- (none recorded)'
+  const tree =
+    options.fileTree && options.fileTree.length > 0
+      ? options.fileTree.map((p) => `- ${p}`).join('\n')
+      : '- (see baseline files in the user message)'
+
+  const evolutionRules = `## EVOLUTION MODE (iteration — not a new project)
+You are improving an EXISTING runnable application (parent v${options.parentVersion}${
+    options.productName ? `: ${options.productName}` : ''
+  }).
+
+User improvement request:
+${options.userRequest}
+
+Rules:
+- MODIFY the existing app. Preserve working behavior unless the request changes it.
+- Reuse existing file paths and structure where possible; add files only when needed.
+- Keep the shared ApplicationPlan requirements unless the improvement explicitly extends them.
+- Do not invent a unrelated product. Do not reset branding/domain without cause.
+- Output a complete multi-file fragment (full file contents for every file you touch or keep).
+- Prefer surgical, coherent upgrades over wholesale rewrites.
+
+Current file tree:
+${tree}
+
+Known issues to consider:
+${issues}
+`
+
+  const parts = [
+    systemRulesPrompt(),
+    evolutionRules,
+    options.plan ? formatApplicationPlan(options.plan) : '',
+    options.variantDirection
+      ? `## Specimen direction (this candidate only)\n${options.variantDirection}\n`
+      : '',
+    implementationChecklistPrompt(),
+    templatesSection(options.template),
+  ]
+  return parts.filter(Boolean).join('\n')
+}
+
 /** When no shared plan exists (follow-up chat), force internal planning. */
 function mentalPlanningPrompt(): string {
   return `## Internal planning (required)

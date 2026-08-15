@@ -1,14 +1,33 @@
 'use client'
 
+import { ActiveVersionPicker } from '@/components/active-version-picker'
 import { AuthDialog, ViewType } from '@/components/auth-dialog'
 import { Chat } from '@/components/chat'
 import { ChatInput } from '@/components/chat-input'
 import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
+import { ImproveAppPanel } from '@/components/improve-app-panel'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
+import { ProjectBrainPanel } from '@/components/project-brain-panel'
+import { RecommendationsPanel } from '@/components/recommendations-panel'
 import { SpecimenStrip } from '@/components/specimen-strip'
 import { useAuth } from '@/lib/auth'
+import {
+  applyEvolutionToBrain,
+  buildEvolutionApiPayload,
+  buildIterationContext,
+  completeEvolutionRound,
+  createEvolutionRound,
+  EvolutionRound,
+  failEvolutionRound,
+  INITIAL_TOURNAMENT_CANDIDATE_COUNT,
+  ITERATION_CANDIDATE_COUNT,
+  preserveBrainAfterFailedEvolution,
+  shouldPromoteEvolutionWinner,
+  startEvolutionRound,
+} from '@/lib/evolution'
+import { buildEvolutionReport } from '@/lib/evolution-report'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
 import { LLMModel, LLMModelConfig } from '@/lib/model-catalog'
 import modelsList from '@/lib/models.json'
@@ -18,15 +37,25 @@ import {
   hasFragmentCode,
 } from '@/lib/fragment'
 import { resolveReusablePreviewExecution } from '@/lib/preview-execution'
+import {
+  buildBrainFromTournament,
+  deserializeProjectBrain,
+  ProjectBrain,
+  selectActiveProjectVersion,
+  serializeProjectBrain,
+} from '@/lib/project-brain'
+import { buildRecommendations } from '@/lib/recommendations'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
+import type { SmokeSuiteResult } from '@/lib/smoke'
+import { diffFragments } from '@/lib/source-diff'
 import templates from '@/lib/templates'
-import { VariantId } from '@/lib/tournament'
-import { useTournament } from '@/lib/tournament-client'
+import { VariantId, VARIANTS } from '@/lib/tournament'
+import { useTournament, type Candidate } from '@/lib/tournament-client'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from 'ai/react'
 import { usePostHog } from 'posthog-js/react'
-import { SetStateAction, useEffect, useState } from 'react'
+import { SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
 
 export default function Home() {
@@ -55,6 +84,24 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState('')
   const [selectedCandidate, setSelectedCandidate] = useState<VariantId | undefined>()
   const [hasTournament, setHasTournament] = useState(false)
+  const [projectBrain, setProjectBrain] = useState<ProjectBrain | null>(null)
+  const [evolutionRound, setEvolutionRound] = useState<EvolutionRound | null>(
+    null,
+  )
+  const [evolutionBaseline, setEvolutionBaseline] = useState<
+    DeepPartial<FragmentSchema> | undefined
+  >()
+  const [evolutionParentEvidence, setEvolutionParentEvidence] = useState<{
+    runtime?: string
+    architecture?: string
+    smoke?: SmokeSuiteResult | null
+  } | null>(null)
+  /** Keeps initial Product/Premium/Innovate metadata after single-candidate iteration. */
+  const [specimenArchive, setSpecimenArchive] = useState<Record<
+    VariantId,
+    Candidate
+  > | null>(null)
+  const evolutionActiveRef = useRef(false)
   const tournament = useTournament()
   const { session, userTeam, signOut } = useAuth(setAuthDialog, setAuthView)
   const [useMorphApply, setUseMorphApply] = useLocalStorage(
@@ -117,11 +164,20 @@ export default function Home() {
         if (snap?.result) setResult(snap.result)
         if (snap?.selectedCandidate) setSelectedCandidate(snap.selectedCandidate)
         if (snap?.hasTournament) setHasTournament(snap.hasTournament)
+        if (snap?.brain) {
+          const restored = deserializeProjectBrain(
+            typeof snap.brain === 'string'
+              ? snap.brain
+              : JSON.stringify(snap.brain),
+          )
+          if (restored) setProjectBrain(restored)
+        }
         if (snap?.tournament) {
           tournament.hydrate({
             candidates: snap.tournament.candidates,
             verdict: snap.tournament.verdict,
             phase: snap.tournament.phase ?? 'done',
+            plan: snap.tournament.plan,
           })
         }
       }
@@ -145,10 +201,13 @@ export default function Home() {
         result,
         selectedCandidate,
         hasTournament,
+        // Compact brain only (paths + plan metadata — no file bodies / secrets).
+        brain: projectBrain ? serializeProjectBrain(projectBrain) : null,
         tournament: {
           candidates: tournament.candidates,
           verdict: tournament.verdict,
           phase: tournament.phase,
+          plan: tournament.plan,
         },
       }
       localStorage.setItem(RUN_KEY, JSON.stringify(snap))
@@ -162,15 +221,78 @@ export default function Home() {
     result,
     selectedCandidate,
     hasTournament,
+    projectBrain,
     tournament.candidates,
     tournament.verdict,
     tournament.phase,
+    tournament.plan,
   ])
   const currentTemplate =
     selectedTemplate === 'auto'
       ? templates
       : { [selectedTemplate]: templates[selectedTemplate] }
   const lastMessage = messages[messages.length - 1]
+
+  const evolutionSourceDiff = useMemo(() => {
+    if (evolutionRound?.status !== 'succeeded' || !evolutionBaseline) return null
+    const winnerId = evolutionRound.winnerId
+    const winnerFrag = winnerId
+      ? tournament.candidates[winnerId]?.fragment
+      : undefined
+    if (!winnerFrag) return null
+    return diffFragments(evolutionBaseline, winnerFrag)
+  }, [
+    evolutionRound?.status,
+    evolutionRound?.winnerId,
+    evolutionBaseline,
+    tournament.candidates,
+  ])
+
+  const evolutionReport = useMemo(() => {
+    if (
+      evolutionRound?.status !== 'succeeded' ||
+      !evolutionSourceDiff ||
+      !evolutionRound
+    ) {
+      return null
+    }
+    const winnerId = evolutionRound.winnerId
+    const winner = winnerId ? tournament.candidates[winnerId] : undefined
+    return buildEvolutionReport({
+      round: evolutionRound,
+      diff: evolutionSourceDiff,
+      evidence: {
+        parentRuntime: evolutionParentEvidence?.runtime,
+        parentArchitecture: evolutionParentEvidence?.architecture,
+        parentSmoke: evolutionParentEvidence?.smoke,
+        winnerRuntime:
+          winner?.finalVerification?.status || winner?.verification?.status,
+        winnerArchitecture: winner?.architectureCompliance?.status,
+        winnerSmoke: winner?.smoke ?? null,
+        verdict: tournament.verdict,
+        newVersion: projectBrain?.currentVersion,
+      },
+    })
+  }, [
+    evolutionRound,
+    evolutionSourceDiff,
+    evolutionParentEvidence,
+    tournament.candidates,
+    tournament.verdict,
+    projectBrain?.currentVersion,
+  ])
+
+  const recommendations = useMemo(() => {
+    if (!projectBrain?.activeCandidateId) return []
+    return buildRecommendations({
+      brain: projectBrain,
+      diff: evolutionSourceDiff,
+    })
+  }, [projectBrain, evolutionSourceDiff])
+
+  // Silence unused invariant (kept for documentation / external imports).
+  void ITERATION_CANDIDATE_COUNT
+  void VARIANTS
 
   // Determine which API to use based on morph toggle and existing fragment
   const shouldUseMorph =
@@ -249,18 +371,158 @@ export default function Home() {
     if (error) stop()
   }, [error])
 
-  // Auto-select the winning candidate when verdict arrives.
+  // Do not auto-activate a specimen — user must click "Use this version".
+  // Preview selection remains manual via SpecimenStrip / ActiveVersionPicker.
+
+  // Build / refresh Project Brain when an initial tournament completes (no extra LLM calls).
+  // Does not record v1 until the user selects an active version.
   useEffect(() => {
-    const winner = Object.values(tournament.candidates).find((c) => c.isWinner)
-    if (winner && !selectedCandidate) {
-      setSelectedCandidate(winner.id)
+    if (evolutionActiveRef.current || evolutionRound?.status === 'running') {
+      return
     }
-  }, [tournament.candidates, selectedCandidate])
+    if (tournament.phase !== 'done' || !tournament.verdict) return
+    // Skip brain rebuild when this completion was a single-candidate iteration.
+    if (evolutionRound?.candidateMode === 'single') return
+    const winnerId = tournament.verdict.winnerId
+    const winner = tournament.candidates[winnerId]
+    if (!winner?.fragment) return
+
+    const firstUser = messages.find((m) => m.role === 'user')
+    const userRequest =
+      firstUser?.content
+        ?.filter((p) => p.type === 'text')
+        .map((p) => ('text' in p ? String(p.text) : ''))
+        .join('\n')
+        .trim() || undefined
+
+    setProjectBrain((prev) =>
+      buildBrainFromTournament({
+        previous: prev,
+        plan: tournament.plan,
+        fragment: winner.fragment,
+        winnerId,
+        verification: winner.finalVerification || winner.verification,
+        architectureCompliance: winner.architectureCompliance,
+        smoke: winner.smoke ?? null,
+        verdict: tournament.verdict,
+        repairAttempt: winner.repairAttempt ?? null,
+        userRequest,
+      }),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    tournament.phase,
+    tournament.verdict,
+    tournament.plan,
+    tournament.candidates,
+    evolutionRound?.status,
+    evolutionRound?.candidateMode,
+  ])
+
+  // Archive the initial 3 specimens so iteration does not erase their metadata.
+  useEffect(() => {
+    if (tournament.phase !== 'done' || !tournament.verdict) return
+    if (evolutionRound?.candidateMode === 'single') return
+    const withCode = Object.values(tournament.candidates).filter((c) =>
+      hasFragmentCode(c.fragment),
+    )
+    if (withCode.length >= INITIAL_TOURNAMENT_CANDIDATE_COUNT) {
+      setSpecimenArchive({ ...tournament.candidates })
+    }
+  }, [
+    tournament.phase,
+    tournament.verdict,
+    tournament.candidates,
+    evolutionRound?.candidateMode,
+  ])
+
+  // Finalize one user-triggered evolution round (promote only on success).
+  useEffect(() => {
+    if (evolutionRound?.status !== 'running') return
+    if (tournament.phase !== 'done') return
+
+    const candidateList = Object.values(tournament.candidates)
+    const canPromote =
+      !!tournament.verdict &&
+      shouldPromoteEvolutionWinner({
+        verdict: tournament.verdict,
+        candidates: candidateList,
+      })
+
+    if (!canPromote || !tournament.verdict) {
+      const failed = failEvolutionRound(
+        evolutionRound,
+        tournament.error ||
+          'Evolution failed — no reliable improved candidate. Kept current version.',
+      )
+      setEvolutionRound(failed)
+      setProjectBrain((prev) =>
+        prev ? preserveBrainAfterFailedEvolution(prev, failed) : prev,
+      )
+      evolutionActiveRef.current = false
+      return
+    }
+
+    const winner = tournament.candidates[tournament.verdict.winnerId]
+    const completed = completeEvolutionRound(evolutionRound, {
+      verdict: tournament.verdict,
+      candidates: candidateList.map((c) => ({
+        id: c.id,
+        finalVerification: c.finalVerification,
+        verification: c.verification,
+        smoke: c.smoke,
+      })),
+    })
+    setEvolutionRound(completed)
+    setProjectBrain((prev) =>
+      prev
+        ? applyEvolutionToBrain(prev, completed, {
+            verdict: tournament.verdict!,
+            fragment: winner?.fragment,
+            verification: winner?.finalVerification || winner?.verification,
+            architectureCompliance: winner?.architectureCompliance
+              ? {
+                  status: winner.architectureCompliance.status,
+                  summary: winner.architectureCompliance.summary,
+                }
+              : null,
+            smoke: winner?.smoke
+              ? {
+                  status: winner.smoke.status,
+                  summary: winner.smoke.summary,
+                }
+              : null,
+            repairAttempt: winner?.repairAttempt ?? null,
+          })
+        : prev,
+    )
+    if (winner) {
+      setSpecimenArchive((prev) => {
+        if (!prev) return prev
+        const id = winner.id
+        return {
+          ...prev,
+          [id]: {
+            ...prev[id],
+            ...winner,
+            isWinner: true,
+          },
+        }
+      })
+    }
+    evolutionActiveRef.current = false
+    setSelectedCandidate(tournament.verdict.winnerId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tournament.phase, tournament.verdict, tournament.error, evolutionRound?.status])
 
   // Whenever the user picks a candidate (or one is auto-selected), promote
   // its fragment to the main view. Prefer the sandbox already verified during
   // the tournament; only create a new sandbox when none is reusable.
   useEffect(() => {
+    // Keep the working app on screen while evolution candidates are still running.
+    if (evolutionActiveRef.current && evolutionRound?.status === 'running') {
+      return
+    }
     if (!selectedCandidate) return
     const c = tournament.candidates[selectedCandidate]
     if (
@@ -352,6 +614,7 @@ export default function Home() {
     tournament.candidates[selectedCandidate ?? 'minimal']?.finalVerification,
     session,
     userTeam?.id,
+    evolutionRound?.status,
   ])
 
   function setMessage(message: Partial<Message>, index?: number) {
@@ -408,6 +671,12 @@ export default function Home() {
       setSelectedCandidate(undefined)
       setFragment(undefined)
       setResult(undefined)
+      setProjectBrain(null)
+      setEvolutionRound(null)
+    setEvolutionBaseline(undefined)
+    setEvolutionParentEvidence(null)
+    setSpecimenArchive(null)
+    evolutionActiveRef.current = false
       tournament.submit({
         userID: session?.user?.id,
         teamID: userTeam?.id,
@@ -498,6 +767,123 @@ export default function Home() {
     setResult(undefined)
     setCurrentTab('code')
     setIsPreviewLoading(false)
+    setProjectBrain(null)
+    setEvolutionRound(null)
+    setEvolutionBaseline(undefined)
+    setEvolutionParentEvidence(null)
+    setSpecimenArchive(null)
+    evolutionActiveRef.current = false
+  }
+
+  /** Confirm a tournament specimen as the active project version (v1 on first pick). */
+  function handleUseVersion(id: VariantId) {
+    const pool = specimenArchive || tournament.candidates
+    const c = pool[id]
+    if (!c?.fragment || !hasFragmentCode(c.fragment)) return
+    setSelectedCandidate(id)
+    setProjectBrain((prev) => {
+      if (!prev) {
+        const seeded = buildBrainFromTournament({
+          plan: tournament.plan,
+          fragment: c.fragment,
+          winnerId: id,
+          verification: c.finalVerification || c.verification,
+          architectureCompliance: c.architectureCompliance,
+          smoke: c.smoke ?? null,
+          verdict: tournament.verdict,
+          repairAttempt: c.repairAttempt ?? null,
+        })
+        return selectActiveProjectVersion(seeded, {
+          candidateId: id,
+          fragment: c.fragment,
+          verification: c.finalVerification || c.verification,
+          architectureCompliance: c.architectureCompliance,
+          smoke: c.smoke ?? null,
+          scoreComposite: c.scoreComposite,
+          summary: `${c.label} is now your active version.`,
+        })
+      }
+      return selectActiveProjectVersion(prev, {
+        candidateId: id,
+        fragment: c.fragment,
+        verification: c.finalVerification || c.verification,
+        architectureCompliance: c.architectureCompliance,
+        smoke: c.smoke ?? null,
+        scoreComposite: c.scoreComposite,
+        summary: `${c.label} is now your active version.`,
+      })
+    })
+  }
+
+  /** One user-triggered single-candidate evolution over the active version. */
+  function handleEvolve(request: string) {
+    if (!session) {
+      setAuthDialog(true)
+      return
+    }
+    if (
+      !projectBrain?.plan ||
+      !projectBrain.activeCandidateId ||
+      !fragment ||
+      !hasFragmentCode(fragment)
+    ) {
+      return
+    }
+    if (evolutionActiveRef.current) return
+
+    const activeId = projectBrain.activeCandidateId
+    const parentCandidate = tournament.candidates[activeId]
+    setEvolutionBaseline(fragment)
+    setEvolutionParentEvidence({
+      runtime: projectBrain.verification?.status,
+      architecture: projectBrain.architectureCompliance?.status,
+      smoke: parentCandidate?.smoke ?? null,
+    })
+
+    const ctx = buildIterationContext({
+      brain: projectBrain,
+      userRequest: request,
+      baselineFragment: fragment,
+    })
+    const round = startEvolutionRound(
+      createEvolutionRound({
+        brain: projectBrain,
+        userRequest: request,
+        candidateMode: 'single',
+        activeVariantId: activeId,
+      }),
+    )
+    setEvolutionRound(round)
+    evolutionActiveRef.current = true
+    setHasTournament(true)
+
+    const evolution = buildEvolutionApiPayload(ctx, fragment, {
+      activeVariantId: activeId,
+    })
+    tournament.submit({
+      userID: session.user?.id,
+      teamID: userTeam?.id,
+      accessToken: session.access_token,
+      messages: toAISDKMessages([
+        { role: 'user', content: [{ type: 'text', text: request }] },
+      ]),
+      template: currentTemplate,
+      model: currentModel,
+      config: languageModel,
+      evolution,
+    })
+
+    posthog.capture('evolution_submit', {
+      parentVersion: round.parentVersion,
+      model: languageModel.model,
+      candidateMode: 'single',
+      activeVariantId: activeId,
+    })
+
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: [{ type: 'text', text: `Improve: ${request}` }] },
+    ])
   }
 
   function setCurrentPreview(preview: {
@@ -557,6 +943,84 @@ export default function Home() {
           phase={tournament.phase}
         />
       )}
+
+      {hasTournament &&
+        tournament.phase === 'done' &&
+        evolutionRound?.status !== 'running' && (
+          <ActiveVersionPicker
+            candidates={specimenArchive || tournament.candidates}
+            activeId={projectBrain?.activeCandidateId}
+            onPreview={(id) => {
+              const pool = specimenArchive || tournament.candidates
+              const c = pool[id]
+              if (c?.fragment) {
+                setSelectedCandidate(id)
+                setFragment(c.fragment)
+                const reusable = resolveReusablePreviewExecution({
+                  execution: c.execution,
+                  verification: c.verification,
+                  finalVerification: c.finalVerification,
+                })
+                if (reusable) {
+                  setResult(reusable)
+                  setCurrentTab('fragment')
+                } else {
+                  setCurrentTab('code')
+                }
+              }
+            }}
+            onUseVersion={handleUseVersion}
+          />
+        )}
+
+      {projectBrain && <ProjectBrainPanel brain={projectBrain} />}
+
+      {projectBrain?.activeCandidateId && (
+        <RecommendationsPanel
+          recommendations={recommendations}
+          disabled={
+            evolutionRound?.status === 'running' ||
+            tournament.phase === 'generating' ||
+            tournament.phase === 'verifying' ||
+            tournament.phase === 'architecture' ||
+            tournament.phase === 'repairing' ||
+            tournament.phase === 'testing' ||
+            tournament.phase === 'judging'
+          }
+          onImprove={handleEvolve}
+        />
+      )}
+
+      <ImproveAppPanel
+        enabled={
+          !!projectBrain?.plan &&
+          !!projectBrain.activeCandidateId &&
+          !!fragment &&
+          hasFragmentCode(fragment) &&
+          (projectBrain.activeVersion || projectBrain.currentVersion || 0) >=
+            1 &&
+          !evolutionActiveRef.current &&
+          tournament.phase !== 'generating' &&
+          tournament.phase !== 'architecture' &&
+          tournament.phase !== 'verifying' &&
+          tournament.phase !== 'repairing' &&
+          tournament.phase !== 'testing' &&
+          tournament.phase !== 'judging'
+        }
+        busy={evolutionRound?.status === 'running'}
+        round={evolutionRound}
+        candidates={tournament.candidates}
+        phase={tournament.phase}
+        report={evolutionReport}
+        sourceDiff={evolutionSourceDiff}
+        onEvolve={handleEvolve}
+        onPreviewWinner={() => {
+          if (evolutionRound?.winnerId) {
+            setSelectedCandidate(evolutionRound.winnerId)
+            setCurrentTab('fragment')
+          }
+        }}
+      />
 
       {/* Workspace */}
       <div className="flex-1 grid w-full md:grid-cols-2 overflow-hidden">
