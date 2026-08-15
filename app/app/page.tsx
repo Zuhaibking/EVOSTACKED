@@ -12,6 +12,7 @@ import { Preview } from '@/components/preview'
 import { ProjectBrainPanel } from '@/components/project-brain-panel'
 import { RecommendationsPanel } from '@/components/recommendations-panel'
 import { SpecimenStrip } from '@/components/specimen-strip'
+import { VersionVaultPanel } from '@/components/version-vault-panel'
 import { useAuth } from '@/lib/auth'
 import {
   applyEvolutionToBrain,
@@ -52,6 +53,13 @@ import templates from '@/lib/templates'
 import { VariantId, VARIANTS } from '@/lib/tournament'
 import { useTournament, type Candidate } from '@/lib/tournament-client'
 import { ExecutionResult } from '@/lib/types'
+import {
+  buildVersionSnapshot,
+  listVersionSnapshots,
+  restoreVersionSnapshot,
+  saveVersionSnapshot,
+  type VersionSnapshot,
+} from '@/lib/version-vault'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from 'ai/react'
 import { usePostHog } from 'posthog-js/react'
@@ -101,6 +109,8 @@ export default function Home() {
     VariantId,
     Candidate
   > | null>(null)
+  const [vaultSnapshots, setVaultSnapshots] = useState<VersionSnapshot[]>([])
+  const [vaultRefreshKey, setVaultRefreshKey] = useState(0)
   const evolutionActiveRef = useRef(false)
   const tournament = useTournament()
   const { session, userTeam, signOut } = useAuth(setAuthDialog, setAuthView)
@@ -185,9 +195,32 @@ export default function Home() {
       // ignore corrupted snapshots
     } finally {
       setHydrated(true)
+      try {
+        setVaultSnapshots(listVersionSnapshots())
+      } catch {
+        setVaultSnapshots([])
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function refreshVaultList() {
+    try {
+      setVaultSnapshots(listVersionSnapshots())
+      setVaultRefreshKey((k) => k + 1)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function persistVaultSnapshot(snapshot: VersionSnapshot) {
+    try {
+      saveVersionSnapshot(snapshot)
+      refreshVaultList()
+    } catch {
+      /* never crash on vault write */
+    }
+  }
 
   // Persist whenever the meaningful slice changes — but only after the
   // initial hydrate is complete so we don't overwrite the saved snapshot
@@ -474,28 +507,54 @@ export default function Home() {
       })),
     })
     setEvolutionRound(completed)
-    setProjectBrain((prev) =>
-      prev
-        ? applyEvolutionToBrain(prev, completed, {
-            verdict: tournament.verdict!,
-            fragment: winner?.fragment,
-            verification: winner?.finalVerification || winner?.verification,
-            architectureCompliance: winner?.architectureCompliance
-              ? {
-                  status: winner.architectureCompliance.status,
-                  summary: winner.architectureCompliance.summary,
-                }
-              : null,
-            smoke: winner?.smoke
-              ? {
-                  status: winner.smoke.status,
-                  summary: winner.smoke.summary,
-                }
-              : null,
-            repairAttempt: winner?.repairAttempt ?? null,
-          })
-        : prev,
-    )
+    setProjectBrain((prev) => {
+      if (!prev) return prev
+      const next = applyEvolutionToBrain(prev, completed, {
+        verdict: tournament.verdict!,
+        fragment: winner?.fragment,
+        verification: winner?.finalVerification || winner?.verification,
+        architectureCompliance: winner?.architectureCompliance
+          ? {
+              status: winner.architectureCompliance.status,
+              summary: winner.architectureCompliance.summary,
+            }
+          : null,
+        smoke: winner?.smoke
+          ? {
+              status: winner.smoke.status,
+              summary: winner.smoke.summary,
+            }
+          : null,
+        repairAttempt: winner?.repairAttempt ?? null,
+      })
+      if (winner?.fragment) {
+        const ver = next.versions[next.versions.length - 1]
+        persistVaultSnapshot(
+          buildVersionSnapshot({
+            version: next.currentVersion,
+            parentVersion: completed.parentVersion,
+            label: ver?.label || completed.userRequest || `v${next.currentVersion}`,
+            userRequest: completed.userRequest,
+            summary: tournament.verdict?.reasoning,
+            fragment: winner.fragment as DeepPartial<FragmentSchema>,
+            plan: next.plan || tournament.plan,
+            activeCandidateId: tournament.verdict!.winnerId,
+            compositeScore: completed.newScore != null
+              ? completed.newScore / 100
+              : ver?.compositeScore,
+            runtimeStatus:
+              winner.finalVerification?.status || winner.verification?.status,
+            smokeStatus: winner.smoke?.status,
+            architectureStatus: winner.architectureCompliance?.status,
+            previewReachable:
+              winner.finalVerification?.previewReachable ||
+              winner.verification?.previewReachable,
+            execution: winner.execution,
+          }),
+        )
+      }
+      return next
+    })
     if (winner) {
       setSpecimenArchive((prev) => {
         if (!prev) return prev
@@ -772,6 +831,7 @@ export default function Home() {
     setEvolutionBaseline(undefined)
     setEvolutionParentEvidence(null)
     setSpecimenArchive(null)
+    refreshVaultList()
     evolutionActiveRef.current = false
   }
 
@@ -782,18 +842,29 @@ export default function Home() {
     if (!c?.fragment || !hasFragmentCode(c.fragment)) return
     setSelectedCandidate(id)
     setProjectBrain((prev) => {
-      if (!prev) {
-        const seeded = buildBrainFromTournament({
-          plan: tournament.plan,
-          fragment: c.fragment,
-          winnerId: id,
-          verification: c.finalVerification || c.verification,
-          architectureCompliance: c.architectureCompliance,
-          smoke: c.smoke ?? null,
-          verdict: tournament.verdict,
-          repairAttempt: c.repairAttempt ?? null,
-        })
-        return selectActiveProjectVersion(seeded, {
+      const next = (() => {
+        if (!prev) {
+          const seeded = buildBrainFromTournament({
+            plan: tournament.plan,
+            fragment: c.fragment,
+            winnerId: id,
+            verification: c.finalVerification || c.verification,
+            architectureCompliance: c.architectureCompliance,
+            smoke: c.smoke ?? null,
+            verdict: tournament.verdict,
+            repairAttempt: c.repairAttempt ?? null,
+          })
+          return selectActiveProjectVersion(seeded, {
+            candidateId: id,
+            fragment: c.fragment,
+            verification: c.finalVerification || c.verification,
+            architectureCompliance: c.architectureCompliance,
+            smoke: c.smoke ?? null,
+            scoreComposite: c.scoreComposite,
+            summary: `${c.label} is now your active version.`,
+          })
+        }
+        return selectActiveProjectVersion(prev, {
           candidateId: id,
           fragment: c.fragment,
           verification: c.finalVerification || c.verification,
@@ -802,17 +873,74 @@ export default function Home() {
           scoreComposite: c.scoreComposite,
           summary: `${c.label} is now your active version.`,
         })
-      }
-      return selectActiveProjectVersion(prev, {
-        candidateId: id,
-        fragment: c.fragment,
-        verification: c.finalVerification || c.verification,
-        architectureCompliance: c.architectureCompliance,
-        smoke: c.smoke ?? null,
-        scoreComposite: c.scoreComposite,
-        summary: `${c.label} is now your active version.`,
-      })
+      })()
+
+      // First active selection → vault v1 (or refresh active snapshot).
+      persistVaultSnapshot(
+        buildVersionSnapshot({
+          version: next.activeVersion || next.currentVersion || 1,
+          label: `${c.label} selected`,
+          userRequest: undefined,
+          summary: `${c.label} is now your active version.`,
+          fragment: c.fragment as DeepPartial<FragmentSchema>,
+          plan: next.plan || tournament.plan,
+          activeCandidateId: id,
+          compositeScore: c.scoreComposite,
+          runtimeStatus:
+            c.finalVerification?.status || c.verification?.status,
+          smokeStatus: c.smoke?.status,
+          architectureStatus: c.architectureCompliance?.status,
+          previewReachable:
+            c.finalVerification?.previewReachable ||
+            c.verification?.previewReachable,
+          execution: c.execution,
+        }),
+      )
+      return next
     })
+  }
+
+  /** Restore a vault snapshot locally — zero API calls. */
+  function handleVaultRestore(snapshot: VersionSnapshot) {
+    if (!projectBrain) return
+    const restored = restoreVersionSnapshot(snapshot.version, projectBrain)
+    if (!restored) return
+    setProjectBrain(restored.brain)
+    setFragment(restored.fragment)
+    if (restored.execution) {
+      setResult(restored.execution)
+      setCurrentTab('fragment')
+    } else {
+      // Old sandbox may be gone — keep source local; Preview can redeploy on demand.
+      setResult(undefined)
+      setCurrentTab('code')
+    }
+    if (restored.brain.activeCandidateId) {
+      setSelectedCandidate(restored.brain.activeCandidateId)
+    }
+    refreshVaultList()
+  }
+
+  function handleVaultPreview(snapshot: VersionSnapshot) {
+    setFragment(snapshot.fragment)
+    if (
+      snapshot.execution?.sbxId &&
+      snapshot.execution?.url &&
+      snapshot.execution?.template
+    ) {
+      setResult({
+        sbxId: snapshot.execution.sbxId,
+        url: snapshot.execution.url,
+        template: snapshot.execution.template,
+      })
+      setCurrentTab('fragment')
+    } else {
+      setResult(undefined)
+      setCurrentTab('code')
+    }
+    if (snapshot.activeCandidateId) {
+      setSelectedCandidate(snapshot.activeCandidateId)
+    }
   }
 
   /** One user-triggered single-candidate evolution over the active version. */
@@ -974,6 +1102,16 @@ export default function Home() {
         )}
 
       {projectBrain && <ProjectBrainPanel brain={projectBrain} />}
+
+      {vaultSnapshots.length > 0 && (
+        <VersionVaultPanel
+          snapshots={vaultSnapshots}
+          activeVersion={projectBrain?.activeVersion}
+          refreshKey={vaultRefreshKey}
+          onPreview={handleVaultPreview}
+          onRestore={handleVaultRestore}
+        />
+      )}
 
       {projectBrain?.activeCandidateId && (
         <RecommendationsPanel
