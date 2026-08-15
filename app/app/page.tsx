@@ -1,5 +1,6 @@
 'use client'
 
+import { AppHealthPanel } from '@/components/app-health-panel'
 import { ActiveVersionPicker } from '@/components/active-version-picker'
 import { AuthDialog, ViewType } from '@/components/auth-dialog'
 import { Chat } from '@/components/chat'
@@ -10,10 +11,10 @@ import { ImproveAppPanel } from '@/components/improve-app-panel'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
 import { ProjectBrainPanel } from '@/components/project-brain-panel'
-import { RecommendationsPanel } from '@/components/recommendations-panel'
 import { SpecimenStrip } from '@/components/specimen-strip'
 import { VersionVaultPanel } from '@/components/version-vault-panel'
 import { useAuth } from '@/lib/auth'
+import { calculateAppHealth } from '@/lib/app-health'
 import {
   applyEvolutionToBrain,
   buildEvolutionApiPayload,
@@ -45,7 +46,6 @@ import {
   selectActiveProjectVersion,
   serializeProjectBrain,
 } from '@/lib/project-brain'
-import { buildRecommendations } from '@/lib/recommendations'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import type { SmokeSuiteResult } from '@/lib/smoke'
 import { diffFragments } from '@/lib/source-diff'
@@ -315,13 +315,16 @@ export default function Home() {
     projectBrain?.currentVersion,
   ])
 
-  const recommendations = useMemo(() => {
-    if (!projectBrain?.activeCandidateId) return []
-    return buildRecommendations({
-      brain: projectBrain,
-      diff: evolutionSourceDiff,
-    })
-  }, [projectBrain, evolutionSourceDiff])
+  /** Deterministic health for the active version — zero API/provider calls. */
+  const appHealth = useMemo(() => {
+    if (!projectBrain?.activeCandidateId) return null
+    const activeVer = projectBrain.activeVersion ?? projectBrain.currentVersion
+    const snapshot =
+      activeVer != null
+        ? vaultSnapshots.find((s) => s.version === activeVer) ?? null
+        : null
+    return calculateAppHealth({ brain: projectBrain, snapshot })
+  }, [projectBrain, vaultSnapshots])
 
   // Silence unused invariant (kept for documentation / external imports).
   void ITERATION_CANDIDATE_COUNT
@@ -1114,8 +1117,8 @@ export default function Home() {
       )}
 
       {projectBrain?.activeCandidateId && (
-        <RecommendationsPanel
-          recommendations={recommendations}
+        <AppHealthPanel
+          report={appHealth}
           disabled={
             evolutionRound?.status === 'running' ||
             tournament.phase === 'generating' ||

@@ -20,7 +20,8 @@
     "test:source-diff": "tsx lib/source-diff.test.ts",
     "test:evolution-report": "tsx lib/evolution-report.test.ts",
     "test:recommendations": "tsx lib/recommendations.test.ts",
-    "test:version-vault": "tsx lib/version-vault.test.ts"
+    "test:version-vault": "tsx lib/version-vault.test.ts",
+    "test:app-health": "tsx lib/app-health.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.6",
