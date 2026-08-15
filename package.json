@@ -11,9 +11,9 @@
     "dev:api": "pnpm --filter @evostack/api dev",
     "build": "pnpm --filter @evostack/shared build && pnpm --filter @evostack/api build && pnpm --filter @evostack/app build",
     "test": "pnpm --filter @evostack/api test && pnpm --filter @evostack/app test",
-    "db:up": "docker compose up -d",
-    "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @evostack/api prisma:migrate",
+    "db:migrate:status": "pnpm --filter @evostack/api prisma:migrate:status",
+    "db:migrate:new": "pnpm --filter @evostack/api prisma:migrate:new",
     "lint": "pnpm --filter @evostack/app lint && pnpm --filter @evostack/api lint"
   },
   "pnpm": {

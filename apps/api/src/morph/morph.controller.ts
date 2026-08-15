@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common'
+import { Body, Controller, Inject, Post, Req, Res } from '@nestjs/common'
 import type { Request, Response } from 'express'
 import { AuthUser, CurrentUser } from '../auth/current-user'
 import { handleMorph } from '../generation/morph.runner'
@@ -26,8 +26,8 @@ function firstUserText(messages: unknown): string {
 @Controller('v1')
 export class MorphController {
   constructor(
-    private readonly runs: RunsService,
-    private readonly memory: MemoryService,
+    @Inject(RunsService) private readonly runs: RunsService,
+    @Inject(MemoryService) private readonly memory: MemoryService,
   ) {}
 
   @Post('morph')

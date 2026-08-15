@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma/prisma.service'
 import { MemoryService } from '../memory/memory.service'
@@ -6,8 +6,8 @@ import { MemoryService } from '../memory/memory.service'
 @Injectable()
 export class RunsService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly memory: MemoryService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MemoryService) private readonly memory: MemoryService,
   ) {}
 
   async ensureUser(userId: string, email?: string) {
@@ -38,8 +38,11 @@ export class RunsService {
       return await this.prisma.run.create({
         data: { id: runId, userId, status: 'active' },
       })
-    } catch {
-      throw new NotFoundException('Run not found')
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new NotFoundException('Run not found')
+      }
+      throw err
     }
   }
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Inject, Injectable, NotFoundException } from '@nestjs/common'
 import type { MemoryPack } from '@evostack/shared'
 import { PrismaService } from '../prisma/prisma.service'
 
@@ -32,7 +32,7 @@ export function llmCacheKey(parts: {
 export class MemoryService {
   private readonly l1 = new Map<string, L1Entry>()
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getLatest(userId: string, runId: string): Promise<MemoryPack> {
     const run = await this.prisma.run.findFirst({

@@ -11,7 +11,7 @@ for (const path of [
   resolve(__dirname, '../.env'),
   resolve(__dirname, '../../app/.env'),
 ]) {
-  if (existsSync(path)) config({ path })
+  if (existsSync(path)) config({ path, override: false })
 }
 
 async function bootstrap() {

@@ -10,152 +10,165 @@ datasource db {
 model User {
   id        String   @id
   email     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
   runs      Run[]
+
+  @@map("users")
 }
 
 model Run {
   id                String   @id
-  userId            String
+  userId            String   @map("user_id")
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   status            String   @default("active")
-  memoryVersion     Int      @default(0)
-  selectedCandidate String?
-  hasTournament     Boolean  @default(false)
-  activeVersion     Int?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  memoryVersion     Int      @default(0) @map("memory_version")
+  selectedCandidate String?  @map("selected_candidate")
+  hasTournament     Boolean  @default(false) @map("has_tournament")
+  activeVersion     Int?     @map("active_version")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  messages       Message[]
-  fragments      Fragment[]
-  candidates     Candidate[]
-  projectBrain   ProjectBrain?
-  versions       VersionSnapshot[]
-  memoryItems    MemoryItem[]
-  memoryCaches   MemoryCache[]
-  llmCaches      LlmResponseCache[]
-  requestLogs    RequestLog[]
+  messages     Message[]
+  fragments    Fragment[]
+  candidates   Candidate[]
+  projectBrain ProjectBrain?
+  versions     VersionSnapshot[]
+  memoryItems  MemoryItem[]
+  memoryCaches MemoryCache[]
+  llmCaches    LlmResponseCache[]
+  requestLogs  RequestLog[]
 
   @@index([userId])
+  @@map("runs")
 }
 
 model Message {
   id        String   @id @default(cuid())
-  runId     String
-  userId    String
+  runId     String   @map("run_id")
+  userId    String   @map("user_id")
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
   role      String
   content   Json
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([runId, userId, createdAt])
+  @@map("messages")
 }
 
 model Fragment {
   id          String   @id @default(cuid())
-  runId       String
-  userId      String
+  runId       String   @map("run_id")
+  userId      String   @map("user_id")
   run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  candidateId String?
+  candidateId String?  @map("candidate_id")
   data        Json
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([runId, userId])
+  @@map("fragments")
 }
 
 model Candidate {
   id        String   @id @default(cuid())
-  runId     String
-  userId    String
+  runId     String   @map("run_id")
+  userId    String   @map("user_id")
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  variantId String
+  variantId String   @map("variant_id")
   status    String
   data      Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([runId, userId])
+  @@map("candidates")
 }
 
 model ProjectBrain {
   id        String   @id @default(cuid())
-  runId     String   @unique
-  userId    String
+  runId     String   @unique @map("run_id")
+  userId    String   @map("user_id")
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
   data      Json
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("project_brains")
 }
 
 model VersionSnapshot {
   id        String   @id @default(cuid())
-  runId     String
-  userId    String
+  runId     String   @map("run_id")
+  userId    String   @map("user_id")
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
   version   Int
   data      Json
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([runId, version])
   @@index([runId, userId])
+  @@map("version_snapshots")
 }
 
 model MemoryItem {
   id              String   @id @default(cuid())
-  runId           String
-  userId          String
+  runId           String   @map("run_id")
+  userId          String   @map("user_id")
   run             Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
   kind            String
   text            String
-  sourceMessageId String?
-  createdAt       DateTime @default(now())
+  sourceMessageId String?  @map("source_message_id")
+  createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([runId, userId, createdAt])
+  @@map("memory_items")
 }
 
 model MemoryCache {
   id            String   @id @default(cuid())
-  cacheKey      String
-  userId        String
-  runId         String
+  cacheKey      String   @map("cache_key")
+  userId        String   @map("user_id")
+  runId         String   @map("run_id")
   run           Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  memoryVersion Int
+  memoryVersion Int      @map("memory_version")
   payload       Json
-  expiresAt     DateTime
-  createdAt     DateTime @default(now())
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   @@index([userId, runId, memoryVersion])
   @@index([expiresAt])
+  @@map("memory_cache")
 }
 
 model LlmResponseCache {
   id            String   @id @default(cuid())
-  cacheKey      String
-  userId        String
-  runId         String
+  cacheKey      String   @map("cache_key")
+  userId        String   @map("user_id")
+  runId         String   @map("run_id")
   run           Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  memoryVersion Int
+  memoryVersion Int      @map("memory_version")
   model         String
   payload       Json
-  expiresAt     DateTime
-  createdAt     DateTime @default(now())
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   @@index([userId, runId, memoryVersion, cacheKey])
   @@index([expiresAt])
+  @@map("llm_response_cache")
 }
 
 model RequestLog {
   id         String   @id @default(cuid())
-  userId     String?
-  runId      String?
+  userId     String?  @map("user_id")
+  runId      String?  @map("run_id")
   run        Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   method     String
   path       String
   status     Int
-  durationMs Int
+  durationMs Int      @map("duration_ms")
   meta       Json?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([userId, createdAt])
   @@index([runId, createdAt])
+  @@map("request_logs")
 }

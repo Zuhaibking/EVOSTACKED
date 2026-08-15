@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Param,
   ParseIntPipe,
   Patch,
@@ -12,7 +13,7 @@ import { RunsService } from './runs.service'
 
 @Controller('v1/runs')
 export class RunsController {
-  constructor(private readonly runs: RunsService) {}
+  constructor(@Inject(RunsService) private readonly runs: RunsService) {}
 
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() body?: { id?: string }) {

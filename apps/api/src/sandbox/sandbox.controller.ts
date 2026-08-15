@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common'
+import { Body, Controller, Inject, Post, Req, Res } from '@nestjs/common'
 import type { Request, Response } from 'express'
 import { AuthUser, CurrentUser } from '../auth/current-user'
 import { pipeWebResponse, toFetchRequest } from '../generation/fetch-request'
@@ -7,7 +7,7 @@ import { RunsService } from '../runs/runs.service'
 
 @Controller('v1')
 export class SandboxController {
-  constructor(private readonly runs: RunsService) {}
+  constructor(@Inject(RunsService) private readonly runs: RunsService) {}
 
   @Post('sandbox')
   async sandbox(

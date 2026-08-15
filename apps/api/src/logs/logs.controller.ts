@@ -1,10 +1,10 @@
-import { Controller, Get, Query } from '@nestjs/common'
+import { Controller, Get, Inject, Query } from '@nestjs/common'
 import { AuthUser, CurrentUser } from '../auth/current-user'
 import { PrismaService } from '../prisma/prisma.service'
 
 @Controller('v1/logs')
 export class LogsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get()
   async list(
