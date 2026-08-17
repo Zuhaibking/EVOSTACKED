@@ -7,9 +7,19 @@ import { getTemplateId } from '@/lib/templates'
 import { ExecutionResult, ExecutionResultInterpreter, ExecutionResultWeb } from '@/lib/types'
 import {
   VerificationResult,
+  extractPreviewOverlayErrorFromHtml,
   extractUsefulError,
+  isPreviewOverlayFailure,
   truncateDiagnostic,
 } from '@/lib/verification'
+import {
+  createSandboxSerialized,
+  formatSandboxCreateError,
+} from '@/lib/sandbox-transport'
+import {
+  isForbiddenManifestPath,
+  resolveInstallCommand,
+} from '@/lib/dependency-closure'
 import { Sandbox } from '@e2b/code-interpreter'
 
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000
@@ -67,10 +77,17 @@ async function fileExists(sbx: Sandbox, path: string): Promise<boolean> {
 async function waitForHttp(
   url: string,
   timeoutMs: number,
-): Promise<{ ok: boolean; status?: number; error?: string; partial?: boolean }> {
+): Promise<{
+  ok: boolean
+  status?: number
+  error?: string
+  partial?: boolean
+  compileError?: string
+}> {
   const deadline = Date.now() + timeoutMs
   let lastStatus: number | undefined
   let lastError: string | undefined
+  let compileError: string | undefined
 
   while (Date.now() < deadline) {
     try {
@@ -84,16 +101,36 @@ async function waitForHttp(
       }).finally(() => clearTimeout(timer))
 
       lastStatus = res.status
-      // Drain body so the connection can close cleanly.
-      await res.arrayBuffer().catch(() => undefined)
+      const body = (await res.text().catch(() => '')).slice(0, 20_000)
+      const extracted = extractPreviewOverlayErrorFromHtml(body)
+      if (extracted) compileError = extracted
 
-      if (res.ok) {
+      if (extracted && isPreviewOverlayFailure(extracted)) {
+        return {
+          ok: false,
+          partial: true,
+          status: res.status,
+          error: extracted,
+          compileError: extracted,
+        }
+      }
+
+      if (res.ok && !extracted) {
         return { ok: true, status: res.status }
       }
-      // App is up but returning an error page — partial evidence.
+      // App is up but returning an error page — keep the real compile message.
       if (res.status >= 400 && res.status < 600) {
-        lastError = `Preview responded with HTTP ${res.status}`
-        // Keep polling a bit — Next may still be compiling.
+        lastError =
+          extracted || `Preview responded with HTTP ${res.status}`
+        if (extracted && isPreviewOverlayFailure(extracted)) {
+          return {
+            ok: false,
+            partial: true,
+            status: res.status,
+            error: extracted,
+            compileError: extracted,
+          }
+        }
       }
     } catch (e: any) {
       lastError =
@@ -110,8 +147,10 @@ async function waitForHttp(
       partial: true,
       status: lastStatus,
       error:
+        compileError ||
         lastError ||
         `Application did not return a successful response within ${timeoutMs}ms (last HTTP ${lastStatus}).`,
+      compileError,
     }
   }
 
@@ -121,6 +160,7 @@ async function waitForHttp(
     error:
       lastError ||
       `Application did not become reachable within the startup timeout (${timeoutMs}ms).`,
+    compileError,
   }
 }
 
@@ -169,36 +209,55 @@ export async function deployAndVerify(
     }
   }
 
-  try {
-    sbx = await Sandbox.create(sandboxTemplate, {
-      metadata: {
+  if (!process.env.E2B_API_KEY?.trim()) {
+    return {
+      verification: {
+        status: 'failed',
+        filesWritten: false,
+        dependenciesInstalled: 'not_required',
+        processStarted: false,
+        previewReachable: false,
+        errors: [
+          'E2B_API_KEY is missing from the API process. Sandbox create skipped.',
+        ],
+        warnings: [],
+        durationMs: Date.now() - started,
         template: sandboxTemplate,
-        userID: opts.userID ?? '',
-        teamID: opts.teamID ?? '',
       },
-      timeoutMs: SANDBOX_TIMEOUT_MS,
-      ...(opts.teamID && opts.accessToken
-        ? {
-            headers: {
-              'X-Supabase-Team': opts.teamID,
-              'X-Supabase-Token': opts.accessToken,
-            },
-          }
-        : {}),
-    })
+    }
+  }
+
+  try {
+    sbx = await createSandboxSerialized(
+      () =>
+        Sandbox.create(sandboxTemplate, {
+          metadata: {
+            template: sandboxTemplate,
+            userID: opts.userID ?? '',
+            teamID: opts.teamID ?? '',
+          },
+          timeoutMs: SANDBOX_TIMEOUT_MS,
+          ...(opts.teamID && opts.accessToken
+            ? {
+                headers: {
+                  'X-Supabase-Team': opts.teamID,
+                  'X-Supabase-Token': opts.accessToken,
+                },
+              }
+            : {}),
+        }),
+    )
     sbxId = sbx.sandboxId
     processStarted = true // template startCmd is running for web templates
 
-    // Install additional packages before/after write — before write is fine.
-    if (
-      fragment.has_additional_dependencies &&
-      fragment.install_dependencies_command?.trim()
-    ) {
+    // Install extra packages declared on the fragment (or synthesized from
+    // additional_dependencies). Do not require both flags — that skipped bcryptjs.
+    const installCommand = resolveInstallCommand(fragment)
+    if (installCommand) {
       try {
-        const install = await sbx.commands.run(
-          fragment.install_dependencies_command,
-          { timeoutMs: INSTALL_TIMEOUT_MS },
-        )
+        const install = await sbx.commands.run(installCommand, {
+          timeoutMs: INSTALL_TIMEOUT_MS,
+        })
         if (install.exitCode === 0) {
           dependenciesInstalled = true
         } else {
@@ -219,16 +278,21 @@ export async function deployAndVerify(
       }
     }
 
-    // Write all project files.
+    // Write generated source. Never overlay template package.json / lockfiles.
     for (const file of files) {
+      if (isForbiddenManifestPath(file.file_path)) continue
       await sbx.files.write(file.file_path, file.file_content)
     }
 
     // Confirm expected files exist on disk.
     const toCheck = Array.from(
       new Set<string>([
-        ...files.map((f) => f.file_path),
-        ...(fragment.file_path ? [fragment.file_path] : []),
+        ...files
+          .filter((f) => !isForbiddenManifestPath(f.file_path))
+          .map((f) => f.file_path),
+        ...(fragment.file_path && !isForbiddenManifestPath(fragment.file_path)
+          ? [fragment.file_path]
+          : []),
       ]),
     )
     for (const path of toCheck) {
@@ -280,6 +344,10 @@ export async function deployAndVerify(
         if (ready.ok) {
           previewReachable = true
           processStarted = true
+        } else if (ready.compileError && isPreviewOverlayFailure(ready.compileError)) {
+          previewReachable = false
+          processStarted = true
+          errors.push(ready.compileError)
         } else if (ready.partial) {
           previewReachable = false
           processStarted = true
@@ -313,9 +381,7 @@ export async function deployAndVerify(
       }
     }
   } catch (e: any) {
-    errors.push(
-      truncateDiagnostic(e?.message || 'Sandbox create/verify failed', 500),
-    )
+    errors.push(truncateDiagnostic(formatSandboxCreateError(e), 500))
     processStarted = false
     // Best-effort cleanup when we never got a usable sandbox.
     if (sbx) {
@@ -375,7 +441,9 @@ export async function deployAndVerify(
       dependenciesInstalled !== false &&
       errors.some((e) => softTimeoutPattern.test(e))
 
-    if (softTimeout) {
+    const overlayFailure = errors.some((e) => isPreviewOverlayFailure(e))
+
+    if (softTimeout && !overlayFailure) {
       status = 'partial'
       processStarted = true
       warnings.push(
@@ -385,6 +453,9 @@ export async function deployAndVerify(
       const keptErrors = errors.filter((e) => !softTimeoutPattern.test(e))
       errors.length = 0
       errors.push(...keptErrors)
+    } else if (hasHostUrl && overlayFailure) {
+      // Real build/compile failure — keep the host so Preview/Source stay inspectable.
+      processStarted = true
     } else {
       try {
         await sbx.kill()

@@ -1,4 +1,3 @@
-import Logo from './logo'
 import { CopyButton } from './ui/copy-button'
 import {
   Select,
@@ -59,13 +58,15 @@ export function DeployDialog({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="default">
-          <Logo width={16} height={16} className="mr-2" />
-          Deploy
+        <Button
+          variant="default"
+          className="h-7 rounded-none px-2.5 font-mono text-[9px] tracking-[0.16em] uppercase"
+        >
+          Publish
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="p-4 w-80 flex flex-col gap-2">
-        <div className="text-sm font-semibold">Deploy to E2B</div>
+        <div className="text-sm font-semibold">Publish</div>
         <div className="text-sm text-muted-foreground">
           Deploying the fragment will make it publicly accessible to others via
           link.

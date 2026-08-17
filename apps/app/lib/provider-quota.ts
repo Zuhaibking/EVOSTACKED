@@ -59,7 +59,7 @@ export const DAILY_LIMIT_USER_MESSAGE =
   'OpenAI daily request limit reached. No generation was attempted for the remaining candidates.'
 
 export const TPM_LIMIT_USER_MESSAGE =
-  'OpenAI tokens-per-minute (TPM) limit reached. Wait for the window to reset, then retry. Candidates are generated one at a time.'
+  'OpenAI tokens-per-minute (TPM) limit reached. Wait for the window to reset, then retry. A TPM error stops that candidate only; other in-flight candidates keep running.'
 
 export const TEMPORARY_RATE_LIMIT_USER_MESSAGE =
   'OpenAI is temporarily rate limiting requests. Please try again shortly.'

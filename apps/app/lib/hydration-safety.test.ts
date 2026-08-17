@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   detectHydrationRisksInSource,
+  formatHydrationRepairHints,
   maskClientEffectBodies,
   shouldScanFileForHydration,
 } from './hydration-safety'
@@ -171,6 +172,146 @@ export default function Home(){
 {
   assert.equal(shouldScanFileForHydration('components/Hero.tsx'), true)
   assert.equal(shouldScanFileForHydration('styles.css'), false)
+}
+
+// 10. Nested <a> inside Next.js Link is a hydration error
+{
+  const nested = `
+import Link from 'next/link'
+import { motion } from 'framer-motion'
+export default function Card() {
+  return (
+    <Link href="/events">
+      <motion.a whileHover={{ scale: 1.02 }} className="block">
+        Open event
+      </motion.a>
+    </Link>
+  )
+}
+`
+  const risks = detectHydrationRisksInSource(nested, {
+    filePath: 'components/EventCard.tsx',
+  })
+  assert.ok(
+    risks.some((r) => r.code === 'nested_anchor' && r.severity === 'error'),
+    JSON.stringify(risks),
+  )
+}
+
+// 11. Link wrapping a native <a> is unsafe; legacyBehavior is allowed
+{
+  const nestedA = `
+import Link from 'next/link'
+export default function Nav() {
+  return (
+    <Link href="/about">
+      <a className="nav">About</a>
+    </Link>
+  )
+}
+`
+  assert.ok(
+    detectHydrationRisksInSource(nestedA, { filePath: 'Nav.tsx' }).some(
+      (r) => r.code === 'nested_anchor',
+    ),
+  )
+  const legacy = `
+import Link from 'next/link'
+export default function Nav() {
+  return (
+    <Link href="/about" legacyBehavior>
+      <a className="nav">About</a>
+    </Link>
+  )
+}
+`
+  assert.equal(
+    detectHydrationRisksInSource(legacy, { filePath: 'Nav.tsx' }).filter(
+      (r) => r.code === 'nested_anchor',
+    ).length,
+    0,
+    'legacyBehavior nested <a> is valid on Pages router',
+  )
+}
+
+// 12. Safe Link (text / span / motion.div) is OK; wrapping Link in <a> is not
+{
+  const safe = `
+import Link from 'next/link'
+import { motion } from 'framer-motion'
+export default function Nav() {
+  return (
+    <nav>
+      <Link href="/about" className="nav">About</Link>
+      <Link href="/blog"><span>Blog</span></Link>
+      <motion.div whileHover={{ scale: 1.02 }}>
+        <Link href="/x">X</Link>
+      </motion.div>
+    </nav>
+  )
+}
+`
+  assert.equal(
+    detectHydrationRisksInSource(safe, { filePath: 'Nav.tsx' }).filter(
+      (r) => r.code === 'nested_anchor',
+    ).length,
+    0,
+    JSON.stringify(detectHydrationRisksInSource(safe, { filePath: 'Nav.tsx' })),
+  )
+  const wrap = `
+import Link from 'next/link'
+export default function Nav() {
+  return (
+    <a href="/dup">
+      <Link href="/dup">Dup</Link>
+    </a>
+  )
+}
+`
+  assert.ok(
+    detectHydrationRisksInSource(wrap, { filePath: 'Nav.tsx' }).some(
+      (r) => r.code === 'nested_anchor',
+    ),
+  )
+}
+
+// 13. Integrity flags nested anchors; repair hints mention Link
+{
+  const frag: FragmentSchema = {
+    commentary: 'x',
+    template: 'nextjs-developer',
+    title: 'Events',
+    description: 'x',
+    architecture: 'pages',
+    additional_dependencies: ['framer-motion'],
+    has_additional_dependencies: true,
+    install_dependencies_command: 'npm install framer-motion',
+    port: 3000,
+    file_path: 'pages/index.tsx',
+    code: [
+      {
+        file_path: 'pages/index.tsx',
+        file_content: `import Link from 'next/link'
+import { motion } from 'framer-motion'
+export default function Home(){
+  return (
+    <Link href="/tix">
+      <motion.a className="card">Tickets</motion.a>
+    </Link>
+  )
+}`,
+      },
+    ],
+  }
+  const result = validateFragmentIntegrity(frag)
+  assert.equal(result.ok, false)
+  assert.ok(result.issues.some((i) => i.code === 'hydration_risk'))
+  const hints = formatHydrationRepairHints(
+    detectHydrationRisksInSource(frag.code[0].file_content, {
+      filePath: 'pages/index.tsx',
+    }),
+  )
+  assert.match(hints, /motion\(Link\)|legacyBehavior|already renders/i)
 }
 
 console.log('hydration-safety.test.ts: all tests passed')

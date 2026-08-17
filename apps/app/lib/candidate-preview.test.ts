@@ -180,4 +180,61 @@ const innovate = candidate('playful', innovateUrl)
   assert.equal(buildCandidatePreviewAction(innovate)!.select, true)
 }
 
+// 13. Failed compile with live host → iframe still available (URL kept)
+{
+  const broken: Candidate = {
+    ...product,
+    status: 'verify_failed',
+    finalVerification: {
+      status: 'failed',
+      filesWritten: true,
+      dependenciesInstalled: true,
+      processStarted: true,
+      previewReachable: false,
+      errors: [
+        'styles/globals.css:1785: @import rules must precede all rules aside from @charset and @layer statements.',
+      ],
+      warnings: [],
+      durationMs: 20,
+      sbxId: 'sbx_css',
+      url: productUrl,
+      template: 'nextjs-developer',
+    },
+    execution: {
+      sbxId: 'sbx_css',
+      url: productUrl,
+      template: 'nextjs-developer',
+    },
+  }
+  const action = buildCandidatePreviewAction(broken)!
+  assert.equal(action.showIframe, true)
+  assert.equal(previewActionUrl(action), productUrl)
+}
+
+// 14. Compile failure without URL → BUILD FAILED copy, source still present
+{
+  const broken: Candidate = {
+    ...product,
+    execution: undefined,
+    finalVerification: {
+      status: 'failed',
+      filesWritten: true,
+      dependenciesInstalled: true,
+      processStarted: false,
+      previewReachable: false,
+      errors: [
+        'styles/globals.css:1785: @import rules must precede all rules aside from @charset and @layer statements.',
+      ],
+      warnings: [],
+      durationMs: 20,
+    },
+    status: 'verify_failed',
+  }
+  const action = buildCandidatePreviewAction(broken)!
+  assert.equal(action.showIframe, false)
+  assert.match(action.unavailableReason || '', /BUILD FAILED/)
+  assert.match(action.unavailableReason || '', /@import rules must precede/i)
+  assert.ok(action.fragment)
+}
+
 console.log('candidate-preview.test.ts: all tests passed')

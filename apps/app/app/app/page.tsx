@@ -1,18 +1,25 @@
 'use client'
 
-import { AskEvoStack } from '@/components/ask-evostack'
-import { ActiveVersionPicker } from '@/components/active-version-picker'
+import { ArenaShell } from '@/components/arena/arena-shell'
+import { ArenaWorkspace } from '@/components/arena/arena-workspace'
 import { AuthDialog, ViewType } from '@/components/auth-dialog'
-import { Chat } from '@/components/chat'
-import { ChatInput } from '@/components/chat-input'
 import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
+import { CommandBar } from '@/components/command-bar'
 import { ImproveAppPanel } from '@/components/improve-app-panel'
 import { NavBar } from '@/components/navbar'
-import { Preview } from '@/components/preview'
-import { ProjectBrainPanel } from '@/components/project-brain-panel'
-import { SpecimenStrip } from '@/components/specimen-strip'
-import { VersionVaultPanel } from '@/components/version-vault-panel'
+import { ProjectSidebar } from '@/components/project-sidebar'
+import { buildArenaActivity } from '@/lib/arena-activity'
+import { arenaLoadingLabel } from '@/lib/arena-loading'
+import {
+  isArenaCommandDocked,
+  type PreviewViewport,
+  type WorkspaceMode,
+} from '@/lib/arena-workspace'
+import {
+  prepareAskEvoStackSubmit,
+  type AskRequestKind,
+} from '@/lib/ask-evostack'
 import { providerBudgetLabel } from '@/lib/provider-quota'
 import { useAuth } from '@/lib/auth'
 import { calculateAppHealth } from '@/lib/app-health'
@@ -40,8 +47,10 @@ import {
   hasFragmentCode,
 } from '@/lib/fragment'
 import {
+  pickInspectableCandidateId,
   retainTournamentCandidates,
 } from '@/lib/tournament-candidates'
+import { formatCandidateBuildDiagnostics } from '@/lib/build-failure-diagnostics'
 import { buildCandidatePreviewAction } from '@/lib/candidate-preview'
 import {
   buildBrainFromTournament,
@@ -96,7 +105,11 @@ export default function Home() {
   const [result, setResult] = useState<ExecutionResult>()
   const [messages, setMessages] = useState<Message[]>([])
   const [fragment, setFragment] = useState<DeepPartial<FragmentSchema>>()
-  const [currentTab, setCurrentTab] = useState<'code' | 'fragment'>('code')
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('preview')
+  const [previewViewport, setPreviewViewport] =
+    useState<PreviewViewport>('desktop')
+  const [askKind, setAskKind] = useState<AskRequestKind | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [isAuthDialogOpen, setAuthDialog] = useState(false)
   const [authView, setAuthView] = useState<ViewType>('sign_in')
@@ -365,7 +378,6 @@ export default function Home() {
     selectedTemplate === 'auto'
       ? templates
       : { [selectedTemplate]: templates[selectedTemplate] }
-  const lastMessage = messages[messages.length - 1]
 
   const evolutionSourceDiff = useMemo(() => {
     if (evolutionRound?.status !== 'succeeded' || !evolutionBaseline) return null
@@ -434,6 +446,19 @@ export default function Home() {
     [specimenArchive, tournament.candidates],
   )
 
+  // Inspect the first finished specimen in Preview. Never promotes activeVersion.
+  useEffect(() => {
+    if (selectedCandidate) return
+    if (tournament.phase === 'idle' && !specimenArchive) return
+    const id = pickInspectableCandidateId(retainedCandidates)
+    if (id) setSelectedCandidate(id)
+  }, [
+    retainedCandidates,
+    selectedCandidate,
+    tournament.phase,
+    specimenArchive,
+  ])
+
   const selectedPreviewNotice = useMemo(() => {
     if (!selectedCandidate) return null
     const c = retainedCandidates[selectedCandidate]
@@ -445,6 +470,21 @@ export default function Home() {
       'Runtime deployment did not produce a preview URL for this candidate.'
     )
   }, [selectedCandidate, retainedCandidates])
+
+  const selectedDiagnostics = useMemo(() => {
+    if (!selectedCandidate) return []
+    const c = retainedCandidates[selectedCandidate]
+    if (!c) return []
+    return formatCandidateBuildDiagnostics(c)
+  }, [selectedCandidate, retainedCandidates])
+
+  const loadingLabel = arenaLoadingLabel({
+    tournamentPhase: tournament.phase,
+    candidates: retainedCandidates,
+    isPreviewLoading,
+    isChatLoading: chatLoading,
+    evolutionRunning: evolutionRound?.status === 'running',
+  })
 
   // Silence unused invariant (kept for documentation / external imports).
   void INITIAL_TOURNAMENT_CANDIDATE_COUNT
@@ -484,7 +524,7 @@ export default function Home() {
           'Fragment failed integrity validation and was not deployed.',
       )
       setResult(undefined)
-      setCurrentTab('code')
+      setWorkspaceMode('code')
       setIsPreviewLoading(false)
       return
     }
@@ -492,7 +532,7 @@ export default function Home() {
     setResult(result)
     setCurrentPreview({ fragment: nextFragment, result })
     setMessage({ result })
-    setCurrentTab('fragment')
+    setWorkspaceMode('preview')
     setIsPreviewLoading(false)
   }
 
@@ -546,7 +586,7 @@ export default function Home() {
   }
 
   // Do not auto-activate a specimen — user must click "Use this version".
-  // Preview selection remains manual via SpecimenStrip / ActiveVersionPicker.
+  // Preview selection remains manual via CandidateSwitcher.
 
   // Build / refresh Project Brain when an initial tournament completes (no extra LLM calls).
   // Does not record v1 until the user selects an active version.
@@ -794,14 +834,14 @@ export default function Home() {
     const action = buildCandidatePreviewAction(c)
     if (action?.showIframe && action.result) {
       setResult(action.result)
-      setCurrentTab('fragment')
+      setWorkspaceMode('preview')
       setIsPreviewLoading(false)
       return
     }
 
     // No reusable Preview for this candidate — clear prior candidate's URL.
     setResult(undefined)
-    setCurrentTab(action?.tab === 'fragment' ? 'fragment' : 'code')
+    setWorkspaceMode(action?.tab === 'fragment' ? 'preview' : 'code')
     setIsPreviewLoading(false)
 
     // Only attempt a fresh sandbox deploy when runtime did not already fail.
@@ -835,7 +875,7 @@ export default function Home() {
           return
         }
         setResult(sandboxResult)
-        setCurrentTab('fragment')
+        setWorkspaceMode('preview')
       })
       .catch(() => {})
       .finally(() => {
@@ -962,7 +1002,45 @@ export default function Home() {
 
     setChatInput('')
     setFiles([])
-    setCurrentTab('code')
+    setWorkspaceMode('preview')
+  }
+
+  function handleCommandDispatch(
+    e: React.FormEvent<HTMLFormElement>,
+    kind: AskRequestKind | null,
+  ) {
+    const hasActiveApp =
+      !!fragment &&
+      hasFragmentCode(fragment) &&
+      !!projectBrain?.activeCandidateId &&
+      (projectBrain.activeVersion || projectBrain.currentVersion || 0) >= 1
+
+    if (hasActiveApp && kind) {
+      e.preventDefault()
+      if (!session) {
+        setAuthDialog(true)
+        return
+      }
+      const prepared = prepareAskEvoStackSubmit({
+        kind,
+        text: chatInput,
+        hasActiveVersion: true,
+        busy:
+          evolutionRound?.status === 'running' ||
+          tournament.phase === 'generating' ||
+          tournament.phase === 'verifying',
+      })
+      if (!prepared.ok || !prepared.composed) {
+        if (prepared.reason) setErrorMessage(prepared.reason)
+        return
+      }
+      handleEvolve(prepared.composed.userRequest)
+      setChatInput('')
+      setFiles([])
+      return
+    }
+
+    void handleSubmitAuth(e)
   }
 
   function retry() {
@@ -1017,7 +1095,8 @@ export default function Home() {
     setMessages([])
     setFragment(undefined)
     setResult(undefined)
-    setCurrentTab('code')
+    setWorkspaceMode('preview')
+    setAskKind(null)
     setIsPreviewLoading(false)
     setProjectBrain(null)
     setEvolutionRound(null)
@@ -1041,18 +1120,20 @@ export default function Home() {
 
     previewClickOverrideRef.current = true
     setSelectedCandidate(id)
+    setWorkspaceMode('preview')
+
+    if (!action.showIframe && !action.fragment) {
+      return
+    }
 
     if (action.fragment) {
       setFragment(action.fragment as DeepPartial<FragmentSchema>)
     }
 
-    // Clear previous candidate iframe first, then load this one.
     setResult(undefined)
     setIsPreviewLoading(false)
-    setCurrentTab('fragment')
 
     if (action.showIframe && action.result) {
-      // New object reference so FragmentWeb remounts cleanly.
       setResult({ ...action.result })
     }
   }
@@ -1063,8 +1144,13 @@ export default function Home() {
     previewClickOverrideRef.current = true
     setSelectedCandidate(id)
     setFragment(c.fragment)
-    setResult(undefined)
-    setCurrentTab('code')
+    const action = buildCandidatePreviewAction(c)
+    if (action?.showIframe && action.result) {
+      setResult({ ...action.result })
+    } else {
+      setResult(undefined)
+    }
+    setWorkspaceMode('code')
   }
 
   /** Confirm a tournament specimen as the active project version (v1 on first pick). */
@@ -1143,11 +1229,11 @@ export default function Home() {
     setFragment(restored.fragment)
     if (restored.execution) {
       setResult(restored.execution)
-      setCurrentTab('fragment')
+      setWorkspaceMode('preview')
     } else {
       // Old sandbox may be gone — keep source local; Preview can redeploy on demand.
       setResult(undefined)
-      setCurrentTab('code')
+      setWorkspaceMode('code')
     }
     if (restored.brain.activeCandidateId) {
       setSelectedCandidate(restored.brain.activeCandidateId)
@@ -1167,10 +1253,10 @@ export default function Home() {
         url: snapshot.execution.url,
         template: snapshot.execution.template,
       })
-      setCurrentTab('fragment')
+      setWorkspaceMode('preview')
     } else {
       setResult(undefined)
-      setCurrentTab('code')
+      setWorkspaceMode('code')
     }
     if (snapshot.activeCandidateId) {
       setSelectedCandidate(snapshot.activeCandidateId)
@@ -1262,17 +1348,98 @@ export default function Home() {
     setCurrentPreview({ fragment: undefined, result: undefined })
   }
 
+  const projectName =
+    projectBrain?.plan?.productName ||
+    (typeof fragment?.title === 'string' ? fragment.title : '') ||
+    undefined
+  const chipsEnabled =
+    !!projectBrain?.plan &&
+    !!projectBrain.activeCandidateId &&
+    !!fragment &&
+    hasFragmentCode(fragment) &&
+    (projectBrain.activeVersion || projectBrain.currentVersion || 0) >= 1
+  const workspaceBusy =
+    isLoading ||
+    tournament.phase === 'generating' ||
+    tournament.phase === 'verifying' ||
+    tournament.phase === 'architecture' ||
+    tournament.phase === 'repairing' ||
+    tournament.phase === 'testing' ||
+    tournament.phase === 'judging'
+
+  const activityItems = useMemo(
+    () =>
+      buildArenaActivity({
+        phase: tournament.phase,
+        plan: tournament.plan || projectBrain?.plan,
+        candidates: retainedCandidates,
+        evolutionRunning: evolutionRound?.status === 'running',
+      }),
+    [
+      tournament.phase,
+      tournament.plan,
+      projectBrain?.plan,
+      retainedCandidates,
+      evolutionRound?.status,
+    ],
+  )
+
+  const hasLivePreview = Boolean(result)
+  const budgetNotice =
+    tournament.providerBudget && tournament.providerBudget !== 'ready'
+      ? `${providerBudgetLabel(tournament.providerBudget)}${
+          tournament.error ? ` — ${tournament.error}` : ''
+        }`
+      : null
+
+  const sidebar = (
+    <ProjectSidebar
+      projectBrain={projectBrain}
+      vaultSnapshots={hydrated ? vaultSnapshots : []}
+      vaultRefreshKey={vaultRefreshKey}
+      activeVersion={projectBrain?.activeVersion ?? null}
+      onVaultPreview={handleVaultPreview}
+      onVaultRestore={handleVaultRestore}
+      runId={vaultRunId}
+      tournamentPhase={
+        evolutionRound?.candidateMode === 'single' && specimenArchive
+          ? 'done'
+          : tournament.phase
+      }
+      selectedCandidate={
+        selectedCandidate ? retainedCandidates[selectedCandidate] : undefined
+      }
+      messages={messages}
+      isLoading={isLoading}
+      setCurrentPreview={setCurrentPreview}
+      candidates={retainedCandidates}
+      selectedId={selectedCandidate}
+      activeId={projectBrain?.activeCandidateId}
+      onSelectCandidate={setSelectedCandidate}
+      onPreviewCandidate={handleCandidatePreview}
+      onViewSourceCandidate={handleCandidateViewSource}
+      onUseVersion={handleUseVersion}
+      activity={activityItems}
+      onViewSource={handleCandidateViewSource}
+      detailsFor={(id) =>
+        formatCandidateBuildDiagnostics(retainedCandidates[id])
+      }
+      appHealth={appHealth}
+      providerBudgetLabel={budgetNotice}
+    />
+  )
+
   return (
-    <main className="flex flex-col min-h-screen bg-background">
+    <>
       <AuthDialog
         open={isAuthDialogOpen}
         setOpen={setAuthDialog}
         view={authView}
       />
-
-      {/* Editorial app bar — brand + run meta + actions, all in one strip */}
-      <div className="shrink-0 border-b border-border bg-background">
-        <div className="max-w-[1400px] mx-auto">
+      <ArenaShell
+        sidebarOpen={sidebarOpen}
+        onCloseSidebar={() => setSidebarOpen(false)}
+        topbar={
           <NavBar
             session={session}
             showLogin={() => setAuthDialog(true)}
@@ -1282,150 +1449,68 @@ export default function Home() {
             canClear={messages.length > 0}
             canUndo={messages.length > 1 && !isLoading}
             onUndo={handleUndo}
-            isLoading={
-              isLoading ||
-              tournament.phase === 'generating' ||
-              tournament.phase === 'verifying' ||
-              tournament.phase === 'architecture' ||
-              tournament.phase === 'repairing' ||
-              tournament.phase === 'testing' ||
-              tournament.phase === 'judging'
-            }
+            runId={vaultRunId || undefined}
+            projectName={projectName}
+            isLoading={workspaceBusy}
             hasFragment={!!fragment}
+            onMenuClick={() => setSidebarOpen(true)}
           />
-        </div>
-      </div>
-
-      {/* Specimen strip — always show retained Product / Premium / Innovate */}
-      {hasTournament && (
-        <>
-          {tournament.providerBudget &&
-            tournament.providerBudget !== 'ready' && (
-              <div
-                className="mx-3 sm:mx-4 md:mx-6 mt-2 border border-border px-3 py-2 font-mono text-[11px] tracking-wide text-muted-foreground"
-                role="status"
-              >
-                <span className="text-foreground">
-                  {providerBudgetLabel(tournament.providerBudget)}
-                </span>
-                {tournament.error ? ` — ${tournament.error}` : ''}
-              </div>
-            )}
-          <SpecimenStrip
-            candidates={retainedCandidates}
-            selectedId={selectedCandidate}
-            onSelect={setSelectedCandidate}
-            verdictReasoning={tournament.verdict?.reasoning}
-            phase={
-              evolutionRound?.candidateMode === 'single' && specimenArchive
-                ? 'done'
-                : tournament.phase
+        }
+        sidebar={sidebar}
+        commandDocked={isArenaCommandDocked({
+          messageCount: messages.length,
+          tournamentPhase: tournament.phase,
+          hasFragment: !!fragment,
+        })}
+        workspace={
+          <ArenaWorkspace
+            mode={workspaceMode}
+            onModeChange={setWorkspaceMode}
+            viewport={previewViewport}
+            onViewportChange={setPreviewViewport}
+            fragment={fragment}
+            result={result as ExecutionResult}
+            unavailableReason={selectedPreviewNotice}
+            diagnostics={selectedDiagnostics}
+            onViewSource={() => {
+              if (selectedCandidate) handleCandidateViewSource(selectedCandidate)
+              else setWorkspaceMode('code')
+            }}
+            isChatLoading={isLoading}
+            isPreviewLoading={isPreviewLoading}
+            loadingLabel={loadingLabel}
+            hasLivePreview={hasLivePreview}
+            teamID={userTeam?.id}
+            accessToken={session?.access_token}
+            projectName={projectName}
+            chipsEnabled={chipsEnabled}
+            askKind={askKind}
+            onAskKindChange={setAskKind}
+            onSeedText={setChatInput}
+            designPanel={
+              evolutionRound ? (
+                <ImproveAppPanel
+                  enabled={chipsEnabled}
+                  busy={evolutionRound?.status === 'running'}
+                  round={evolutionRound}
+                  candidates={tournament.candidates}
+                  phase={tournament.phase}
+                  report={evolutionReport}
+                  sourceDiff={evolutionSourceDiff}
+                  onRetry={() => undefined}
+                  onPreviewWinner={() => {
+                    if (evolutionRound?.winnerId) {
+                      setSelectedCandidate(evolutionRound.winnerId)
+                      setWorkspaceMode('preview')
+                    }
+                  }}
+                />
+              ) : null
             }
           />
-        </>
-      )}
-
-      {hasTournament &&
-        tournament.phase === 'done' &&
-        evolutionRound?.status !== 'running' && (
-          <ActiveVersionPicker
-            candidates={retainedCandidates}
-            selectedId={selectedCandidate}
-            activeId={projectBrain?.activeCandidateId}
-            onPreview={handleCandidatePreview}
-            onViewSource={handleCandidateViewSource}
-            onViewFailure={handleCandidateViewSource}
-            onUseVersion={handleUseVersion}
-          />
-        )}
-
-      {projectBrain && <ProjectBrainPanel brain={projectBrain} />}
-
-      {hydrated && (
-        <VersionVaultPanel
-          snapshots={vaultSnapshots}
-          activeVersion={projectBrain?.activeVersion ?? null}
-          refreshKey={vaultRefreshKey}
-          onPreview={handleVaultPreview}
-          onRestore={handleVaultRestore}
-        />
-      )}
-
-      <AskEvoStack
-        enabled={
-          !!projectBrain?.plan &&
-          !!projectBrain.activeCandidateId &&
-          !!fragment &&
-          hasFragmentCode(fragment) &&
-          (projectBrain.activeVersion || projectBrain.currentVersion || 0) >= 1
         }
-        busy={
-          evolutionRound?.status === 'running' ||
-          tournament.phase === 'generating' ||
-          tournament.phase === 'verifying' ||
-          tournament.phase === 'architecture' ||
-          tournament.phase === 'repairing' ||
-          tournament.phase === 'testing' ||
-          tournament.phase === 'judging'
-        }
-        activeVersion={
-          projectBrain?.activeVersion ?? projectBrain?.currentVersion
-        }
-        productName={projectBrain?.plan?.productName}
-        healthLabel={
-          appHealth
-            ? `Health ${appHealth.score} · ${appHealth.statusLabel}`
-            : null
-        }
-        suggestions={
-          appHealth?.recommendations?.slice(0, 3).map((r) => ({
-            id: r.id,
-            title: r.title,
-            text: r.improveRequest,
-          })) || []
-        }
-        onSubmit={(composedRequest) => {
-          handleEvolve(composedRequest)
-        }}
-      />
-
-      <ImproveAppPanel
-        enabled={
-          !!projectBrain?.plan &&
-          !!projectBrain.activeCandidateId &&
-          !!fragment &&
-          hasFragmentCode(fragment) &&
-          (projectBrain.activeVersion || projectBrain.currentVersion || 0) >=
-            1
-        }
-        busy={evolutionRound?.status === 'running'}
-        round={evolutionRound}
-        candidates={tournament.candidates}
-        phase={tournament.phase}
-        report={evolutionReport}
-        sourceDiff={evolutionSourceDiff}
-        onRetry={() => {
-          // Focus stays on Ask EvoStack — user must click Improve again (no auto API).
-        }}
-        onPreviewWinner={() => {
-          if (evolutionRound?.winnerId) {
-            setSelectedCandidate(evolutionRound.winnerId)
-            setCurrentTab('fragment')
-          }
-        }}
-      />
-
-      {/* Workspace — substantial editor/preview area; page scrolls normally above */}
-      <div className="grid w-full md:grid-cols-2 min-h-[70vh] border-t border-border">
-        <div
-          className={`flex flex-col w-full max-w-[900px] mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 ${fragment ? 'col-span-1 md:border-r md:border-border' : 'col-span-2'}`}
-        >
-          <Chat
-            messages={messages}
-            isLoading={isLoading}
-            setCurrentPreview={setCurrentPreview}
-          />
-          <ChatInput
+        commandBar={
+          <CommandBar
             retry={retry}
             isErrored={!!errorMessage || !!tournament.error}
             errorMessage={errorMessage || tournament.error || ''}
@@ -1439,10 +1524,13 @@ export default function Home() {
             stop={stop}
             input={chatInput}
             handleInputChange={handleSaveInputChange}
-            handleSubmit={handleSubmitAuth}
+            onDispatch={handleCommandDispatch}
             isMultiModal={currentModel?.multiModal || false}
             files={files}
             handleFileChange={handleFileChange}
+            chipsEnabled={chipsEnabled}
+            askKind={askKind}
+            onAskKindChange={setAskKind}
           >
             <ChatPicker
               templates={templates}
@@ -1460,25 +1548,9 @@ export default function Home() {
               useMorphApply={useMorphApply}
               onUseMorphApplyChange={setUseMorphApply}
             />
-          </ChatInput>
-        </div>
-        {fragment && (
-          <div className="flex flex-col overflow-hidden h-full min-h-[70vh] md:min-h-full">
-            <Preview
-              teamID={userTeam?.id}
-              accessToken={session?.access_token}
-              selectedTab={currentTab}
-              onSelectedTabChange={setCurrentTab}
-              isChatLoading={isLoading}
-              isPreviewLoading={isPreviewLoading}
-              fragment={fragment}
-              result={result as ExecutionResult}
-              unavailableReason={selectedPreviewNotice}
-              onClose={() => setFragment(undefined)}
-            />
-          </div>
-        )}
-      </div>
-    </main>
+          </CommandBar>
+        }
+      />
+    </>
   )
 }

@@ -15,7 +15,9 @@ import {
   VerificationResult,
   formatVerificationForJudge,
   truncateDiagnostic,
+  verificationHasPreviewOverlayFailure,
 } from '@/lib/verification'
+import { isInfrastructureRuntimeFailure } from '@/lib/sandbox-transport'
 import { z } from 'zod'
 
 /** Hard structural limit — never more than one repair per candidate. */
@@ -115,7 +117,10 @@ export function selectRepairReason(
   const archFail = hasCriticalArchitectureFailure(
     input.architectureCompliance ?? null,
   )
-  const runtimeFail = input.verification?.status === 'failed'
+  const runtimeFail =
+    !isInfrastructureRuntimeFailure(input.verification?.errors) &&
+    (input.verification?.status === 'failed' ||
+      verificationHasPreviewOverlayFailure(input.verification))
   if (!integrityFail && !archFail && !runtimeFail) return null
   if (integrityFail && !archFail && !runtimeFail) return 'integrity'
   if (integrityFail && (archFail || runtimeFail)) return 'combined'
@@ -163,9 +168,11 @@ Rules:
 - Never invent secrets or real API keys.
 - Do not touch package.json / lockfiles; use additional_dependencies + install_dependencies_command instead.
 - If fixing architecture: implement the REQUIRED layers from ArchitectureRequirements (backend/API, database layer, auth) without adding unnecessary infrastructure.
-- If fixing runtime: address the factual diagnostics (missing modules, imports, compile/startup errors).
+- If fixing runtime: address the factual diagnostics (missing modules, imports, compile/startup errors, truncated TSX, unclosed JSX).
 - If fixing file integrity: every local import must resolve to an existing generated file. Add the missing module OR fix the import path — keep required features.
-- If fixing hydration/SSR hazards: move Date.now()/new Date()/Math.random()/browser APIs into useEffect with a stable first-paint placeholder. Keep countdowns/clocks/animations — do not delete them.
+- If the file does not parse: finish truncated source, close every JSX tag, and keep JSX only in .tsx/.jsx files.
+- If fixing CSS: move @import statements to a valid location at the beginning of the stylesheet. Preserve every existing CSS rule, Tailwind directive, animation, variable, component style, font configuration, and visual feature. Do not delete fonts, animations, sections, or effects.
+- If fixing hydration/SSR hazards: move Date.now()/new Date()/Math.random()/browser APIs into useEffect with a stable first-paint placeholder. Keep countdowns/clocks/animations — do not delete them. Never nest <a> or <motion.a> inside Next.js <Link> (Link already renders <a>); use className on Link, motion(Link), or legacyBehavior. Do not delete navigation.
 - Connect existing UI to the required architecture when possible; do not replace a working UI.
 - Return ONLY the schema fields. Put full file contents for each modify/add.`
 

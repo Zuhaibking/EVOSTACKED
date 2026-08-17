@@ -101,6 +101,14 @@ const config = {
           '0%': { transform: 'translateY(-8%)', filter: 'blur(2px)' },
           '100%': { transform: 'translateY(0)', filter: 'blur(0)' },
         },
+        'pixel-on': {
+          '0%, 100%': { opacity: '0.12' },
+          '50%': { opacity: '1' },
+        },
+        'shimmer-text': {
+          '0%': { backgroundPosition: '200% 0' },
+          '100%': { backgroundPosition: '-200% 0' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -109,6 +117,8 @@ const config = {
         'flicker': 'flicker 2.4s ease-in-out infinite',
         'reveal-up': 'reveal-up 600ms cubic-bezier(0.2,0.8,0.2,1) both',
         'digit-flip': 'digit-flip 280ms ease-out',
+        'pixel-on': 'pixel-on 1.4s ease-in-out infinite',
+        'shimmer-text': 'shimmer-text 2.4s linear infinite',
       },
     },
   },

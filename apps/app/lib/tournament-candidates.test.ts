@@ -10,6 +10,7 @@ import {
   canActivateCandidate,
   candidateFailureReason,
   countRetainedCandidates,
+  pickInspectableCandidateId,
   previewsAreIsolated,
   recommendedFromVerdict,
   resolveCandidateIsolatedPreview,
@@ -21,9 +22,9 @@ import { applySmokeResultToCandidate } from './candidate-smoke'
 import { INITIAL_TOURNAMENT_CANDIDATE_COUNT, ITERATION_CANDIDATE_COUNT } from './evolution'
 import { buildDeterministicTournamentVerdict } from './deterministic-verdict'
 import {
-  assertSequentialGenerationPolicy,
+  assertConcurrentGenerationPolicy,
   buildCandidateGenerationQueue,
-  runSequentialCandidateJobs,
+  runParallelCandidateJobs,
 } from './tournament-generation'
 import type { Candidate } from './tournament-client'
 import { VARIANTS, type VariantId } from './tournament'
@@ -190,6 +191,14 @@ function fullTournament(): Record<VariantId, Candidate> {
   assert.deepEqual(
     Object.keys(retained).sort(),
     ['minimal', 'playful', 'rich'],
+  )
+  assert.equal(pickInspectableCandidateId(retained), 'minimal')
+  assert.equal(
+    pickInspectableCandidateId({
+      minimal: { ...retained.minimal, status: 'generating' },
+      rich: retained.rich,
+    }),
+    'rich',
   )
 }
 
@@ -465,10 +474,10 @@ function fullTournament(): Record<VariantId, Candidate> {
   )
 }
 
-// Sequential queue: Product → Premium → Innovate, never concurrent
+// Concurrent queue: Product → Premium → Innovate start together
 {
-  const policy = assertSequentialGenerationPolicy()
-  assert.equal(policy.concurrent, false)
+  const policy = assertConcurrentGenerationPolicy()
+  assert.equal(policy.concurrent, true)
   assert.equal(policy.queueSize, 3)
   assert.ok(policy.maxAttemptsPerCandidate >= 3)
   const queue = buildCandidateGenerationQueue()
@@ -544,18 +553,133 @@ function fullTournament(): Record<VariantId, Candidate> {
   )
 }
 
-async function assertSequentialRunner() {
-  const queue = buildCandidateGenerationQueue()
-  const order: string[] = []
-  const ids = await runSequentialCandidateJobs(queue, async (item) => {
-    order.push(item.id)
-    return item.id
+// Failed verification with a live host URL → preview stays available
+{
+  const compileFail = baseCandidate('minimal', {
+    status: 'verify_failed',
+    finalVerification: {
+      status: 'failed',
+      filesWritten: true,
+      dependenciesInstalled: true,
+      processStarted: true,
+      previewReachable: false,
+      errors: [
+        'styles/globals.css:1785: @import rules must precede all rules aside from @charset and @layer statements.',
+      ],
+      warnings: [],
+      durationMs: 8_000,
+      sbxId: 'sbx_css',
+      url: productUrl,
+      template: 'nextjs-developer',
+    },
+    execution: {
+      sbxId: 'sbx_css',
+      url: productUrl,
+      template: 'nextjs-developer',
+    },
   })
-  assert.deepEqual(order, ['minimal', 'rich', 'playful'])
-  assert.deepEqual(ids, ['minimal', 'rich', 'playful'])
+  const preview = resolveCandidateIsolatedPreview(compileFail)
+  assert.equal(preview.available, true)
+  assert.equal(
+    preview.execution && 'url' in preview.execution && preview.execution.url,
+    productUrl,
+  )
 }
 
-assertSequentialRunner()
+// One CSS-failed candidate does not destroy sibling preview URLs
+{
+  const product = baseCandidate('minimal', {
+    status: 'verify_failed',
+    finalVerification: {
+      status: 'failed',
+      filesWritten: true,
+      dependenciesInstalled: true,
+      processStarted: false,
+      previewReachable: false,
+      errors: ['styles/globals.css:12: @import after CSS rules'],
+      warnings: [],
+      durationMs: 20,
+    },
+    execution: undefined,
+  })
+  const premium = baseCandidate('rich', {
+    finalVerification: passed(premiumUrl),
+    execution: {
+      sbxId: 'sbx_prem',
+      url: premiumUrl,
+      template: 'nextjs-developer',
+    },
+  })
+  const innovate = baseCandidate('playful', {
+    finalVerification: passed(innovateUrl),
+    execution: {
+      sbxId: 'sbx_inn',
+      url: innovateUrl,
+      template: 'nextjs-developer',
+    },
+  })
+  const retained = retainTournamentCandidates({
+    minimal: product,
+    rich: premium,
+    playful: innovate,
+  })
+  assert.equal(countRetainedCandidates(retained), 3)
+  assert.equal(resolveCandidateIsolatedPreview(retained.minimal).available, false)
+  const premiumPreview = resolveCandidateIsolatedPreview(retained.rich)
+  const innovatePreview = resolveCandidateIsolatedPreview(retained.playful)
+  assert.equal(
+    premiumPreview.execution && 'url' in premiumPreview.execution
+      ? premiumPreview.execution.url
+      : undefined,
+    premiumUrl,
+  )
+  assert.equal(
+    innovatePreview.execution && 'url' in innovatePreview.execution
+      ? innovatePreview.execution.url
+      : undefined,
+    innovateUrl,
+  )
+  assert.ok(
+    previewsAreIsolated(
+      resolveCandidateIsolatedPreview(retained.rich),
+      resolveCandidateIsolatedPreview(retained.playful),
+    ),
+  )
+}
+
+async function assertParallelRunner() {
+  const queue = buildCandidateGenerationQueue()
+  const events: string[] = []
+  const results = await runParallelCandidateJobs(queue, async (item) => {
+    events.push(`start:${item.id}`)
+    await Promise.resolve()
+    events.push(`end:${item.id}`)
+    if (item.id === 'rich') {
+      throw new Error('premium isolated failure')
+    }
+    return item.id
+  })
+
+  const firstEnd = events.findIndex((e) => e.startsWith('end:'))
+  const starts = events.filter((e) => e.startsWith('start:'))
+  assert.equal(starts.length, 3)
+  assert.ok(
+    firstEnd >= 3,
+    'all jobs must start before any completes',
+  )
+  assert.deepEqual(
+    starts,
+    ['start:minimal', 'start:rich', 'start:playful'],
+  )
+
+  const values = results.filter((r) => r.ok).map((r) => r.value)
+  const failures = results.filter((r) => !r.ok)
+  assert.equal(failures.length, 1)
+  assert.equal(failures[0]?.item.id, 'rich')
+  assert.deepEqual(values, ['minimal', 'playful'])
+}
+
+assertParallelRunner()
   .then(() => {
     console.log('tournament-candidates.test.ts: all tests passed')
   })

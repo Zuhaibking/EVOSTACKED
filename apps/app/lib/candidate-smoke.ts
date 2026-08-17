@@ -9,9 +9,12 @@ import {
 } from '@/lib/preview-execution'
 import type { SmokeSuiteResult } from '@/lib/smoke'
 import type { ExecutionResult } from '@/lib/types'
-import type { VerificationResult } from '@/lib/verification'
 import type { DeepPartial } from '@evostack/shared'
 import type { FragmentSchema } from '@/lib/schema'
+import {
+  verificationHasPreviewOverlayFailure,
+  type VerificationResult,
+} from '@/lib/verification'
 
 export type SmokeCandidateSlice = {
   status?: string
@@ -26,8 +29,13 @@ export type SmokeCandidateSlice = {
 /** True when this candidate already has a reusable preview URL. */
 export function candidatePreviewIsHealthy(c: SmokeCandidateSlice): boolean {
   if (!hasFragmentCode(c.fragment)) return false
-  const runtime = c.finalVerification || c.verification || null
-  if (runtime?.status === 'failed') return false
+  if (
+    verificationHasPreviewOverlayFailure(
+      c.finalVerification || c.verification,
+    )
+  ) {
+    return false
+  }
   const execution = resolveReusablePreviewExecution({
     execution: c.execution,
     verification: c.verification,
@@ -45,19 +53,31 @@ export function applySmokeResultToCandidate<T extends SmokeCandidateSlice>(
   smoke: SmokeSuiteResult,
 ): T {
   const smokeStatus = smoke.status
-  const status =
-    smokeStatus === 'passed'
-      ? 'tested'
-      : smokeStatus === 'not_testable'
-        ? 'not_testable'
-        : 'smoke_failed'
-
   const previewHealthy = candidatePreviewIsHealthy(candidate)
   const smokeIsSoftDiagnostic =
     previewHealthy &&
     (smokeStatus === 'failed' ||
       smokeStatus === 'timeout' ||
       smokeStatus === 'not_testable')
+
+  const prior = candidate.status
+  const hardFailedPrior =
+    prior === 'verify_failed' ||
+    prior === 'repair_failed' ||
+    prior === 'architecture_failed' ||
+    prior === 'error'
+
+  const status = smokeIsSoftDiagnostic
+    ? hardFailedPrior
+      ? prior
+      : smokeStatus === 'not_testable'
+        ? 'not_testable'
+        : 'tested'
+    : smokeStatus === 'passed'
+      ? 'tested'
+      : smokeStatus === 'not_testable'
+        ? 'not_testable'
+        : 'smoke_failed'
 
   return {
     ...candidate,

@@ -7,17 +7,24 @@ import type { ApplicationPlan } from '@/lib/plan'
 export type GenerationBudgetTier = 'small' | 'medium' | 'large'
 
 /**
- * Soft caps for streamObject maxTokens.
- *
- * Historical TPM blowups came from THREE concurrent generations.
- * Tournament generation is sequential now, so each candidate can use a
- * full multi-file budget without tripling TPM. Caps still prevent runaway
- * 47k requests.
+ * Soft caps for a single streamObject (evolution / chat / one in-flight job).
+ * Caps still prevent runaway 47k requests.
  */
 export const GENERATION_MAX_TOKENS = {
   small: 8000,
   medium: 14000,
   large: 20000,
+} as const
+
+/**
+ * Per-job caps when Product / Premium / Innovate stream concurrently.
+ * Three full sequential budgets in flight historically truncated richer
+ * variants (missing Hero/Perks files) via TPM interruption.
+ */
+export const CONCURRENT_GENERATION_MAX_TOKENS = {
+  small: 6000,
+  medium: 10000,
+  large: 14000,
 } as const
 
 export function resolveGenerationBudgetTier(
@@ -36,10 +43,13 @@ export function resolveGenerationBudgetTier(
 
 export function resolveGenerationMaxTokens(
   plan?: ApplicationPlan | null,
-  opts?: { userMaxTokens?: number | null },
+  opts?: { userMaxTokens?: number | null; concurrentJobs?: number },
 ): number {
   const tier = resolveGenerationBudgetTier(plan)
-  const budget = GENERATION_MAX_TOKENS[tier]
+  const concurrent = (opts?.concurrentJobs ?? 1) >= 2
+  const budget = concurrent
+    ? CONCURRENT_GENERATION_MAX_TOKENS[tier]
+    : GENERATION_MAX_TOKENS[tier]
   const user = opts?.userMaxTokens
   if (typeof user === 'number' && Number.isFinite(user) && user > 0) {
     return Math.min(Math.floor(user), budget)
@@ -47,10 +57,11 @@ export function resolveGenerationMaxTokens(
   return budget
 }
 
-/** Merge into AI SDK model params without inventing concurrent generations. */
+/** Merge into AI SDK model params. concurrentJobs >= 2 uses the parallel cap. */
 export function withGenerationTokenBudget(
   modelParams: Record<string, unknown>,
   plan?: ApplicationPlan | null,
+  opts?: { concurrentJobs?: number },
 ): Record<string, unknown> {
   const userMax =
     typeof modelParams.maxTokens === 'number'
@@ -58,6 +69,9 @@ export function withGenerationTokenBudget(
       : null
   return {
     ...modelParams,
-    maxTokens: resolveGenerationMaxTokens(plan, { userMaxTokens: userMax }),
+    maxTokens: resolveGenerationMaxTokens(plan, {
+      userMaxTokens: userMax,
+      concurrentJobs: opts?.concurrentJobs,
+    }),
   }
 }

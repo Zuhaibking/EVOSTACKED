@@ -257,6 +257,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19(tsx@4.23.12))
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
       usehooks-ts:
         specifier: ^3.1.0
         version: 3.1.1(react@19.2.8)
@@ -8243,8 +8246,7 @@ snapshots:
 
   undici@7.29.0: {}
 
-  undici@8.10.0:
-    optional: true
+  undici@8.10.0: {}
 
   unpipe@1.0.0: {}
 

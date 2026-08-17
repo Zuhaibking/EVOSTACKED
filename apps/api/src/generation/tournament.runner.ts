@@ -14,10 +14,12 @@ import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
 import { buildEvolutionPrompt, buildGenerationPrompt } from '@/lib/prompt'
 import { formatBaselineFilesForPrompt, buildSingleIterationVerdict } from '@/lib/evolution'
 import {
+  canDeployIntegrity,
   formatIntegrityUserSummary,
+  formatNonBlockingIntegrityWarnings,
   integrityToFailedVerification,
-  validateFragmentIntegrity,
 } from '@/lib/fragment-integrity'
+import { runGeneratedProjectPreflight } from '@/lib/prepare-fragment-integrity'
 import { withGenerationTokenBudget } from '@/lib/generation-budget'
 import ratelimit from '@/lib/ratelimit'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
@@ -49,10 +51,7 @@ import {
   sanitizeProviderErrorMessage,
   withProviderRetry,
 } from '@/lib/provider-retry'
-import {
-  classifyProviderQuotaError,
-  planQuotaAbortForRemaining,
-} from '@/lib/provider-quota'
+import { classifyProviderQuotaError } from '@/lib/provider-quota'
 import { buildCandidateGenerationQueue } from '@/lib/tournament-generation'
 import {
   buildRuntimePreviewDiagnostic,
@@ -326,9 +325,9 @@ export async function handleTournament(req: Request) {
         }
       }
 
-      // ---- Phase 1: SEQUENTIAL candidate generation (never concurrent) ----
-      // Product → Premium → Innovate. Bounded 429 retries per candidate.
-      // Avoids TPM blowups from three huge OpenAI streams at once.
+      // ---- Phase 1: CONCURRENT candidate generation ----
+      // After PLAN, Product / Premium / Innovate start together.
+      // Each job keeps its own retry/quota; one failure never cancels siblings.
       const variantsToGenerate = isSingleIteration
         ? VARIANTS.filter((v) => v.id === evolution!.activeVariantId)
         : [...VARIANTS]
@@ -344,18 +343,14 @@ export async function handleTournament(req: Request) {
         variantsToGenerate.map((v) => v.id),
       )
 
-      const genResults: Array<{
+      type GenResult = {
         id: VariantId
         fragment: any
         error: string | null
         skipped?: boolean
-      }> = []
+      }
 
-      let quotaAbort = false
-
-      for (let qi = 0; qi < generationQueue.length; qi++) {
-        if (quotaAbort) break
-        const item = generationQueue[qi]
+      for (const item of generationQueue) {
         const variant = VARIANTS.find((v) => v.id === item.id)!
         send({
           type: 'candidate_start',
@@ -363,134 +358,116 @@ export async function handleTournament(req: Request) {
           label: variant.label,
           sigil: variant.sigil,
         })
+      }
 
-        try {
-          const system = isEvolution
-            ? buildEvolutionPrompt({
-                template,
-                plan,
-                variantDirection: variant.systemSuffix,
-                userRequest: evolution!.userRequest,
-                parentVersion: evolution!.parentVersion,
-                productName:
-                  evolution?.iterationContext?.summary?.productName ||
-                  plan?.productName,
-                knownIssues: evolution?.iterationContext?.knownIssues,
-                fileTree:
-                  evolution?.iterationContext?.fileTree ||
-                  baselineFiles.map((f) => f.file_path),
+      const genResults: GenResult[] = await Promise.all(
+        generationQueue.map(async (item): Promise<GenResult> => {
+          const variant = VARIANTS.find((v) => v.id === item.id)!
+          try {
+            const system = isEvolution
+              ? buildEvolutionPrompt({
+                  template,
+                  plan,
+                  variantDirection: variant.systemSuffix,
+                  userRequest: evolution!.userRequest,
+                  parentVersion: evolution!.parentVersion,
+                  productName:
+                    evolution?.iterationContext?.summary?.productName ||
+                    plan?.productName,
+                  knownIssues: evolution?.iterationContext?.knownIssues,
+                  fileTree:
+                    evolution?.iterationContext?.fileTree ||
+                    baselineFiles.map((f) => f.file_path),
+                })
+              : buildGenerationPrompt({
+                  template,
+                  plan,
+                  variantDirection: variant.systemSuffix,
+                })
+
+            const genParams = withGenerationTokenBudget(
+              modelParams as Record<string, unknown>,
+              plan,
+              { concurrentJobs: generationQueue.length },
+            )
+
+            const final = await withProviderRetry(async () => {
+              const result = await streamObject({
+                model: modelClient as LanguageModel,
+                schema,
+                system,
+                messages: evolutionMessages,
+                maxRetries: 0,
+                ...genParams,
+                temperature: variant.temperature,
               })
-            : buildGenerationPrompt({
-                template,
-                plan,
-                variantDirection: variant.systemSuffix,
-              })
+              const { partialObjectStream, object } = result
 
-          const genParams = withGenerationTokenBudget(
-            modelParams as Record<string, unknown>,
-            plan,
-          )
-
-          const final = await withProviderRetry(async () => {
-            const result = await streamObject({
-              model: modelClient as LanguageModel,
-              schema,
-              system,
-              messages: evolutionMessages,
-              maxRetries: 0,
-              ...genParams,
-              temperature: variant.temperature,
+              let last: any = undefined
+              for await (const partial of partialObjectStream) {
+                last = partial
+                send({
+                  type: 'candidate_chunk',
+                  id: variant.id,
+                  fragment: partial,
+                })
+              }
+              return (await object) ?? last
             })
-            const { partialObjectStream, object } = result
 
-            let last: any = undefined
-            for await (const partial of partialObjectStream) {
-              last = partial
+            if (!final) {
+              const err = 'Generation produced an empty response'
               send({
-                type: 'candidate_chunk',
+                type: 'candidate_error',
                 id: variant.id,
-                fragment: partial,
+                error: err,
               })
+              return {
+                id: variant.id as VariantId,
+                fragment: null,
+                error: err,
+              }
             }
-            return (await object) ?? last
-          })
 
-          if (!final) {
-            const err = 'Generation produced an empty response'
-            send({
-              type: 'candidate_error',
-              id: variant.id,
-              error: err,
-            })
-            genResults.push({
-              id: variant.id as VariantId,
-              fragment: null,
-              error: err,
-            })
-          } else {
             send({
               type: 'candidate_done',
               id: variant.id,
               fragment: final,
             })
-            genResults.push({
+            return {
               id: variant.id as VariantId,
               fragment: final,
               error: null,
-            })
-          }
-        } catch (e: any) {
-          const quota = classifyProviderQuotaError(e)
-          const err =
-            quota.kind !== 'none'
-              ? quota.message
-              : sanitizeProviderErrorMessage(e)
+            }
+          } catch (e: any) {
+            const quota = classifyProviderQuotaError(e)
+            const err =
+              quota.kind !== 'none'
+                ? quota.message
+                : sanitizeProviderErrorMessage(e)
 
-          if (quota.kind !== 'none') {
-            send({
-              type: 'provider_quota',
-              state: quota.budgetState,
-              message: err,
-              retryAfterMs: quota.retryAfterMs ?? undefined,
-            })
-          }
-
-          send({
-            type: 'candidate_error',
-            id: variant.id,
-            error: err,
-          })
-          genResults.push({
-            id: variant.id as VariantId,
-            fragment: null,
-            error: err,
-          })
-
-          const remainingIds = generationQueue.slice(qi + 1).map((x) => x.id)
-          const abortPlan = planQuotaAbortForRemaining({
-            classification: quota,
-            failedId: variant.id,
-            remainingIds,
-          })
-          if (abortPlan.abort) {
-            quotaAbort = true
-            for (const skipId of abortPlan.skipIds) {
+            if (quota.kind !== 'none') {
               send({
-                type: 'candidate_skipped',
-                id: skipId as VariantId,
-                reason: 'daily_limit',
-                message: abortPlan.message,
-              })
-              genResults.push({
-                id: skipId as VariantId,
-                fragment: null,
-                error: abortPlan.message,
-                skipped: true,
+                type: 'provider_quota',
+                state: quota.budgetState,
+                message: err,
+                retryAfterMs: quota.retryAfterMs ?? undefined,
               })
             }
+
+            send({
+              type: 'candidate_error',
+              id: variant.id,
+              error: err,
+            })
+            return {
+              id: variant.id as VariantId,
+              fragment: null,
+              error: err,
+            }
           }
-        }
-      }
+        }),
+      )
 
       const generated = genResults.filter((r) => r.fragment && !r.error)
 
@@ -547,6 +524,8 @@ export async function handleTournament(req: Request) {
         ? `${plan.productName}: ${plan.productGoal}\nCore: ${plan.coreFeatures.join('; ')}`
         : brief.slice(0, 800)
 
+      // Deploy stays Promise.all so write/install/HTTP can overlap, but
+      // Sandbox.create is serialized inside deployAndVerify (DNS/E2B handshake).
       const verifyTasks = withArchitecture.map(async (r) => {
         send({ type: 'candidate_verifying', id: r.id })
         const variantLabel =
@@ -583,14 +562,15 @@ export async function handleTournament(req: Request) {
           } as Verified
         }
 
-        let workingFrag = frag
+        const preflighted = runGeneratedProjectPreflight(frag)
+        let workingFrag = preflighted.fragment
         let repairAttempts = 0
         let repairAttempt: RepairAttemptRecord | null = null
         const architectureCompliance = r.architectureCompliance
 
         try {
-          let integrity = validateFragmentIntegrity(workingFrag)
-          if (!integrity.ok && repairAttempts === 0) {
+          let integrity = preflighted.integrity
+          if (!canDeployIntegrity(integrity) && repairAttempts === 0) {
             const initialIntegrity = integrity
             send({
               type: 'candidate_repairing',
@@ -609,8 +589,9 @@ export async function handleTournament(req: Request) {
               })
               repairAttempts = repaired.repairAttempts
               repairAttempt = repaired.repairAttempt
-              workingFrag = repaired.fragment
-              integrity = repaired.integrity
+              const again = runGeneratedProjectPreflight(repaired.fragment)
+              workingFrag = again.fragment
+              integrity = again.integrity
 
               if (repaired.repairAttempt.success && integrity.ok) {
                 // Integrity recovered — fragment fixed. Do NOT claim runtime/preview
@@ -643,7 +624,7 @@ export async function handleTournament(req: Request) {
                   architectureCompliance,
                   // Explicitly omit execution — deploy has not run yet.
                 })
-              } else {
+              } else if (!canDeployIntegrity(integrity)) {
                 send({
                   type: 'candidate_repair_failed',
                   id: r.id,
@@ -683,21 +664,24 @@ export async function handleTournament(req: Request) {
             }
           }
 
-          integrity = validateFragmentIntegrity(workingFrag)
-          if (!integrity.ok) {
+          const gated = runGeneratedProjectPreflight(workingFrag)
+          workingFrag = gated.fragment
+          integrity = gated.integrity
+          if (!canDeployIntegrity(integrity)) {
             const verification = integrityToFailedVerification(integrity, {
               candidateLabel: variantLabel,
             })
             if (repairAttempt && !repairAttempt.success) {
+              const details = verification.errors.slice(1)
               verification.errors = [
                 formatIntegrityUserSummary(integrity, {
                   candidateLabel: variantLabel,
                   repaired: true,
                 }),
-                ...verification.errors.slice(1),
-              ]
+                ...details,
+              ].filter(Boolean)
             }
-            // Shared failure mode diagnostic: integrity blocked deploy (no E2B).
+            // Shared failure mode diagnostic: compile-blocking integrity (no E2B).
             logRuntimePreviewDiagnostic(
               'candidate_integrity_blocked',
               buildRuntimePreviewDiagnostic({
@@ -710,6 +694,9 @@ export async function handleTournament(req: Request) {
                     ? workingFrag.port
                     : null,
                 deployError: verification.errors[0],
+                integrityIssueCodes: integrity.issues
+                  .filter((i) => i.severity === 'error')
+                  .map((i) => i.code),
               }),
             )
             send({
@@ -738,6 +725,13 @@ export async function handleTournament(req: Request) {
               accessToken,
             },
           )
+          const qualityWarnings = formatNonBlockingIntegrityWarnings(integrity)
+          if (qualityWarnings.length) {
+            verification.warnings = [
+              ...(verification.warnings || []),
+              ...qualityWarnings,
+            ]
+          }
           if (verification.status === 'failed' && verification.errors[0]) {
             const first = verification.errors[0]
             if (

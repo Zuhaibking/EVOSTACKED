@@ -7,7 +7,12 @@ import { totalCodeLength } from '@/lib/fragment'
 import type { SmokeSuiteResult } from '@/lib/smoke'
 import type { VariantId, Verdict } from '@/lib/tournament'
 import { VARIANTS } from '@/lib/tournament'
-import type { VerificationResult } from '@/lib/verification'
+import {
+  isHydrationOverlayFailure,
+  verificationHasCompileFailure,
+  verificationHasPreviewOverlayFailure,
+  type VerificationResult,
+} from '@/lib/verification'
 
 export type DeterministicJudgeInput = {
   id: VariantId
@@ -20,7 +25,11 @@ export type DeterministicJudgeInput = {
 function rank(r: DeterministicJudgeInput): number {
   let s = 0
   const runtime = r.finalVerification?.status
-  if (runtime === 'passed') s += 4
+  const overlayBroken = verificationHasPreviewOverlayFailure(
+    r.finalVerification,
+  )
+  if (overlayBroken) s += 0
+  else if (runtime === 'passed') s += 4
   else if (runtime === 'partial') s += 3
   if (r.smoke?.status === 'passed') s += 3
   else if (r.smoke?.status === 'failed' || r.smoke?.status === 'timeout') s -= 1
@@ -52,12 +61,24 @@ export function buildDeterministicTournamentVerdict(
         comment: 'Not generated.',
       }
     }
+    const compileBroken = verificationHasCompileFailure(r.finalVerification)
+    const overlayBroken = verificationHasPreviewOverlayFailure(
+      r.finalVerification,
+    )
+    const hydrationBroken =
+      overlayBroken &&
+      !compileBroken &&
+      (r.finalVerification?.errors || []).some((e) =>
+        isHydrationOverlayFailure(e),
+      )
+    const runtimeFailed =
+      overlayBroken || r.finalVerification?.status === 'failed'
     const score = rank(r)
-    const clarity =
-      r.finalVerification?.status === 'failed' ? 0.45 : 0.72
+    const clarity = runtimeFailed ? 0.45 : 0.72
     const fit = Math.max(0, Math.min(1, score / 10))
-    const polish =
-      r.smoke?.status === 'passed'
+    const polish = overlayBroken
+      ? 0.32
+      : r.smoke?.status === 'passed'
         ? 0.78
         : r.finalVerification?.status === 'passed'
           ? 0.68
@@ -71,14 +92,17 @@ export function buildDeterministicTournamentVerdict(
       fit,
       polish,
       composite,
-      comment:
-        r.architectureCompliance?.status === 'failed'
-          ? 'Architecture needs attention.'
-          : r.smoke?.status === 'failed'
-            ? 'Smoke diagnostics failed — still inspectable.'
-            : r.finalVerification?.status === 'failed'
-              ? 'Runtime failed — source still available.'
-              : 'Deterministic recommendation signal.',
+      comment: compileBroken
+        ? 'Build failed — source still inspectable.'
+        : hydrationBroken
+          ? 'Hydration failed — source still inspectable.'
+          : r.architectureCompliance?.status === 'failed'
+            ? 'Architecture needs attention.'
+            : r.smoke?.status === 'failed'
+              ? 'Smoke diagnostics failed — still inspectable.'
+              : r.finalVerification?.status === 'failed'
+                ? 'Runtime failed — source still available.'
+                : 'Deterministic recommendation signal.',
     }
   })
 

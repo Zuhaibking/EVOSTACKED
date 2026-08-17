@@ -88,6 +88,11 @@ Current project source:
 ${filesContext}
 
 Edit the single file that best implements the user's request. Prefer modifying an existing path from the list. You may target a new file_path only when a new module is clearly required.
+
+Stylesheet / integrity rules:
+- If you edit CSS, keep @import before ordinary rules (@charset and @layer statements may come first).
+- @layer, @theme, @custom-variant, and @plugin are valid. Do not delete fonts, animations, or visual features.
+- Do not introduce missing local imports, truncated source, or invalid JSX/CSS.
 `
 
     const result = await generateObject({

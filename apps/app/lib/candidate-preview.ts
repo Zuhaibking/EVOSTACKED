@@ -2,6 +2,7 @@
  * Pure helpers for tournament candidate → existing workspace Preview pane.
  * No network / provider calls. Does not promote activeVersion.
  */
+import { formatPreviewUnavailableReason } from '@/lib/build-failure-diagnostics'
 import { hasFragmentCode } from '@/lib/fragment'
 import {
   resolveCandidateIsolatedPreview,
@@ -61,9 +62,11 @@ export function buildCandidatePreviewAction(
     tab: 'fragment',
     fragment,
     result: undefined,
-    unavailableReason:
-      isolated.reason ||
-      'Runtime deployment did not produce a preview URL for this candidate.',
+    unavailableReason: formatPreviewUnavailableReason({
+      errors: isolated.reason ? [isolated.reason] : undefined,
+      fallback:
+        'Runtime deployment did not produce a preview URL for this candidate.',
+    }),
     showIframe: false,
     promotesActiveVersion: false,
   }

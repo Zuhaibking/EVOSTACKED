@@ -139,11 +139,29 @@ test('malformed smoke result rejected', () => {
   assert.equal(bad.ok, false)
 })
 
-test('shouldSmokeTest only for passed/partial', () => {
+test('shouldSmokeTest only for passed/partial without compile overlay', () => {
   assert.equal(shouldSmokeTest(runtime('passed')), true)
   assert.equal(shouldSmokeTest(runtime('partial')), true)
   assert.equal(shouldSmokeTest(runtime('failed')), false)
   assert.equal(shouldSmokeTest(undefined), false)
+  assert.equal(
+    shouldSmokeTest({
+      ...runtime('partial'),
+      errors: [
+        "Parsing ecmascript source code failed Unexpected token 'section'. Expected jsx identifier",
+      ],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldSmokeTest({
+      ...runtime('partial'),
+      errors: [
+        'Hydration failed because the initial UI does not match what was rendered on the server.',
+      ],
+    }),
+    false,
+  )
 })
 
 test('interpreter template is not browser-testable', () => {

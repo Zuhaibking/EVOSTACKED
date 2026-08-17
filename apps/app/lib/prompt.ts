@@ -50,6 +50,7 @@ Match the brief. A calculator must not become a SaaS. A gym system must not be m
 - Accessibility: semantic HTML, readable contrast, labels, focus states, usable mobile navigation.
 - Avoid generic AI UI: random purple/blue gradients, glassmorphism for its own sake, pointless badge spam, fake KPI walls, decorative cards with no job, excessive motion.
 - Prefer simple + polished + reliable over massive + fragile + over-engineered.
+- Each specimen must feel like a real shipped product for THIS domain: specific copy, a memorable layout, and a coherent visual system. Never a generic SaaS card grid, never Inter-on-purple, never identical structure across Product / Premium / Innovate.
 
 ## Code structure
 - Split files when it improves clarity; never dump a complex app into one component.
@@ -70,7 +71,18 @@ Match the brief. A calculator must not become a SaaS. A gym system must not be m
 - Do not reference undeclared assets or packages that are not available.
 - Keep imports consistent with the generated file tree (relative paths must resolve).
 - Before finishing, mentally verify the file dependency graph end-to-end.
+- Do not emit truncated source, invalid JSX, invalid TypeScript, invalid CSS, or broken routes.
+- Every .tsx/.jsx file must be complete and parseable: close every tag, brace, and parenthesis. Never wrap file_content in markdown fences.
+- JSX belongs only in .tsx / .jsx files. Never put <div> / <section> in a .ts file.
+- Do not reference files that were never generated. Avoid duplicate file paths.
 - Prioritize a COMPLETE, WORKING application over excessive file count.
+
+## STYLESHEET RULES (mandatory)
+- @import must appear before ordinary CSS rules. Only @charset and @layer statements may precede @import.
+- Valid pattern: @import url("..."); then @import "tailwindcss"; then @theme / @layer / component rules.
+- @layer, @theme, @custom-variant, and @plugin are valid Tailwind constructs — keep them; do not treat them as errors.
+- Never append Google Fonts or other @import statements after :root, selectors, @keyframes, or component styles.
+- Do not delete fonts, animations, or visual features to satisfy this rule — place imports first instead.
 
 ## SSR / HYDRATION SAFETY (mandatory for React / Next.js)
 Server HTML and the first client render MUST match exactly.
@@ -87,6 +99,12 @@ Required pattern for countdowns, live clocks, relative times, random IDs, browse
 3. Optional gate: const [ready, setReady] = useState(false); useEffect(() => setReady(true), []).
 Keep the feature fully functional after mount — do NOT delete countdowns, animations, or interactions just to avoid this rule.
 Fixed timestamps like new Date('2026-12-01T00:00:00Z') for event start times are fine.
+
+Invalid HTML (causes "Hydration failed" / nested <a> in <a>):
+- Next.js <Link> already renders an <a>. Never put <a>, <motion.a>, or another <Link> inside <Link>.
+- Never wrap <Link> in <a> or <motion.a>.
+- Put className and click handlers on <Link>. For motion, use motion(Link) or wrap Link in motion.div — not motion.a as a child or parent of Link.
+- Pages-router exception only: <Link href="..." legacyBehavior><a className="...">label</a></Link>.
 `
 }
 
@@ -108,6 +126,10 @@ export function implementationChecklistPrompt(): string {
 - Output valid structured fields for the fragment schema (multi-file code array).
 - Confirm: every relative/local import resolves to a file you generated.
 - Confirm: no Date.now()/new Date()/Math.random()/browser storage in render or useState initializers; countdowns/clocks use useEffect + stable placeholders.
+- Confirm: no nested <a> — Next.js Link must not wrap or be wrapped by <a> or <motion.a>.
+- Confirm: every stylesheet has @import (if any) before ordinary CSS rules; Tailwind @layer/@theme/@plugin remain valid.
+- Confirm: no truncated files, invalid JSX/TS/CSS, missing local imports, or references to files you did not generate.
+- Confirm: every TSX file parses (no unclosed tags) and no file_content is wrapped in markdown fences.
 `
 }
 

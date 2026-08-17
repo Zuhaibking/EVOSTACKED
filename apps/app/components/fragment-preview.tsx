@@ -9,10 +9,21 @@ import {
   ExecutionResultWeb,
 } from '@/lib/types'
 
-export function FragmentPreview({ result }: { result: ExecutionResult }) {
+export function FragmentPreview({
+  result,
+  viewport = 'desktop',
+}: {
+  result: ExecutionResult
+  viewport?: 'desktop' | 'tablet' | 'mobile'
+}) {
   if (getTemplateId(result.template) === 'code-interpreter-v1') {
     return <FragmentInterpreter result={result as ExecutionResultInterpreter} />
   }
 
-  return <FragmentWeb result={result as ExecutionResultWeb} />
+  return (
+    <FragmentWeb
+      result={result as ExecutionResultWeb}
+      viewport={viewport}
+    />
+  )
 }

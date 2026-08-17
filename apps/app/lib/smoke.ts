@@ -11,7 +11,10 @@ import {
   normalizeApplicationPlan,
 } from '@/lib/plan'
 import { getTemplateId } from '@/lib/templates'
-import { VerificationResult } from '@/lib/verification'
+import {
+  VerificationResult,
+  verificationHasPreviewOverlayFailure,
+} from '@/lib/verification'
 import { z } from 'zod'
 
 export const smokeStatusSchema = z.enum([
@@ -106,9 +109,10 @@ export type SmokeSuiteResult = z.infer<typeof smokeSuiteResultSchema>
 
 /** Only runnable final verifications enter browser smoke testing. */
 export function shouldSmokeTest(verification?: VerificationResult): boolean {
+  if (!verification) return false
+  if (verificationHasPreviewOverlayFailure(verification)) return false
   return (
-    !!verification &&
-    (verification.status === 'passed' || verification.status === 'partial')
+    verification.status === 'passed' || verification.status === 'partial'
   )
 }
 

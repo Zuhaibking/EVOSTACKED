@@ -95,7 +95,7 @@ const smokeFailed: SmokeSuiteResult = {
   const before = healthyCandidate('minimal', productUrl)
   assert.equal(candidatePreviewIsHealthy(before), true)
   const after = applySmokeResultToCandidate(before, smokeTimeout)
-  assert.equal(after.status, 'smoke_failed')
+  assert.equal(after.status, 'tested')
   assert.equal(after.smoke?.status, 'timeout')
   assert.equal(
     after.execution && 'url' in after.execution && after.execution.url,
@@ -119,6 +119,7 @@ const smokeFailed: SmokeSuiteResult = {
     healthyCandidate('rich', premiumUrl),
     smokeFailed,
   )
+  assert.equal(after.status, 'tested')
   assert.equal(resolveCandidateIsolatedPreview(after).available, true)
   assert.equal(candidateFailureReason(after), undefined)
 }
@@ -182,6 +183,68 @@ const smokeFailed: SmokeSuiteResult = {
   assert.equal(resolveCandidateIsolatedPreview(retained.rich).available, true)
   assert.equal(resolveCandidateIsolatedPreview(retained.playful).available, false)
   assert.ok(retained.playful.fragment)
+}
+
+// 5. Smoke failure without a preview URL remains a hard smoke_failed
+{
+  const bare: Candidate = {
+    id: 'minimal',
+    label: 'Product',
+    sigil: 'P',
+    status: 'verified',
+    fragment: {
+      title: 'x',
+      template: 'nextjs-developer',
+      file_path: 'pages/index.tsx',
+      code: [
+        {
+          file_path: 'pages/index.tsx',
+          file_content: 'export default function H(){return <main/>}',
+        },
+      ],
+    },
+    finalVerification: {
+      status: 'failed',
+      filesWritten: false,
+      dependenciesInstalled: 'not_required',
+      processStarted: false,
+      previewReachable: false,
+      errors: ['Module not found: ./Missing'],
+      warnings: [],
+      durationMs: 10,
+    },
+    execution: undefined,
+  }
+  const after = applySmokeResultToCandidate(bare, smokeFailed)
+  assert.equal(after.status, 'smoke_failed')
+  assert.match(after.error || '', /Locator not found|smoke/i)
+  assert.equal(resolveCandidateIsolatedPreview(after).available, false)
+}
+
+{
+  const overlay = healthyCandidate('minimal', productUrl)
+  overlay.finalVerification = {
+    ...overlay.finalVerification!,
+    status: 'partial',
+    previewReachable: false,
+    errors: [
+      "Parsing ecmascript source code failed Unexpected token 'section'. Expected jsx identifier",
+    ],
+  }
+  assert.equal(candidatePreviewIsHealthy(overlay), false)
+}
+
+{
+  const hydration = healthyCandidate('rich', productUrl)
+  hydration.finalVerification = {
+    ...hydration.finalVerification!,
+    status: 'partial',
+    previewReachable: false,
+    errors: [
+      'Expected server HTML to contain a matching <a> in <a>. Hydration failed because the initial UI does not match what was rendered on the server.',
+    ],
+  }
+  assert.equal(candidatePreviewIsHealthy(hydration), false)
 }
 
 function countKeys(o: object): number {

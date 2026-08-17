@@ -38,8 +38,13 @@ export function useAuth(
   useEffect(() => {
     if (!isLoaded) return
     if (isSignedIn) {
-      // Pull a JWT for downstream API calls (sandbox/headers)
-      getToken().then((t) => setAccessToken(t ?? undefined))
+      // Clerk session JWTs expire in ~60s; refresh so long tournaments
+      // do not 401 /v1/runs messages + brain after Dispatch.
+      const pull = () => {
+        getToken().then((t) => setAccessToken(t ?? undefined))
+      }
+      pull()
+      const refresh = setInterval(pull, 30_000)
       if (!identifiedRef.current && user) {
         posthog?.identify(user.id, {
           email: user.primaryEmailAddress?.emailAddress,
@@ -51,15 +56,16 @@ export function useAuth(
       // Close auth dialog once signed in (covers both fresh sign-in and
       // pages opened with an already-active session).
       setAuthDialog(false)
-    } else {
-      setAccessToken(undefined)
-      if (identifiedRef.current) {
-        posthog?.capture('sign_out')
-        posthog?.reset()
-        identifiedRef.current = false
-      }
+      lastSignedInRef.current = true
+      return () => clearInterval(refresh)
     }
-    lastSignedInRef.current = !!isSignedIn
+    setAccessToken(undefined)
+    if (identifiedRef.current) {
+      posthog?.capture('sign_out')
+      posthog?.reset()
+      identifiedRef.current = false
+    }
+    lastSignedInRef.current = false
   }, [isLoaded, isSignedIn, user, getToken, posthog, setAuthDialog])
 
   const session: AuthSession | null = useMemo(() => {

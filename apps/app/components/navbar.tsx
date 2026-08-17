@@ -20,17 +20,9 @@ import {
 } from '@/components/ui/tooltip'
 import type { AuthSession } from '@/lib/auth'
 import { GitHubLogoIcon } from '@radix-ui/react-icons'
-import { ArrowRight, Loader2, LogOut, Trash, Undo } from 'lucide-react'
+import { ArrowRight, Loader2, LogOut, Menu, Trash, Undo } from 'lucide-react'
 import Link from 'next/link'
 
-/**
- * Editorial app bar for /app.
- * Composed of four distinct groups with hairline separators between them:
- *   1. Brand    — logo + wordmark + section
- *   2. Run meta — # · date · time (mono tabular chip)
- *   3. Status   — pulse + phase label (pill)
- *   4. Actions  — icons + sign-in / avatar
- */
 export function NavBar({
   session,
   showLogin,
@@ -40,9 +32,11 @@ export function NavBar({
   onSocialClick,
   onUndo,
   canUndo,
-  runId = '0044',
+  runId,
+  projectName,
   isLoading = false,
   hasFragment = false,
+  onMenuClick,
 }: {
   session: AuthSession | null
   showLogin: () => void
@@ -53,86 +47,79 @@ export function NavBar({
   onUndo: () => void
   canUndo: boolean
   runId?: string
+  projectName?: string
   isLoading?: boolean
   hasFragment?: boolean
+  onMenuClick?: () => void
 }) {
-  const phase = isLoading
-    ? 'Generating'
-    : hasFragment
-      ? 'Ready'
-      : 'Idle'
-
+  const phase = isLoading ? 'Generating' : hasFragment ? 'Ready' : 'Idle'
   const dot = isLoading
     ? 'bg-brand'
     : hasFragment
       ? 'bg-brand-accent'
       : 'bg-muted-foreground/60'
-
   const statusBorder = isLoading
     ? 'border-brand/40'
     : hasFragment
       ? 'border-brand-accent/40'
       : 'border-border'
-
-  const now = new Date()
-  const date = now.toISOString().slice(0, 10).replace(/-/g, '·')
-  const time = now.toTimeString().slice(0, 5)
+  const runLabel = runId ? runId.replace(/^run_/, '').slice(-8) : null
 
   return (
-    <nav className="w-full flex items-stretch h-12 sm:h-[52px] bg-background">
-      {/* 1. Brand group */}
-      <div className="flex items-center gap-2 sm:gap-2.5 pl-3 sm:pl-4 md:pl-6 pr-3 sm:pr-4 shrink-0">
-        <Link href="/" className="flex items-center gap-2 group">
-          <Logo width={22} height={22} className="text-foreground" />
-          <h1 className="font-display text-[18px] sm:text-[19px] font-black tracking-tight leading-none">
+    <nav className="w-full flex items-center h-11 sm:h-12 bg-transparent">
+      <div className="flex items-center gap-2 pl-2 sm:pl-3 md:pl-4 pr-2 shrink-0 min-w-0">
+        {onMenuClick && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onMenuClick}
+            className="md:hidden h-8 w-8 rounded-none text-muted-foreground"
+            aria-label="Open project sidebar"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+        )}
+        <Link href="/" className="flex items-center gap-2 shrink-0">
+          <Logo width={20} height={20} className="text-foreground" />
+          <h1 className="font-display text-[17px] sm:text-[18px] font-black tracking-tight leading-none">
             Evo<span className="italic font-normal">Stack</span>
           </h1>
         </Link>
-        <span className="hidden sm:inline-flex items-center font-mono text-[9px] tracking-[0.26em] uppercase text-muted-foreground/70 border-l border-border pl-2.5 ml-0.5 self-center h-4">
-          arena
+        <span className="hidden sm:inline-flex items-center font-mono text-[9px] tracking-[0.26em] uppercase text-muted-foreground/70 border-l border-border pl-2 h-4">
+          Arena
         </span>
+        {projectName ? (
+          <span className="hidden md:inline-flex items-center font-mono text-[10px] tracking-[0.16em] uppercase text-foreground/80 border-l border-border pl-2 truncate max-w-[180px] lg:max-w-[220px]">
+            {projectName}
+          </span>
+        ) : null}
       </div>
 
-      {/* 2. Run meta — a tabular chip with its own subtle frame */}
-      <div className="hidden md:flex items-center self-center mr-2">
-        <div className="inline-flex items-center gap-2.5 lg:gap-3 h-7 px-2.5 lg:px-3 border border-border bg-foreground/[0.02]">
-          <span className="font-mono text-[9px] tracking-[0.24em] uppercase text-muted-foreground/80">
-            run
+      <div className="hidden md:flex items-center gap-2 ml-2 min-w-0">
+        {runLabel ? (
+          <span className="font-mono text-[10px] tabular tracking-[0.14em] uppercase text-muted-foreground">
+            Run #{runLabel}
           </span>
-          <span className="font-mono text-[11px] tabular text-foreground font-medium">
-            #{runId}
-          </span>
-          <span className="h-3 w-px bg-border/80 hidden lg:inline-block" />
-          <span className="hidden lg:inline font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground tabular">
-            {date}
-          </span>
-          <span className="h-3 w-px bg-border/80" />
-          <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground tabular">
-            {time}
-          </span>
-        </div>
-      </div>
-
-      {/* 3. Status pill — its own framed unit, lives left of center on med, right-aligned on sm */}
-      <div className="flex items-center self-center ml-auto md:ml-0 mr-2 sm:mr-3">
+        ) : null}
         <div
-          className={`inline-flex items-center gap-1.5 sm:gap-2 h-7 px-2 sm:px-2.5 border ${statusBorder} bg-card/40`}
+          className={`inline-flex items-center gap-1.5 h-6 px-2 border ${statusBorder} bg-card/40`}
         >
           <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
             {isLoading && (
-              <span className={`absolute inline-flex h-full w-full rounded-full ${dot} opacity-70 animate-ping`} />
+              <span
+                className={`absolute inline-flex h-full w-full rounded-full ${dot} opacity-70 animate-ping motion-reduce:animate-none`}
+              />
             )}
             <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${dot}`} />
           </span>
-          <span className="font-mono text-[9px] sm:text-[10px] tracking-[0.22em] uppercase text-foreground inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-foreground inline-flex items-center gap-1.5">
             {isLoading && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
             {phase}
           </span>
         </div>
       </div>
 
-      {/* 4. Action cluster — pinned right */}
-      <div className="flex items-center self-center gap-0.5 sm:gap-1 ml-auto md:ml-auto pr-2 sm:pr-3 md:pr-4 shrink-0 border-l border-border pl-2 sm:pl-3">
+      <div className="flex items-center gap-0.5 ml-auto pr-2 sm:pr-3 shrink-0 border-l border-border pl-2">
         <TooltipProvider>
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -141,7 +128,7 @@ export function NavBar({
                 size="icon"
                 onClick={onUndo}
                 disabled={!canUndo}
-                className="h-8 w-8 rounded-none text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] disabled:opacity-30"
+                className="h-8 w-8 rounded-none text-muted-foreground hover:text-foreground disabled:opacity-30"
               >
                 <Undo className="h-3.5 w-3.5" />
               </Button>
@@ -157,7 +144,8 @@ export function NavBar({
                 size="icon"
                 onClick={onClear}
                 disabled={!canClear}
-                className="h-8 w-8 rounded-none text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] disabled:opacity-30"
+                className="h-8 w-8 rounded-none text-muted-foreground hover:text-foreground disabled:opacity-30"
+                aria-label="Clear workspace"
               >
                 <Trash className="h-3.5 w-3.5" />
               </Button>
@@ -174,7 +162,7 @@ export function NavBar({
           </Tooltip>
         </TooltipProvider>
 
-        <span aria-hidden className="h-5 w-px bg-border mx-1 sm:mx-1.5" />
+        <span aria-hidden className="h-5 w-px bg-border mx-1" />
 
         {session ? (
           <DropdownMenu>
@@ -182,7 +170,7 @@ export function NavBar({
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
-                    <Avatar className="w-7 h-7 sm:w-8 sm:h-8 ring-1 ring-border hover:ring-foreground transition-colors cursor-pointer rounded-none">
+                    <Avatar className="w-7 h-7 ring-1 ring-border hover:ring-foreground cursor-pointer rounded-none">
                       <AvatarImage
                         src={
                           session.user.user_metadata?.avatar_url ||
@@ -199,7 +187,7 @@ export function NavBar({
             <DropdownMenuContent className="w-60 rounded-none border-foreground" align="end">
               <DropdownMenuLabel className="flex flex-col gap-0.5">
                 <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
-                  § Identity
+                  Identity
                 </span>
                 <span className="text-sm">{session.user.email}</span>
               </DropdownMenuLabel>
@@ -219,10 +207,10 @@ export function NavBar({
           <Button
             variant="default"
             onClick={showLogin}
-            className="h-8 px-3 rounded-none font-mono text-[10px] sm:text-[11px] tracking-[0.22em] uppercase border border-foreground bg-foreground text-background hover:bg-brand hover:text-brand-foreground hover:border-brand transition-colors"
+            className="h-8 px-3 rounded-none font-mono text-[10px] tracking-[0.22em] uppercase border border-foreground bg-foreground text-background hover:bg-brand hover:text-brand-foreground hover:border-brand"
           >
             Sign in
-            <ArrowRight className="ml-1.5 h-3 w-3 sm:h-3.5 sm:w-3.5" />
+            <ArrowRight className="ml-1.5 h-3 w-3" />
           </Button>
         )}
       </div>

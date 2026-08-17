@@ -2,12 +2,29 @@
  * Deterministic fragment integrity — local import graph / file manifest checks.
  * ZERO OpenAI / E2B / network calls.
  */
+import {
+  validateFragmentStylesheets,
+  type CssIssueCode,
+} from '@/lib/css-integrity'
+import {
+  validateFragmentSourceSyntax,
+  type SourceIssueCode,
+} from '@/lib/source-syntax'
 import { getFragmentFiles, type FragmentCode } from '@/lib/fragment'
 import {
   detectHydrationRisksInSource,
   formatHydrationRepairHints,
+  inferHydrationRiskCode,
   shouldScanFileForHydration,
 } from '@/lib/hydration-safety'
+import {
+  isJsDependencyTemplate,
+  isLocalOrRelativeSpecifier,
+  isNodeBuiltin,
+  isTemplateProvidedPackage,
+  listedDepsCover,
+} from '@/lib/dependency-closure'
+import { detectProviderIssues } from '@/lib/provider-integrity'
 import type { FragmentSchema } from '@/lib/schema'
 import type { VerificationResult } from '@/lib/verification'
 import type { DeepPartial } from '@evostack/shared'
@@ -51,6 +68,10 @@ export type IntegrityIssueCode =
   | 'unknown_package'
   | 'missing_export_hint'
   | 'hydration_risk'
+  | 'missing_npm_dependency'
+  | 'missing_provider'
+  | CssIssueCode
+  | SourceIssueCode
 
 export type IntegrityIssue = {
   code: IntegrityIssueCode
@@ -62,6 +83,8 @@ export type IntegrityIssue = {
   specifier?: string
   /** Human-readable basename for UX (derived from the import path). */
   missingName?: string
+  /** Approximate 1-based line when available. */
+  line?: number
 }
 
 export type FragmentManifest = {
@@ -215,32 +238,6 @@ export function extractLocalImports(source: string): string[] {
 const PACKAGE_FROM_RE =
   /(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g
 const PACKAGE_REQUIRE_RE = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
-
-function isLocalOrRelative(spec: string): boolean {
-  return (
-    spec.startsWith('./') ||
-    spec.startsWith('../') ||
-    spec.startsWith('@/') ||
-    spec.startsWith('/')
-  )
-}
-
-function isKnownPackage(
-  spec: string,
-  extraDeps: string[] = [],
-): boolean {
-  if (isLocalOrRelative(spec)) return true
-  if (spec.startsWith('node:')) return true
-  const root = spec.startsWith('@')
-    ? spec.split('/').slice(0, 2).join('/')
-    : spec.split('/')[0]
-  if (extraDeps.some((d) => d === root || d.startsWith(`${root}@`) || d === spec)) {
-    return true
-  }
-  return KNOWN_PACKAGE_PREFIXES.some(
-    (p) => root === p || spec === p || spec.startsWith(p),
-  )
-}
 
 function looksLikeExport(name: string, content: string): boolean {
   if (!name || !content) return false
@@ -445,35 +442,51 @@ export function validateFragmentIntegrity(
       }
     }
 
-    // Unknown package imports (warning — deps may be added via additional_dependencies)
+    // Missing extra npm packages (not template-provided, not listed)
     PACKAGE_FROM_RE.lastIndex = 0
     let pm: RegExpExecArray | null
     while ((pm = PACKAGE_FROM_RE.exec(content))) {
       const spec = pm[1]
-      if (!spec || isLocalOrRelative(spec)) continue
-      if (!isKnownPackage(spec, extraDeps)) {
-        issues.push({
-          code: 'unknown_package',
-          severity: 'warning',
-          message: `Package import "${spec}" in ${path} is not in the known allowlist or additional_dependencies`,
-          file: path,
-          specifier: spec,
-        })
+      if (!spec || isLocalOrRelativeSpecifier(spec) || isNodeBuiltin(spec)) {
+        continue
       }
+      if (!isJsDependencyTemplate((fragment as FragmentSchema)?.template)) {
+        continue
+      }
+      if (isTemplateProvidedPackage(spec, (fragment as FragmentSchema)?.template)) {
+        continue
+      }
+      if (listedDepsCover(extraDeps, spec)) continue
+      issues.push({
+        code: 'missing_npm_dependency',
+        severity: 'error',
+        message: `${path}: Package import "${spec}" is not in the template or additional_dependencies`,
+        file: path,
+        specifier: spec,
+        missingName: spec,
+      })
     }
     PACKAGE_REQUIRE_RE.lastIndex = 0
     while ((pm = PACKAGE_REQUIRE_RE.exec(content))) {
       const spec = pm[1]
-      if (!spec || isLocalOrRelative(spec)) continue
-      if (!isKnownPackage(spec, extraDeps)) {
-        issues.push({
-          code: 'unknown_package',
-          severity: 'warning',
-          message: `Package require "${spec}" in ${path} is not in the known allowlist or additional_dependencies`,
-          file: path,
-          specifier: spec,
-        })
+      if (!spec || isLocalOrRelativeSpecifier(spec) || isNodeBuiltin(spec)) {
+        continue
       }
+      if (!isJsDependencyTemplate((fragment as FragmentSchema)?.template)) {
+        continue
+      }
+      if (isTemplateProvidedPackage(spec, (fragment as FragmentSchema)?.template)) {
+        continue
+      }
+      if (listedDepsCover(extraDeps, spec)) continue
+      issues.push({
+        code: 'missing_npm_dependency',
+        severity: 'error',
+        message: `${path}: Package require "${spec}" is not in the template or additional_dependencies`,
+        file: path,
+        specifier: spec,
+        missingName: spec,
+      })
     }
 
     // SSR / hydration hazards (generic — countdowns, clocks, random IDs, browser APIs)
@@ -491,6 +504,40 @@ export function validateFragmentIntegrity(
     }
   }
 
+  if (isJsDependencyTemplate((fragment as FragmentSchema)?.template)) {
+    for (const issue of detectProviderIssues(fragment as FragmentSchema)) {
+      issues.push({
+        code: 'missing_provider',
+        severity: 'error',
+        message: issue.message,
+        file: issue.file,
+        specifier: issue.specifier,
+        missingName: issue.hookName,
+        line: issue.line,
+      })
+    }
+  }
+
+  const css = validateFragmentStylesheets(files)
+  for (const issue of css.issues) {
+    issues.push({
+      code: issue.code,
+      severity: issue.severity,
+      message: issue.message,
+      file: issue.file,
+    })
+  }
+
+  const syntax = validateFragmentSourceSyntax(files)
+  for (const issue of syntax.issues) {
+    issues.push({
+      code: issue.code,
+      severity: issue.severity,
+      message: issue.message,
+      file: issue.file,
+    })
+  }
+
   const errors = issues.filter((i) => i.severity === 'error')
   return {
     ok: errors.length === 0,
@@ -498,6 +545,50 @@ export function validateFragmentIntegrity(
     issues,
     unresolvedImports,
   }
+}
+
+/**
+ * Issues that prevent Next/E2B from compiling or starting.
+ * Hydration mismatches and unused extra stylesheets are not compile failures —
+ * they must not skip sandbox deploy.
+ */
+export const COMPILE_BLOCKING_INTEGRITY_CODES: ReadonlySet<IntegrityIssueCode> =
+  new Set([
+    'missing_entrypoint',
+    'empty_critical_file',
+    'duplicate_path',
+    'unresolved_local_import',
+    'broken_relative_path',
+    'invalid_css_import_order',
+    'malformed_css',
+    'truncated_css',
+    'invalid_source',
+    'truncated_source',
+    'jsx_in_ts',
+    'missing_npm_dependency',
+    'missing_provider',
+  ])
+
+export function isCompileBlockingIntegrityIssue(
+  issue: IntegrityIssue,
+): boolean {
+  return (
+    issue.severity === 'error' &&
+    COMPILE_BLOCKING_INTEGRITY_CODES.has(issue.code)
+  )
+}
+
+/** True when E2B/sandbox may proceed. Quality-only errors do not block. */
+export function canDeployIntegrity(result: FragmentIntegrityResult): boolean {
+  return !result.issues.some(isCompileBlockingIntegrityIssue)
+}
+
+export function formatNonBlockingIntegrityWarnings(
+  result: FragmentIntegrityResult,
+): string[] {
+  return result.issues
+    .filter((i) => i.severity === 'error' && !isCompileBlockingIntegrityIssue(i))
+    .map((i) => i.message)
 }
 
 export function formatIntegrityDiagnostics(
@@ -523,11 +614,13 @@ export function formatIntegrityUserSummary(
     return `${label} recovered successfully.`
   }
   if (opts?.repaired && !result.ok) {
+    const first =
+      formatIntegrityDiagnostics(result)[0] || 'Structural validation failed.'
     const miss =
       unique.length > 0
         ? ` Missing component: ${unique.slice(0, 3).join(', ')}.`
         : ''
-    return `${label} encountered a build issue.${miss} Could not recover this candidate.`
+    return `${label} encountered a build issue.${miss} ${first}`
   }
   if (!result.ok) {
     const miss =
@@ -583,13 +676,28 @@ export function formatIntegrityForRepair(
     result.issues
       .filter((i) => i.code === 'hydration_risk')
       .map((i) => ({
-        code: 'render_time_now' as const,
+        code: inferHydrationRiskCode(i.message),
         severity: i.severity,
         message: i.message,
       })),
   )
   const hasImportIssues = result.unresolvedImports.length > 0
   const hasHydration = result.issues.some((i) => i.code === 'hydration_risk')
+  const hasCss = result.issues.some(
+    (i) =>
+      i.code === 'invalid_css_import_order' ||
+      i.code === 'malformed_css' ||
+      i.code === 'truncated_css' ||
+      i.code === 'duplicate_stylesheet',
+  )
+  const hasSyntax = result.issues.some(
+    (i) =>
+      i.code === 'invalid_source' ||
+      i.code === 'truncated_source' ||
+      i.code === 'jsx_in_ts',
+  )
+  const hasMissingDep = result.issues.some((i) => i.code === 'missing_npm_dependency')
+  const hasMissingProvider = result.issues.some((i) => i.code === 'missing_provider')
   return `## File integrity failure (local validation)
 Generated file manifest:
 ${tree}
@@ -603,7 +711,7 @@ ${issues}
 ${hydration}
 
 Fix instructions:
-${hasImportIssues ? '- Ensure every local import resolves to an existing generated file (add missing modules OR fix paths).\n' : ''}${hasHydration ? '- Fix SSR/hydration hazards using useEffect + stable placeholders. Keep countdowns/clocks/animations functional — do not delete them.\n' : ''}- Do not remove required features.
+${hasImportIssues ? '- Ensure every local import resolves to an existing generated file (add missing modules OR fix paths).\n' : ''}${hasMissingDep ? '- Add every imported extra npm package to additional_dependencies and install_dependencies_command. Do not overwrite package.json.\n' : ''}${hasMissingProvider ? '- Mount the required React provider (e.g. SessionProvider) at pages/_app.tsx or app/layout.tsx. Do not delete authentication or session code.\n' : ''}${hasHydration ? '- Fix SSR/hydration hazards: useEffect + stable placeholders for time/random/browser APIs; never nest <a> or <motion.a> inside Next.js <Link> (Link already renders <a>). Keep countdowns/clocks/animations/links functional.\n' : ''}${hasCss ? '- Stylesheet structure is invalid. Move every external @import to a valid location at the beginning of the stylesheet (only @charset and @layer statements may appear first). Preserve every existing CSS rule, Tailwind directive, animation, variable, component style, font configuration, and visual feature. Do not delete functionality.\n- Do not "fix" CSS by removing fonts, animations, sections, or visual effects.\n' : ''}${hasSyntax ? '- TypeScript/JSX does not parse. Complete truncated files, close every JSX tag, and put JSX only in .tsx/.jsx files (never .ts). Do not wrap file contents in markdown fences.\n' : ''}- Do not remove required features.
 - Do not simplify the application unnecessarily.
 Return the corrected complete file set for changed/added files only.`
 }

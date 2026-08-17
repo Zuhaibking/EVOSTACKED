@@ -34,6 +34,26 @@ import {
     candidateId: 'minimal',
     candidateLabel: 'Product',
     verification: {
+      status: 'failed',
+      previewReachable: false,
+      processStarted: false,
+      errors: [
+        'pages/index.tsx: Date.now() during render/SSR can hydrate differently on the client.',
+      ],
+    },
+    execution: null,
+    port: 3000,
+    integrityIssueCodes: ['hydration_risk'],
+  })
+  assert.deepEqual(d.integrityIssueCodes, ['hydration_risk'])
+  assert.match(d.runtimeError || '', /Date\.now/)
+}
+
+{
+  const d = buildRuntimePreviewDiagnostic({
+    candidateId: 'minimal',
+    candidateLabel: 'Product',
+    verification: {
       status: 'passed',
       previewReachable: true,
       processStarted: true,

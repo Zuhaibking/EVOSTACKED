@@ -53,12 +53,14 @@ export function resolveReusablePreviewExecution(opts: {
   verification?: VerificationResult | null
   finalVerification?: VerificationResult | null
 }): ExecutionResult | undefined {
-  const runtime = opts.finalVerification || opts.verification
-  if (runtime?.status === 'failed') return undefined
-
+  // A live host on the execution object survives failed verification
+  // (compile overlay / smoke). Do not synthesize a URL if execution was cleared.
   if (isReusableExecutionResult(opts.execution ?? undefined)) {
     return opts.execution!
   }
+
+  const runtime = opts.finalVerification || opts.verification
+  if (runtime?.status === 'failed') return undefined
 
   return executionFromVerification(runtime)
 }

@@ -38,14 +38,14 @@ export async function handleSandbox(req: Request) {
     const gate = canDeployFragment(fragment)
     if (!gate.ok) {
       return new Response(
-        JSON.stringify(buildSandboxIntegrityError(fragment, gate.integrity)),
+        JSON.stringify(buildSandboxIntegrityError(gate.fragment, gate.integrity)),
         { status: 422 },
       )
     }
 
     // Shared deploy path with tournament verification. Preview requests still
     // return ExecutionResult; verification is included for diagnostics.
-    const { verification, execution } = await deployAndVerify(fragment, {
+    const { verification, execution } = await deployAndVerify(gate.fragment, {
       userID,
       teamID,
       accessToken,

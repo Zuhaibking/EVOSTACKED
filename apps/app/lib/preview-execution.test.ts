@@ -134,24 +134,23 @@ function passedVerification(
   )
 }
 
-// 5. Failed verification → no fake URL synthesized
+// 5. Failed verification keeps a live execution host; does not synthesize a ghost URL
 {
-  assert.equal(
-    resolveReusablePreviewExecution({
-      execution: {
-        sbxId: 'sbx_x',
-        template: 'nextjs-developer',
-        url: 'https://should-not-use.e2b.dev',
-      },
-      finalVerification: passedVerification({
-        status: 'failed',
-        errors: ['Module not found: ./Missing'],
-        url: undefined,
-        sbxId: 'sbx_x',
-      }),
+  const live: ExecutionResult = {
+    sbxId: 'sbx_x',
+    template: 'nextjs-developer',
+    url: 'https://should-keep.e2b.dev',
+  }
+  const kept = resolveReusablePreviewExecution({
+    execution: live,
+    finalVerification: passedVerification({
+      status: 'failed',
+      errors: ['@import rules must precede all rules aside from @charset and @layer statements.'],
+      url: undefined,
+      sbxId: 'sbx_x',
     }),
-    undefined,
-  )
+  })
+  assert.equal(kept, live)
   assert.equal(
     executionFromVerification(
       passedVerification({
@@ -160,6 +159,18 @@ function passedVerification(
         sbxId: 'sbx_ghost',
       }),
     ),
+    undefined,
+  )
+  assert.equal(
+    resolveReusablePreviewExecution({
+      execution: undefined,
+      finalVerification: passedVerification({
+        status: 'failed',
+        errors: ['Module not found: ./Missing'],
+        url: 'https://ghost.e2b.dev',
+        sbxId: 'sbx_ghost',
+      }),
+    }),
     undefined,
   )
 }

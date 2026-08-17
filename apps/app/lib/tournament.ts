@@ -18,7 +18,8 @@ export const VARIANTS = [
     temperature: 0.35,
     systemSuffix: `Interpretation: PRODUCT-FOCUSED.
 Prioritize clarity, task success, and practical UX. Dense information only when it helps the job.
-UI: restrained, high signal-to-noise, strong hierarchy, minimal ornament.
+UI: restrained, high signal-to-noise, strong hierarchy, almost no ornament.
+Make it feel like a sharp internal tool that a domain expert would keep open all day — not a marketing landing page and not a purple AI template.
 Still implement every shared core feature, must-have interaction, interaction contract (exact accessible names), and architectureRequirements (no under/over-building).
 Ship a real runnable app structure appropriate to complexity — not a single HTML dump.`,
   },
@@ -28,9 +29,9 @@ Ship a real runnable app structure appropriate to complexity — not a single HT
     sigil: 'R',
     temperature: 0.65,
     systemSuffix: `Interpretation: PREMIUM.
-Same product requirements, elevated brand craft: polished typography, spacing, and visual hierarchy.
-Feel trustworthy and productized (as if a funded team shipped v1).
-Avoid hollow luxury — every flourish should support comprehension or trust.
+Same product requirements, elevated brand craft: considered typography, spacing, materials, and one signature motif (type, color, or layout) that belongs to this domain.
+Feel trustworthy and productized (as if a funded team shipped v1). Generous rhythm, editorial headlines, tactile controls.
+Avoid hollow luxury, gold-gradient kits, and generic "premium SaaS" dashboards.
 Still implement every shared core feature, must-have interaction, interaction contract (exact accessible names), and architectureRequirements (no under/over-building).`,
   },
   {
@@ -39,8 +40,8 @@ Still implement every shared core feature, must-have interaction, interaction co
     sigil: 'I',
     temperature: 0.9,
     systemSuffix: `Interpretation: INNOVATIVE.
-Same product requirements, more distinctive interaction/layout ideas while remaining usable.
-Surprise with structure or micro-interactions that make the workflow clearer — not gimmicks.
+Same product requirements, a genuinely different information architecture or interaction pattern (split workspace, spatial nav, stepper, canvas, or timeline) that makes the workflow clearer.
+Surprise with structure and micro-interactions — not gimmicks, confetti, or novelty for its own sake.
 Stay accessible and coherent; do not sacrifice core flows for novelty.
 Still implement every shared core feature, must-have interaction, interaction contract (exact accessible names), and architectureRequirements (no under/over-building).`,
   },

@@ -6,17 +6,18 @@
  * CORE RULE: all 3 initial tournament candidates remain inspectable.
  * Smoke / runtime / architecture / judge / repair failure is metadata, not deletion.
  */
+import { candidatePreviewIsHealthy } from '@/lib/candidate-smoke'
 import { hasFragmentCode } from '@/lib/fragment'
 import {
   resolveReusablePreviewExecution,
   isReusableExecutionResult,
 } from '@/lib/preview-execution'
-import { candidatePreviewIsHealthy } from '@/lib/candidate-smoke'
 import type { Candidate } from '@/lib/tournament-client'
 import { VARIANTS, type VariantId, type Verdict } from '@/lib/tournament'
 import type { ExecutionResult } from '@/lib/types'
 import type { DeepPartial } from '@evostack/shared'
 import type { FragmentSchema } from '@/lib/schema'
+import { verificationHasPreviewOverlayFailure } from '@/lib/verification'
 
 export const TOURNAMENT_CANDIDATE_COUNT = 3
 
@@ -79,6 +80,23 @@ export function countRetainedCandidates(
   return Object.keys(retainTournamentCandidates(candidates)).length
 }
 
+/**
+ * First inspectable specimen (Product → Premium → Innovate).
+ * Does NOT promote activeVersion — Preview/source only.
+ */
+export function pickInspectableCandidateId(
+  candidates: Partial<Record<VariantId, Candidate>> | null | undefined,
+): VariantId | undefined {
+  const pool = retainTournamentCandidates(candidates)
+  for (const v of VARIANTS) {
+    const c = pool[v.id]
+    if (!hasFragmentCode(c.fragment)) continue
+    if (c.status === 'pending' || c.status === 'generating') continue
+    return v.id
+  }
+  return undefined
+}
+
 export function smokeScoreLabel(
   smoke: Candidate['smoke'] | undefined | null,
 ): string {
@@ -94,7 +112,9 @@ export function smokeScoreLabel(
 }
 
 export function runtimeScoreLabel(c: Candidate): string {
-  const status = c.finalVerification?.status || c.verification?.status
+  const runtime = c.finalVerification || c.verification
+  if (verificationHasPreviewOverlayFailure(runtime)) return 'Failed'
+  const status = runtime?.status
   if (!status) return '—'
   if (status === 'passed') return '✓'
   if (status === 'partial') return 'partial'
@@ -209,18 +229,6 @@ export function resolveCandidateIsolatedPreview(candidate: {
     }
   }
 
-  if (runtime?.status === 'failed') {
-    const detail =
-      (runtime.errors && runtime.errors[0]) ||
-      candidate.error ||
-      'Runtime deployment failed for this candidate.'
-    return {
-      candidateId: candidate.id,
-      available: false,
-      reason: detail,
-    }
-  }
-
   const execution = resolveReusablePreviewExecution({
     execution: candidate.execution,
     verification: candidate.verification,
@@ -232,6 +240,18 @@ export function resolveCandidateIsolatedPreview(candidate: {
       candidateId: candidate.id,
       available: true,
       execution,
+    }
+  }
+
+  if (runtime?.status === 'failed') {
+    const detail =
+      (runtime.errors && runtime.errors[0]) ||
+      candidate.error ||
+      'Runtime deployment failed for this candidate.'
+    return {
+      candidateId: candidate.id,
+      available: false,
+      reason: detail,
     }
   }
 

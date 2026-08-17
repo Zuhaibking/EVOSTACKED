@@ -360,6 +360,7 @@ Rules:
 - Prefer the fewest pages/features that still deliver a coherent product.
 - Every coreFeature and mustHaveInteraction must be implementable without inventing unpaid external services.
 - Design direction must fit the product domain (finance ≠ portfolio ≠ developer tool).
+- Specify a distinctive visual direction (palette roles, type character, layout idea) so the three specimens are not generic clones of each other.
 - Forbid generic AI UI defaults as the plan's intent: no random purple gradients, glassmorphism for its own sake, fake KPI walls, or decorative cards with no job.
 - Sample data notes must be realistic and domain-specific.
 

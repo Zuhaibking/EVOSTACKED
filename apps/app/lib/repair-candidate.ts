@@ -2,6 +2,8 @@ import {
   ArchitectureComplianceResult,
   checkArchitectureCompliance,
 } from '@/lib/architecture-compliance'
+import { normalizeFragmentStylesheets } from '@/lib/css-integrity'
+import { normalizeFragmentSourceFiles } from '@/lib/source-syntax'
 import {
   validateFragmentIntegrity,
   type FragmentIntegrityResult,
@@ -25,7 +27,10 @@ import {
   DeployAndVerifyOptions,
   deployAndVerify,
 } from '@/lib/verify-candidate'
-import { VerificationResult } from '@/lib/verification'
+import {
+  isPreviewOverlayFailure,
+  VerificationResult,
+} from '@/lib/verification'
 import { ExecutionResult } from '@/lib/types'
 import { generateObject, LanguageModel } from 'ai'
 
@@ -164,17 +169,21 @@ export async function repairAndReverify(
     })
   }
 
+  const repairedFragment = normalizeFragmentSourceFiles(
+    normalizeFragmentStylesheets(applied.fragment).fragment,
+  ).fragment
+
   // Re-check architecture + integrity on repaired files (deterministic, no LLM).
   const finalArchitectureCompliance = checkArchitectureCompliance({
-    fragment: applied.fragment,
+    fragment: repairedFragment,
     plan: input.plan,
   })
-  const finalIntegrity = validateFragmentIntegrity(applied.fragment)
+  const finalIntegrity = validateFragmentIntegrity(repairedFragment)
 
   if (input.skipRedeploy) {
     const integrityOk = finalIntegrity.ok
     return {
-      fragment: applied.fragment,
+      fragment: repairedFragment,
       originalFragment,
       initialVerification,
       finalVerification: initialVerification,
@@ -203,16 +212,20 @@ export async function repairAndReverify(
   // Fresh sandbox deploy+verify (existing Part 3 path).
   try {
     const { verification, execution } = await deployAndVerify(
-      applied.fragment,
+      repairedFragment,
       input.deployOpts,
     )
+    const overlayBroken = (verification.errors || []).some((e) =>
+      isPreviewOverlayFailure(e),
+    )
     const deployOk =
+      !overlayBroken &&
       verification.status !== 'failed' &&
       (verification.status === 'partial' ||
         verification.previewReachable ||
         Boolean(execution && 'url' in execution && execution.url))
     return {
-      fragment: applied.fragment,
+      fragment: repairedFragment,
       originalFragment,
       initialVerification,
       finalVerification: verification,
@@ -236,7 +249,7 @@ export async function repairAndReverify(
     }
   } catch (e: any) {
     return {
-      fragment: applied.fragment,
+      fragment: repairedFragment,
       originalFragment,
       initialVerification,
       finalVerification: initialVerification,

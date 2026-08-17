@@ -10,7 +10,9 @@ import {
 } from './repair'
 import {
   buildFragmentManifest,
+  canDeployIntegrity,
   extractLocalImports,
+  formatIntegrityForRepair,
   formatIntegrityUserSummary,
   integrityToFailedVerification,
   resolveLocalImport,
@@ -227,13 +229,13 @@ function aquaClubFixed(): FragmentSchema {
   assert.equal(v.previewReachable, false)
   assert.match(v.errors[0] || '', /Premium encountered a build issue/)
   assert.match(v.errors[0] || '', /Missing component: Classes/)
-  assert.equal(
-    formatIntegrityUserSummary(integrity, {
-      candidateLabel: 'Premium',
-      repaired: true,
-    }).includes('Could not recover'),
-    true,
-  )
+  const recovered = formatIntegrityUserSummary(integrity, {
+    candidateLabel: 'Premium',
+    repaired: true,
+  })
+  assert.match(recovered, /Premium encountered a build issue/)
+  assert.match(recovered, /Missing component: Classes/)
+  assert.doesNotMatch(recovered, /^Premium encountered a build issue\.\s*Could not recover/)
 }
 
 // 10. Candidate isolation — Product failure does not stop Premium/Innovate
@@ -299,6 +301,32 @@ function aquaClubFixed(): FragmentSchema {
     { complexity: 'medium' } as any,
   )
   assert.equal(capped.maxTokens, 14000)
+  assert.equal(
+    resolveGenerationMaxTokens({ complexity: 'medium' } as any, {
+      concurrentJobs: 3,
+    }),
+    10000,
+  )
+  assert.equal(
+    resolveGenerationMaxTokens({ complexity: 'complex' } as any, {
+      concurrentJobs: 3,
+    }),
+    14000,
+  )
+  assert.equal(
+    withGenerationTokenBudget(
+      { maxTokens: 47000 },
+      { complexity: 'complex' } as any,
+      { concurrentJobs: 3 },
+    ).maxTokens,
+    14000,
+  )
+  assert.equal(
+    resolveGenerationMaxTokens({ complexity: 'complex' } as any, {
+      concurrentJobs: 1,
+    }),
+    20000,
+  )
 }
 
 // 12b. Template-provided shadcn imports must NOT fail integrity
@@ -452,7 +480,8 @@ export default function H(){ return <Missing /> }`,
     ],
   }
   const result = validateFragmentIntegrity(frag)
-  assert.ok(result.issues.some((i) => i.code === 'unknown_package'))
+  assert.ok(result.issues.some((i) => i.code === 'missing_npm_dependency'))
+  assert.equal(result.ok, false)
 }
 
 // 17. Generic missing component (not product-specific names)
@@ -505,8 +534,14 @@ export default function H(){ return <Missing /> }`,
     path.join(process.cwd(), '../api/src/generation/tournament.runner.ts'),
     'utf8',
   )
-  assert.match(route, /validateFragmentIntegrity/)
+  assert.match(route, /runGeneratedProjectPreflight/)
+  assert.match(route, /canDeployIntegrity/)
+  assert.match(route, /formatNonBlockingIntegrityWarnings/)
   assert.match(route, /repairFragmentIntegrity/)
+  assert.doesNotMatch(
+    route,
+    /if \(!integrity\.ok\) \{\s*const verification = integrityToFailedVerification/,
+  )
   // Evolution uses the same route + Phase 2 verifyTasks map (not a separate deploy path)
   assert.match(route, /isEvolution|handleTournament/)
   assert.match(route, /buildEvolutionPrompt/)
@@ -524,7 +559,7 @@ export default function H(){ return <Missing /> }`,
     path.join(process.cwd(), 'lib/repair-candidate.ts'),
     'utf8',
   )
-  assert.match(repair, /validateFragmentIntegrity\(applied\.fragment\)/)
+  assert.match(repair, /validateFragmentIntegrity\(repairedFragment\)/)
 
   // Chat / morph / sandbox must reuse shared integrity (no tournament change)
   const chat = fs.readFileSync(
@@ -543,6 +578,142 @@ export default function H(){ return <Missing /> }`,
   assert.match(morph, /prepareFragmentIntegrity/)
   assert.match(sandbox, /canDeployFragment|buildSandboxIntegrityError/)
   assert.doesNotMatch(sandbox, /repairFragmentIntegrity/)
+}
+
+// 20. CSS @import after rules fails integrity; valid Tailwind CSS passes
+{
+  const bad: FragmentSchema = {
+    ...aquaClubFixed(),
+    code: [
+      ...aquaClubFixed().code,
+      {
+        file_path: 'styles/globals.css',
+        file_content: `:root { --fg: #111; }\n@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");\n`,
+      },
+    ],
+  }
+  const failed = validateFragmentIntegrity(bad)
+  assert.equal(failed.ok, false)
+  assert.ok(failed.issues.some((i) => i.code === 'invalid_css_import_order'))
+  const repairText = formatIntegrityForRepair(failed)
+  assert.match(repairText, /@import/)
+  assert.match(repairText, /Preserve every existing CSS rule/)
+
+  const good: FragmentSchema = {
+    ...aquaClubFixed(),
+    code: [
+      ...aquaClubFixed().code,
+      {
+        file_path: 'styles/globals.css',
+        file_content: `@import "tailwindcss";\n@theme { --color-brand: #111; }\n@layer base { body { margin: 0; } }\n`,
+      },
+    ],
+  }
+  const passed = validateFragmentIntegrity(good)
+  assert.equal(passed.ok, true, passed.issues.map((i) => i.message).join('; '))
+}
+
+// 21. Countdown Date.now is a quality issue — repair-worthy, not E2B-blocking
+{
+  const countdown: FragmentSchema = {
+    ...aquaClubFixed(),
+    title: 'NEXUS PASS',
+    code: [
+      {
+        file_path: 'pages/index.tsx',
+        file_content: `import { useState } from 'react'
+export default function Home(){
+  const [left] = useState(Date.now())
+  return <main><h1>NEXUS PASS</h1><p>{left}</p></main>
+}`,
+      },
+    ],
+  }
+  const result = validateFragmentIntegrity(countdown)
+  assert.equal(result.ok, false)
+  assert.ok(result.issues.some((i) => i.code === 'hydration_risk'))
+  assert.equal(canDeployIntegrity(result), true)
+  const summary = formatIntegrityUserSummary(result, {
+    candidateLabel: 'Product',
+    repaired: true,
+  })
+  assert.match(summary, /Date\.now|hydrat/i)
+  assert.doesNotMatch(summary, /Could not recover this candidate\.\s*$/)
+}
+
+// 22. Missing local import remains compile-blocking and keeps the real diagnostic
+{
+  const broken = aquaClubBroken()
+  const result = validateFragmentIntegrity(broken)
+  assert.equal(result.ok, false)
+  assert.equal(canDeployIntegrity(result), false)
+  const v = integrityToFailedVerification(result, { candidateLabel: 'Premium' })
+  assert.equal(v.status, 'failed')
+  assert.match(v.errors.join('\n'), /Classes/)
+  const summary = formatIntegrityUserSummary(result, {
+    candidateLabel: 'Premium',
+    repaired: true,
+  })
+  assert.match(summary, /Classes/)
+}
+
+// 23. Scoring formula is unchanged (runtime/smoke/architecture weights)
+{
+  const { buildDeterministicTournamentVerdict } = require('./deterministic-verdict') as typeof import('./deterministic-verdict')
+  const passed = {
+    status: 'passed' as const,
+    filesWritten: true,
+    dependenciesInstalled: true as const,
+    processStarted: true,
+    previewReachable: true,
+    errors: [],
+    warnings: [],
+    durationMs: 1,
+  }
+  const archPassed = {
+    status: 'passed' as const,
+    summary: 'ok',
+    checks: [],
+    missingRequirements: [],
+    suspiciousPatterns: [],
+    evidence: [],
+  }
+  const verdict = buildDeterministicTournamentVerdict([
+    {
+      id: 'minimal',
+      fragment: aquaClubFixed(),
+      finalVerification: passed,
+      architectureCompliance: archPassed,
+      smoke: { status: 'timeout', tests: [], durationMs: 1, summary: 'timeout' },
+    },
+    {
+      id: 'rich',
+      fragment: aquaClubFixed(),
+      finalVerification: {
+        ...passed,
+        status: 'failed',
+        previewReachable: false,
+        errors: ['Module not found: ./Missing'],
+      },
+      architectureCompliance: archPassed,
+      smoke: null,
+    },
+    {
+      id: 'playful',
+      fragment: aquaClubFixed(),
+      finalVerification: passed,
+      architectureCompliance: archPassed,
+      smoke: { status: 'passed', tests: [], durationMs: 1, summary: 'ok' },
+    },
+  ])
+  const byId = Object.fromEntries(verdict.scores.map((s) => [s.id, s]))
+  // runtime passed + smoke timeout (-1) + arch passed + fragment > runtime failed
+  assert.ok(byId.minimal.composite > byId.rich.composite)
+  // smoke passed still outranks smoke timeout when runtime/arch match
+  assert.ok(byId.playful.composite > byId.minimal.composite)
+  // failed runtime keeps the existing failed-runtime clarity floor
+  assert.equal(byId.rich.clarity, 0.45)
+  assert.equal(byId.minimal.clarity, 0.72)
 }
 
 console.log('fragment-integrity.test.ts: all tests passed')

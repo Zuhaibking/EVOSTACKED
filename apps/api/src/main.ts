@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { NestFactory } from '@nestjs/core'
 import { AppModule } from './app.module'
+import { prepareSandboxNetwork } from '@/lib/sandbox-transport'
 
 for (const path of [
   resolve(process.cwd(), '.env'),
@@ -13,6 +14,10 @@ for (const path of [
 ]) {
   if (existsSync(path)) config({ path, override: false })
 }
+
+// IPv4-first DNS + documented E2B control API. Must run after dotenv.
+// Local TSX parse runs in fragment integrity before Sandbox.create.
+prepareSandboxNetwork()
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true })

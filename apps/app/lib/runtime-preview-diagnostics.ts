@@ -16,6 +16,7 @@ export type RuntimePreviewDiagnostic = {
   httpStatus?: number
   deploymentError?: string
   runtimeError?: string
+  integrityIssueCodes?: string[]
 }
 
 function hostOnly(url?: string | null): string | undefined {
@@ -45,6 +46,7 @@ export function buildRuntimePreviewDiagnostic(input: {
   } | null
   port?: number | null
   deployError?: string
+  integrityIssueCodes?: string[]
 }): RuntimePreviewDiagnostic {
   const url =
     (input.execution && 'url' in input.execution
@@ -76,6 +78,7 @@ export function buildRuntimePreviewDiagnostic(input: {
     runtimeError: input.verification?.errors?.[0]
       ? String(input.verification.errors[0]).slice(0, 240)
       : undefined,
+    integrityIssueCodes: input.integrityIssueCodes?.slice(0, 12),
   }
 }
 

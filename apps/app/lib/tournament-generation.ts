@@ -1,5 +1,5 @@
 /**
- * Sequential tournament candidate generation queue helpers.
+ * Tournament candidate generation queue helpers.
  * Pure / testable — no network. Route uses these policies.
  */
 import { VARIANTS, type VariantId } from '@/lib/tournament'
@@ -11,7 +11,11 @@ export type GenerationQueueItem = {
   order: number
 }
 
-/** Exact Product → Premium → Innovate order (never concurrent policy). */
+export type ParallelJobResult<T> =
+  | { item: GenerationQueueItem; ok: true; value: T }
+  | { item: GenerationQueueItem; ok: false; error: unknown }
+
+/** Product → Premium → Innovate order used as the parallel input order. */
 export function buildCandidateGenerationQueue(
   ids?: VariantId[],
 ): GenerationQueueItem[] {
@@ -25,28 +29,34 @@ export function buildCandidateGenerationQueue(
   }))
 }
 
-export function assertSequentialGenerationPolicy(): {
-  concurrent: false
+export function assertConcurrentGenerationPolicy(): {
+  concurrent: true
   queueSize: number
   maxAttemptsPerCandidate: number
 } {
   return {
-    concurrent: false,
+    concurrent: true,
     queueSize: VARIANTS.length,
     maxAttemptsPerCandidate: PROVIDER_MAX_ATTEMPTS,
   }
 }
 
 /**
- * Simulate a sequential runner for tests — invokes one at a time.
+ * Fan out candidate jobs so every job is invoked before any awaited work
+ * inside a job can complete. One thrown error never drops sibling results.
  */
-export async function runSequentialCandidateJobs<T>(
+export async function runParallelCandidateJobs<T>(
   queue: GenerationQueueItem[],
   job: (item: GenerationQueueItem) => Promise<T>,
-): Promise<T[]> {
-  const out: T[] = []
-  for (const item of queue) {
-    out.push(await job(item))
-  }
-  return out
+): Promise<ParallelJobResult<T>[]> {
+  return Promise.all(
+    queue.map(async (item) => {
+      try {
+        const value = await job(item)
+        return { item, ok: true as const, value }
+      } catch (error) {
+        return { item, ok: false as const, error }
+      }
+    }),
+  )
 }

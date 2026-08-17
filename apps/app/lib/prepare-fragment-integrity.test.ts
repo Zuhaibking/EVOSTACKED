@@ -147,9 +147,9 @@ async function main() {
       sandbox,
       /repairFragmentIntegrity|generateObject|streamObject/,
     )
-    // Tournament unchanged — still uses its own integrity path, not prepare helper
-    assert.match(tournament, /validateFragmentIntegrity/)
-    assert.doesNotMatch(tournament, /prepareFragmentIntegrity/)
+    // Tournament uses the shared generated-project preflight before E2B
+    assert.match(tournament, /runGeneratedProjectPreflight/)
+    assert.doesNotMatch(tournament, /prepareFragmentIntegrity\(/)
     assert.doesNotMatch(chat, /extractLocalImports/)
     assert.doesNotMatch(morph, /extractLocalImports/)
     assert.doesNotMatch(sandbox, /extractLocalImports/)
@@ -159,6 +159,56 @@ async function main() {
   {
     const v = validateFragmentIntegrity(brokenImportFrag())
     assert.equal(v.ok, false)
+    assert.equal(canDeployFragment(brokenImportFrag()).ok, false)
+  }
+
+  // 7. Invalid @import order is hoisted deterministically — 0 LLM, then deployable
+  {
+    const cssAfterRules = `:root { --fg: #111; }\n\n@keyframes fade { from { opacity: 0 } to { opacity: 1 } }\n\n@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");\n`
+    const frag: FragmentSchema = {
+      ...validFrag(),
+      code: [
+        ...validFrag().code,
+        { file_path: 'styles/globals.css', file_content: cssAfterRules },
+      ],
+    }
+    assert.equal(validateFragmentIntegrity(frag).ok, false)
+    const prepared = await prepareFragmentIntegrity({ fragment: frag })
+    assert.equal(prepared.repairAttempted, false)
+    assert.equal(prepared.repaired, false)
+    assert.equal(prepared.integrity.ok, true)
+    assert.equal(canDeployFragment(prepared.fragment).ok, true)
+    const css = prepared.fragment.code.find(
+      (f) => f.file_path === 'styles/globals.css',
+    )
+    assert.ok(css)
+    assert.match(css!.file_content, /^@import url\(/)
+    assert.ok(css!.file_content.includes('@keyframes fade'))
+    assert.ok(css!.file_content.includes('--fg: #111'))
+  }
+
+  // 8. Hydration-only countdown is still deployable (E2B must run)
+  {
+    const countdown: FragmentSchema = {
+      ...validFrag(),
+      title: 'Countdown',
+      code: [
+        {
+          file_path: 'pages/index.tsx',
+          file_content: `export default function H(){ const n = Date.now(); return <main>{n}</main> }`,
+        },
+      ],
+    }
+    const prepared = await prepareFragmentIntegrity({ fragment: countdown })
+    assert.equal(prepared.integrity.ok, false)
+    assert.ok(
+      prepared.integrity.issues.some((i) => i.code === 'hydration_risk'),
+    )
+    assert.equal(canDeployFragment(prepared.fragment).ok, true)
+  }
+
+  // 9. Genuine missing import still blocks deploy
+  {
     assert.equal(canDeployFragment(brokenImportFrag()).ok, false)
   }
 
