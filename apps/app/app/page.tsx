@@ -4,6 +4,7 @@ import { HowItWorks } from '@/components/landing/how-it-works'
 import { LandingNav } from '@/components/landing/landing-nav'
 import { LiveDemo } from '@/components/landing/live-demo'
 import { Metrics } from '@/components/landing/metrics'
+import { ProductDemo } from '@/components/landing/product-demo'
 import { StackStrip } from '@/components/landing/stack-strip'
 import { Team } from '@/components/landing/team'
 import { Ticker } from '@/components/landing/ticker'
@@ -14,6 +15,7 @@ export default function LandingPage() {
       <LandingNav />
       <Ticker />
       <Hero />
+      <ProductDemo />
       <HowItWorks />
       <LiveDemo />
       <StackStrip />

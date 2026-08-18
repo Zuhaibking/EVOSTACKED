@@ -42,6 +42,9 @@ export function LandingNav() {
           </Link>
 
           <nav aria-label="Primary" className="hidden md:flex items-end gap-8">
+            <a href="#arena-demo" className="label-caps hover:text-foreground transition-colors">
+              § Arena
+            </a>
             <a href="#protocol" className="label-caps hover:text-foreground transition-colors">
               § Protocol
             </a>
