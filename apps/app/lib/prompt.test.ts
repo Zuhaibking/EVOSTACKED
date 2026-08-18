@@ -4,6 +4,10 @@
  */
 import assert from 'node:assert/strict'
 import { implementationChecklistPrompt, systemRulesPrompt } from './prompt'
+import {
+  PLANNING_SYSTEM_PROMPT,
+  buildFallbackApplicationPlan,
+} from './plan'
 import { REPAIR_SYSTEM_PROMPT } from './repair'
 import { VARIANTS } from './tournament'
 import fs from 'node:fs'
@@ -21,6 +25,9 @@ import path from 'node:path'
   assert.match(checklist, /@import/)
   assert.match(checklist, /@layer\/@theme\/@plugin/)
   assert.match(checklist, /nested <a>/)
+  assert.match(checklist, /empty, loading, and error\/feedback/)
+  assert.match(checklist, /barren single-column stubs/)
+  assert.match(checklist, /named people, statuses/)
 }
 
 {
@@ -41,7 +48,21 @@ import path from 'node:path'
 {
   assert.match(VARIANTS[0].systemSuffix, /internal tool/)
   assert.match(VARIANTS[1].systemSuffix, /signature motif/)
+  assert.match(VARIANTS[1].systemSuffix, /empty, loading, and error\/feedback/)
+  assert.match(VARIANTS[1].systemSuffix, /Dense realistic content/)
   assert.match(VARIANTS[2].systemSuffix, /information architecture/)
+}
+
+{
+  assert.match(PLANNING_SYSTEM_PROMPT, /enough screens\/sections/)
+  assert.match(PLANNING_SYSTEM_PROMPT, /empty\/loading\/error/)
+  const fallback = buildFallbackApplicationPlan(
+    'Team kanban board for sprint tasks',
+  )
+  assert.equal(fallback.complexity, 'medium')
+  assert.ok(fallback.coreFeatures.length >= 3)
+  assert.match(fallback.sampleDataNotes, /empty|loading|error/i)
+  assert.ok(fallback.interactionContracts.length >= 1)
 }
 
 console.log('prompt.test.ts: all tests passed')

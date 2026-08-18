@@ -305,13 +305,13 @@ function aquaClubFixed(): FragmentSchema {
     resolveGenerationMaxTokens({ complexity: 'medium' } as any, {
       concurrentJobs: 3,
     }),
-    10000,
+    14000,
   )
   assert.equal(
     resolveGenerationMaxTokens({ complexity: 'complex' } as any, {
       concurrentJobs: 3,
     }),
-    14000,
+    18000,
   )
   assert.equal(
     withGenerationTokenBudget(
@@ -319,7 +319,7 @@ function aquaClubFixed(): FragmentSchema {
       { complexity: 'complex' } as any,
       { concurrentJobs: 3 },
     ).maxTokens,
-    14000,
+    18000,
   )
   assert.equal(
     resolveGenerationMaxTokens({ complexity: 'complex' } as any, {

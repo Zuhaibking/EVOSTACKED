@@ -60,11 +60,27 @@ export function isHydrationOverlayFailure(
   )
 }
 
-/** Compile overlay OR hydration overlay — not a healthy preview. */
+/**
+ * Next.js SSR / server runtime exception (often embedded in __NEXT_DATA__.err).
+ * Not a compile overlay — but still an unhealthy preview that must not soft-pass.
+ */
+export function isServerRuntimeFailure(
+  message: string | undefined | null,
+): boolean {
+  return /ReferenceError:|TypeError:|React is not defined|Unhandled (?:Runtime )?Error|server[- ]side exception|Application error: a (?:client|server)-side exception/i.test(
+    message || '',
+  )
+}
+
+/** Compile overlay, hydration overlay, OR SSR runtime exception — not a healthy preview. */
 export function isPreviewOverlayFailure(
   message: string | undefined | null,
 ): boolean {
-  return isCompileOrBuildFailure(message) || isHydrationOverlayFailure(message)
+  return (
+    isCompileOrBuildFailure(message) ||
+    isHydrationOverlayFailure(message) ||
+    isServerRuntimeFailure(message)
+  )
 }
 
 /** True when runtime evidence is a Next/SWC compile overlay, not a healthy app. */
@@ -152,12 +168,59 @@ export function extractCompileErrorFromHtml(
   return undefined
 }
 
+/**
+ * Pull Next.js SSR / runtime errors from __NEXT_DATA__.err.
+ * htmlToPlainText strips <script>, so this must run on raw HTML first.
+ * Shape observed on Innovate HTTP 500: page=/_error, err.message="React is not defined".
+ */
+export function extractNextDataServerErrorFromHtml(
+  html: string | undefined | null,
+): string | undefined {
+  if (!html) return undefined
+  const m = html.match(
+    /<script[^>]*\bid=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
+  )
+  if (!m?.[1]) return undefined
+  try {
+    const data = JSON.parse(m[1]) as {
+      err?: { name?: string; message?: string; stack?: string; source?: string }
+      props?: { pageProps?: { statusCode?: number } }
+    }
+    const err = data?.err
+    if (!err?.message || typeof err.message !== 'string') return undefined
+    const name =
+      typeof err.name === 'string' && err.name.trim() ? err.name.trim() : 'Error'
+    const stackLine = String(err.stack || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => /^at\s+/.test(l))
+    const statusCode = data?.props?.pageProps?.statusCode
+    const bits = [`${name}: ${err.message.trim()}`]
+    if (stackLine) bits.push(stackLine)
+    if (typeof statusCode === 'number') bits.push(`HTTP ${statusCode}`)
+    const combined = bits.join(' — ')
+    if (
+      isServerRuntimeFailure(combined) ||
+      isCompileOrBuildFailure(combined) ||
+      isHydrationOverlayFailure(combined) ||
+      (typeof statusCode === 'number' && statusCode >= 500)
+    ) {
+      return truncateDiagnostic(combined, 400)
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Hydration overlay first, then compile overlay — either blocks a healthy preview. */
 export function extractPreviewOverlayErrorFromHtml(
   html: string | undefined | null,
 ): string | undefined {
   return (
-    extractHydrationErrorFromHtml(html) || extractCompileErrorFromHtml(html)
+    extractNextDataServerErrorFromHtml(html) ||
+    extractHydrationErrorFromHtml(html) ||
+    extractCompileErrorFromHtml(html)
   )
 }
 

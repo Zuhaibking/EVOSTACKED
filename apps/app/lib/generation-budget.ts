@@ -18,13 +18,15 @@ export const GENERATION_MAX_TOKENS = {
 
 /**
  * Per-job caps when Product / Premium / Innovate stream concurrently.
- * Three full sequential budgets in flight historically truncated richer
- * variants (missing Hero/Perks files) via TPM interruption.
+ * Raised once (medium 10k→14k, large 14k→18k) after Step-2 evidence:
+ * survivors already emitted ~15–19k chars under a 10k cap with a *null*
+ * plan; richer shared plans + quality prompts need solo-medium headroom
+ * without returning to the old 3×20k TPM blowups.
  */
 export const CONCURRENT_GENERATION_MAX_TOKENS = {
   small: 6000,
-  medium: 10000,
-  large: 14000,
+  medium: 14000,
+  large: 18000,
 } as const
 
 export function resolveGenerationBudgetTier(

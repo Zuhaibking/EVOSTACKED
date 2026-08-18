@@ -29,8 +29,12 @@ Ship a real runnable app structure appropriate to complexity — not a single HT
     sigil: 'R',
     temperature: 0.65,
     systemSuffix: `Interpretation: PREMIUM.
-Same product requirements, elevated brand craft: considered typography, spacing, materials, and one signature motif (type, color, or layout) that belongs to this domain.
-Feel trustworthy and productized (as if a funded team shipped v1). Generous rhythm, editorial headlines, tactile controls.
+Same product requirements, elevated brand craft — do not rely on temperature alone.
+Hard requirements for this specimen:
+- Editorial visual hierarchy: distinctive type pairing, generous but deliberate spacing rhythm, one signature motif (type, color, or layout) that belongs to this domain.
+- Dense realistic content: named people, statuses, amounts, and dates — never barren single-column stubs or "Item 1" placeholders.
+- Explicit empty, loading, and error/feedback states for primary flows (visible copy + UI, not just happy-path).
+- Tactile controls and polished sections that feel like a funded team shipped v1.
 Avoid hollow luxury, gold-gradient kits, and generic "premium SaaS" dashboards.
 Still implement every shared core feature, must-have interaction, interaction contract (exact accessible names), and architectureRequirements (no under/over-building).`,
   },

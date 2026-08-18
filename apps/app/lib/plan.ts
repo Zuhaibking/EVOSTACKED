@@ -333,6 +333,94 @@ export function normalizeApplicationPlan(plan: ApplicationPlan): ApplicationPlan
   }
 }
 
+/**
+ * Deterministic shared plan when LLM planning fails (non-quota).
+ * Keeps all three candidates aligned instead of plan=null mental planning.
+ */
+export function buildFallbackApplicationPlan(
+  brief: string,
+): ApplicationPlan {
+  const trimmed = (brief || '').trim().slice(0, 280) || 'Product application'
+  const goal =
+    trimmed.length > 12
+      ? trimmed
+      : 'Build a coherent, usable application for the stated brief.'
+  const raw = {
+    applicationType: 'utility',
+    complexity: 'medium',
+    productName: 'Workspace App',
+    productGoal: goal,
+    targetUsers: 'People who need to complete the primary job in this brief',
+    problemStatement:
+      'Users need a focused tool that covers the core workflow without unused chrome.',
+    primaryUserGoal: 'Complete the main workflow end-to-end with clear feedback',
+    coreFeatures: [
+      'Primary workspace view with realistic sample content',
+      'Create or update the main entity with validation feedback',
+      'Filter or navigate between key sections',
+      'Empty, loading, and error/feedback states for the primary flow',
+    ],
+    secondaryFeatures: [
+      'Lightweight activity or status summary related to the brief',
+    ],
+    outOfScope: [
+      'Real payments',
+      'Production authentication providers',
+      'Multi-tenant billing',
+      'Unrelated product pivots',
+    ],
+    pages: [
+      {
+        name: 'Home',
+        path: '/',
+        purpose: 'Primary workspace showing the core workflow',
+      },
+    ],
+    userFlows: [
+      'Open home → review sample data → create/update item → see feedback',
+    ],
+    dataApproach: 'In-memory React state with realistic seed data',
+    needsAuth: false,
+    needsBackend: false,
+    architectureSummary:
+      'Frontend Pages Router app with shared components and in-memory state. No backend, database, or auth unless the brief later requires them.',
+    designDirection: {
+      tone: 'Focused internal tool',
+      typography: 'Clear UI sans for body with a stronger display weight for titles',
+      colorApproach: 'Restrained domain palette — high contrast text, one accent',
+      componentStyle: 'Modest radius, consistent spacing, light elevation',
+      interactionStyle: 'Snappy, clear feedback, no decorative motion',
+    },
+    sampleDataNotes:
+      'Use named people, statuses, and dates. Demonstrate empty, loading, and error/feedback copy for the primary action — never User 1 or lorem ipsum.',
+    mustHaveInteractions: [
+      'Primary create/update control validates and updates visible data',
+      'User can filter or switch sections and see the list change',
+    ],
+    interactionContracts: [
+      {
+        id: 'primary_create_or_update',
+        name: 'Create or update item',
+        purpose: 'Prove the primary write path works with visible feedback',
+        route: '/',
+        priority: 'critical',
+        action: 'Open home → use primary create/update control → see updated content',
+        expectedOutcome: 'List or detail view reflects the new or updated item',
+        steps: [
+          { type: 'goto', path: '/' },
+          {
+            type: 'click',
+            role: 'button',
+            name: 'Add item',
+          },
+        ],
+      },
+    ],
+    documentation: 'readme',
+  } as ApplicationPlan
+  return normalizeApplicationPlan(raw)
+}
+
 export function validateInteractionContract(
   value: unknown,
 ):
@@ -356,13 +444,14 @@ export const PLANNING_SYSTEM_PROMPT = `You are a product architect planning a ru
 Analyze the user's request and produce a precise ApplicationPlan in ONE response (product + contracts + architecture).
 
 Rules:
-- Match complexity to the request. Do not inflate a simple ask into a SaaS.
-- Prefer the fewest pages/features that still deliver a coherent product.
+- Match complexity honestly: simple for calculator/landing/portfolio; medium for dashboards/task tools/blogs; complex for multi-user business systems. Prefer the lowest complexity that still fulfills the brief — but do not underspecify a medium brief into a barren stub.
+- For thin or vague user prompts at medium complexity, EXPAND into a fuller but in-scope product: multiple meaningful sections or screens, primary + secondary flows, realistic seed data, and notes for empty/loading/error states. Stay inside the user's domain — do not invent unpaid SaaS infra, multi-tenant billing, or unrelated products.
+- Prefer enough screens/sections to feel like a real shipped product for this brief (not the absolute fewest). A task board should include board + create/edit + filter + feedback states, not a single empty column.
 - Every coreFeature and mustHaveInteraction must be implementable without inventing unpaid external services.
 - Design direction must fit the product domain (finance ≠ portfolio ≠ developer tool).
 - Specify a distinctive visual direction (palette roles, type character, layout idea) so the three specimens are not generic clones of each other.
 - Forbid generic AI UI defaults as the plan's intent: no random purple gradients, glassmorphism for its own sake, fake KPI walls, or decorative cards with no job.
-- Sample data notes must be realistic and domain-specific.
+- sampleDataNotes must be realistic and domain-specific, and must mention empty/loading/error or feedback states the UI should demonstrate.
 
 ## Architecture requirements (CRITICAL — minimum that satisfies the product)
 Fill architectureRequirements with reasons for every significant decision.

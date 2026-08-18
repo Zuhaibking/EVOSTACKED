@@ -424,6 +424,24 @@ test('hydration overlay on partial runtime does trigger repair', () => {
   )
 })
 
+test('SSR ReferenceError on partial runtime does trigger repair', () => {
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      verification: {
+        ...failedVerification(),
+        status: 'partial',
+        errors: [
+          'ReferenceError: React is not defined — at Home (/home/user/.next/server/chunks/ssr/_42f4a7._.js:1112:5) — HTTP 500',
+        ],
+        previewReachable: false,
+        httpStatus: 500,
+      },
+    }),
+    true,
+  )
+})
+
 test('E2B transport fetch failed does not trigger LLM source repair', () => {
   assert.equal(
     shouldAttemptRepair({

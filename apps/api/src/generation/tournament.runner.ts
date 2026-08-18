@@ -8,6 +8,7 @@ import {
   ApplicationPlan,
   PLANNING_SYSTEM_PROMPT,
   applicationPlanSchema,
+  buildFallbackApplicationPlan,
   normalizeApplicationPlan,
 } from '@/lib/plan'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
@@ -99,6 +100,8 @@ function asFragment(fragment: any): FragmentSchema | null {
   const parsed = schema.safeParse(fragment)
   if (parsed.success) return parsed.data
   // Soft accept near-complete streams that still have files.
+  // Deploy path still gates on canDeployIntegrity — soft-accept must not
+  // invent success when compile-blocking integrity issues remain.
   if (
     typeof fragment.template === 'string' &&
     typeof fragment.file_path === 'string' &&
@@ -283,17 +286,21 @@ export async function handleTournament(req: Request) {
         plan = normalizeApplicationPlan(evolution.plan)
         send({ type: 'plan', plan })
       } else {
-        try {
-          const planned = await withProviderRetry(async () =>
+        const planPrompt = `User request / conversation brief:\n\n${brief}\n\nProduce the shared ApplicationPlan that all three implementation candidates must satisfy.`
+        const runPlanOnce = () =>
+          withProviderRetry(async () =>
             generateObject({
               model: modelClient as LanguageModel,
               schema: applicationPlanSchema,
               system: PLANNING_SYSTEM_PROMPT,
-              prompt: `User request / conversation brief:\n\n${brief}\n\nProduce the shared ApplicationPlan that all three implementation candidates must satisfy.`,
+              prompt: planPrompt,
               maxRetries: 0,
               temperature: 0.2,
             }),
           )
+
+        try {
+          const planned = await runPlanOnce()
           plan = normalizeApplicationPlan(planned.object)
           send({ type: 'plan', plan })
         } catch (planErr) {
@@ -321,7 +328,46 @@ export async function handleTournament(req: Request) {
             controller.close()
             return
           }
-          plan = null
+          console.warn(
+            '[evostack:plan] primary planning failed; retrying once',
+            planErr instanceof Error ? planErr.message : planErr,
+          )
+          try {
+            const retryPlanned = await runPlanOnce()
+            plan = normalizeApplicationPlan(retryPlanned.object)
+            send({ type: 'plan', plan })
+          } catch (retryErr) {
+            const retryQuota = classifyProviderQuotaError(retryErr)
+            if (retryQuota.abortTournament) {
+              send({
+                type: 'provider_quota',
+                state: retryQuota.budgetState,
+                message: retryQuota.message,
+                retryAfterMs: retryQuota.retryAfterMs ?? undefined,
+              })
+              const skipVariants = isSingleIteration
+                ? VARIANTS.filter((v) => v.id === evolution!.activeVariantId)
+                : [...VARIANTS]
+              for (const v of skipVariants) {
+                send({
+                  type: 'candidate_skipped',
+                  id: v.id,
+                  reason: 'daily_limit',
+                  message: retryQuota.message,
+                })
+              }
+              send({ type: 'tournament_done' })
+              closed = true
+              controller.close()
+              return
+            }
+            console.warn(
+              '[evostack:plan] planning retry failed; using fallback ApplicationPlan',
+              retryErr instanceof Error ? retryErr.message : retryErr,
+            )
+            plan = buildFallbackApplicationPlan(brief)
+            send({ type: 'plan', plan })
+          }
         }
       }
 
@@ -390,6 +436,14 @@ export async function handleTournament(req: Request) {
               plan,
               { concurrentJobs: generationQueue.length },
             )
+            console.log('[evostack:gen-budget]', {
+              candidateId: variant.id,
+              modelId: model?.id,
+              providerId: model?.providerId,
+              planComplexity: plan?.complexity ?? null,
+              concurrentJobs: generationQueue.length,
+              maxTokens: genParams.maxTokens ?? null,
+            })
 
             const final = await withProviderRetry(async () => {
               const result = await streamObject({
@@ -562,6 +616,7 @@ export async function handleTournament(req: Request) {
           } as Verified
         }
 
+        const schemaAccepted = schema.safeParse(r.fragment).success
         const preflighted = runGeneratedProjectPreflight(frag)
         let workingFrag = preflighted.fragment
         let repairAttempts = 0
@@ -671,6 +726,12 @@ export async function handleTournament(req: Request) {
             const verification = integrityToFailedVerification(integrity, {
               candidateLabel: variantLabel,
             })
+            if (!schemaAccepted) {
+              verification.errors = [
+                `${variantLabel}: refusing deploy — soft-accepted fragment still has compile-blocking integrity issues.`,
+                ...verification.errors,
+              ]
+            }
             if (repairAttempt && !repairAttempt.success) {
               const details = verification.errors.slice(1)
               verification.errors = [

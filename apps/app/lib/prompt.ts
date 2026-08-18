@@ -119,7 +119,9 @@ export function implementationChecklistPrompt(): string {
 - Deliver every core feature, must-have interaction, interaction contract, and architectureRequirements from the spec.
 - Match contract accessible names exactly so browser verification can confirm the behavior.
 - Honor architecture: no unnecessary DB/auth/backend; no mock-only when DB/backend are required.
-- Use realistic, coherent sample data (no "User 1" / lorem ipsum). Prefer contract sample fill values when provided.
+- Use realistic, coherent sample data (named people, statuses, amounts, dates — no "User 1" / lorem ipsum / "Item 1"). Prefer contract sample fill values when provided.
+- Ship empty, loading, and error/feedback states for primary flows (visible copy + UI), not happy-path only.
+- Use a consistent spacing rhythm and type scale across pages/sections — no barren single-column stubs or one sparse card as the whole product.
 - Keep secondary features optional; honor out-of-scope.
 - Avoid huge static datasets and verbose comments unless explicitly requested.
 - README/.env.example per documentation level — for full-stack include prerequisites, env vars, DB setup/migrations/seed, and run commands. Never write real secrets.
