@@ -246,7 +246,14 @@ export function ArenaWorkspace({
             </div>
           )
         )}
-        {mode === 'database' && <DatabaseWorkspace fragment={fragment} />}
+        {mode === 'database' && (
+          <DatabaseWorkspace
+            fragment={fragment}
+            result={result}
+            diagnostics={diagnostics}
+            projectName={projectName}
+          />
+        )}
         {showOverlay && mode === 'preview' ? (
           <LoadingState label={loadingLabel!} variant="drive" size="overlay" />
         ) : null}

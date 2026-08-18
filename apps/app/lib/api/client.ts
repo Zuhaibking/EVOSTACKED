@@ -70,10 +70,21 @@ export async function getRunMessages(runId: string, token?: string) {
   return res.json()
 }
 
+/** Empty bodies (Nest may return 200/204 with no JSON for null brain) are null, not a parse crash. */
+export function parseApiJsonText(text: string): unknown {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    throw new Error('Response was not valid JSON')
+  }
+}
+
 export async function getRunBrain(runId: string, token?: string) {
   const res = await apiFetch(`/v1/runs/${runId}/brain`, { token })
   if (!res.ok) throw new Error(await res.text())
-  return res.json()
+  return parseApiJsonText(await res.text())
 }
 
 export async function saveRunBrain(
@@ -115,4 +126,57 @@ export async function saveRunVersion(
     token,
     body: JSON.stringify({ version, data }),
   })
+}
+
+export async function listRuns(token?: string) {
+  const res = await apiFetch('/v1/runs', { token })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json() as Promise<
+    Array<{
+      id: string
+      memoryVersion: number
+      selectedCandidate?: string | null
+      activeVersion?: number | null
+      hasTournament: boolean
+      status: string
+      updatedAt: string
+    }>
+  >
+}
+
+export async function getRequestLogs(token?: string, runId?: string) {
+  const path = runId
+    ? `/v1/logs?runId=${encodeURIComponent(runId)}`
+    : '/v1/logs'
+  const res = await apiFetch(path, { token })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json() as Promise<
+    Array<{
+      id: string
+      method: string
+      path: string
+      status: number
+      durationMs: number
+      runId: string | null
+      createdAt: string
+      meta?: unknown
+    }>
+  >
+}
+
+export async function getRunMemory(runId: string, token?: string) {
+  const res = await apiFetch(`/v1/runs/${runId}/memory`, { token })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json() as Promise<{
+    memoryVersion: number
+    runId: string
+    memoryItemIds: string[]
+    recentMessageCount: number
+  }>
+}
+
+export async function getApiHealth() {
+  const res = await apiFetch('/health')
+  if (!res.ok) throw new Error(await res.text())
+  return res.json() as Promise<{ ok: boolean; service?: string }>
 }

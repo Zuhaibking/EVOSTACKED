@@ -1462,6 +1462,7 @@ export default function Home() {
           tournamentPhase: tournament.phase,
           hasFragment: !!fragment,
         })}
+        commandOverlaysWorkspace={workspaceMode !== 'database'}
         workspace={
           <ArenaWorkspace
             mode={workspaceMode}

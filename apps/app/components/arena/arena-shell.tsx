@@ -11,6 +11,7 @@ export function ArenaShell({
   workspace,
   commandBar,
   commandDocked,
+  commandOverlaysWorkspace = true,
 }: {
   topbar: ReactNode
   sidebar: ReactNode
@@ -19,6 +20,8 @@ export function ArenaShell({
   workspace: ReactNode
   commandBar: ReactNode
   commandDocked: boolean
+  /** Preview empty state overlays the hero. Database must never be covered. */
+  commandOverlaysWorkspace?: boolean
 }) {
   return (
     <div
@@ -71,13 +74,15 @@ export function ArenaShell({
           className={cn(
             commandDocked
               ? 'col-start-1 row-start-2 w-full min-w-0 justify-self-stretch arena-glass md:border-r md:border-border'
-              : 'col-start-1 row-start-2 min-w-0 w-full md:col-start-2 md:row-start-1 arena-command-slot-centered',
+              : commandOverlaysWorkspace
+                ? 'col-start-1 row-start-2 min-w-0 w-full md:col-start-2 md:row-start-1 arena-command-slot-centered'
+                : 'col-start-1 row-start-2 w-full min-w-0 justify-self-stretch arena-glass md:col-start-2',
           )}
         >
           <div
             className={cn(
               'w-full min-w-0',
-              commandDocked
+              commandDocked || !commandOverlaysWorkspace
                 ? 'px-3 pt-2 pb-3 [&_form]:w-full [&_form]:px-0 [&_form]:sm:px-0 [&_textarea]:min-h-[4.5rem]'
                 : '[&_form]:w-full md:[&_form]:border-t-0 md:[&_form]:px-0 md:[&_form]:sm:px-0 md:[&_form]:bg-transparent',
             )}
