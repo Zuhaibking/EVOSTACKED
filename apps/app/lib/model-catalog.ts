@@ -145,31 +145,77 @@ export function nvidiaCredentialIndex(
 const NVIDIA_FAILOVER_STATUSES = new Set([401, 403, 429])
 
 /**
+ * Deadline for NVIDIA response HEADERS, not for the whole body.
+ * A revoked key can be blackholed by the edge: the socket is accepted and the
+ * request simply never answers, so there is no status code to fail over on.
+ */
+export const NVIDIA_HEADERS_TIMEOUT_MS = 20_000
+
+/**
+ * Bounds time-to-headers only. `fetch` resolves as soon as headers land, and
+ * the timer is cleared there — so a long token stream is never cut off.
+ */
+async function fetchWithHeadersDeadline(
+  baseFetch: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController()
+  const onCallerAbort = () => controller.abort(init?.signal?.reason)
+  init?.signal?.addEventListener('abort', onCallerAbort, { once: true })
+  const timer = setTimeout(
+    () => controller.abort(new Error('nvidia_headers_timeout')),
+    timeoutMs,
+  )
+  try {
+    return await baseFetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+    init?.signal?.removeEventListener('abort', onCallerAbort)
+  }
+}
+
+/**
  * One-shot NVIDIA credential failover fetch.
- * On auth/quota/rate-limit from the primary key, retries once with the
- * alternate NVIDIA credential. Never switches providers. Never loops.
+ * Fails over on auth/quota/rate-limit AND on a hung request (a dead key answers
+ * nothing at all). Never switches providers. Never loops.
  */
 export function createNvidiaCredentialFetch(opts: {
   credentials: string[]
   primaryIndex: number
   fetchImpl?: typeof fetch
+  timeoutMs?: number
 }): typeof fetch {
   const { credentials, primaryIndex } = opts
   const baseFetch = opts.fetchImpl ?? fetch
+  const timeoutMs = opts.timeoutMs ?? NVIDIA_HEADERS_TIMEOUT_MS
   const alternate =
     credentials.length > 1
       ? credentials[(primaryIndex + 1) % credentials.length]
       : undefined
 
+  const withAlternate = (init?: RequestInit): RequestInit => {
+    const headers = new Headers(init?.headers)
+    headers.set('Authorization', `Bearer ${alternate}`)
+    return { ...init, headers }
+  }
+
   return async (input: RequestInfo | URL, init?: RequestInit) => {
-    const response = await baseFetch(input, init)
+    let response: Response
+    try {
+      response = await fetchWithHeadersDeadline(baseFetch, input, init, timeoutMs)
+    } catch (error) {
+      // Caller cancelled — not a credential problem, do not burn the alternate.
+      if (init?.signal?.aborted || !alternate) throw error
+      console.warn('[evostack:nvidia] primary credential hung; retrying alternate')
+      return baseFetch(input, withAlternate(init))
+    }
+
     if (!alternate || !NVIDIA_FAILOVER_STATUSES.has(response.status)) {
       return response
     }
-
-    const headers = new Headers(init?.headers)
-    headers.set('Authorization', `Bearer ${alternate}`)
-    return baseFetch(input, { ...init, headers })
+    return baseFetch(input, withAlternate(init))
   }
 }
 

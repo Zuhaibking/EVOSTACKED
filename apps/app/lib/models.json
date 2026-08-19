@@ -141,6 +141,20 @@
       "description": "Paid OpenAI model (Astra 1.2)"
     },
     {
+      "id": "gpt-4.1-mini",
+      "provider": "EvoStack",
+      "providerId": "openai",
+      "name": "Astra 1.2 Mini",
+      "tier": "paid",
+      "multiModal": true,
+      "capabilities": {
+        "structuredOutput": true,
+        "streaming": true,
+        "vision": true
+      },
+      "description": "Paid OpenAI mini — plan / repair / morph routing target"
+    },
+    {
       "id": "llama3.2",
       "provider": "Ollama",
       "providerId": "ollama",

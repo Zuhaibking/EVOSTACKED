@@ -6,6 +6,7 @@ import {
   getPrimaryFile,
 } from '@/lib/fragment'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
+import { describeRoute, routeModel, routedConfig } from '@/lib/model-router'
 import { applyPatch } from '@/lib/morph'
 import { prepareFragmentIntegrity } from '@/lib/prepare-fragment-integrity'
 import ratelimit from '@/lib/ratelimit'
@@ -54,8 +55,15 @@ export async function handleMorph(req: Request) {
   const { model: _modelNameString, apiKey: _modelApiKey, ...modelParams } =
     config
 
+  // A morph is a single targeted file edit — cheap model territory.
+  const morphRoute = routeModel({ role: 'morph', userModel: model, config })
+  console.log('[evostack:model-router]', { routes: [describeRoute(morphRoute)] })
+
   try {
-    const modelClient = getModelClient(model, config)
+    const modelClient = getModelClient(
+      morphRoute.model,
+      routedConfig(config, morphRoute),
+    )
     const files = getFragmentFiles(currentFragment)
     const primary = getPrimaryFile(currentFragment)
     const fileTree = files.map((f) => `- ${f.file_path}`).join('\n')

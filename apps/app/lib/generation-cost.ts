@@ -44,6 +44,7 @@ export const MODEL_TOKEN_RATES: Record<string, ModelTokenRates> = {
   'minimaxai/minimax-m3': { inputPerMillion: 0.3, outputPerMillion: 1.2 },
   'google/gemma-4-31b-it': { inputPerMillion: 0.2, outputPerMillion: 0.2 },
   'gpt-4.1': { inputPerMillion: 2, outputPerMillion: 8 },
+  'gpt-4.1-mini': { inputPerMillion: 0.4, outputPerMillion: 1.6 },
   'llama3.2': { inputPerMillion: 0, outputPerMillion: 0 },
 }
 
