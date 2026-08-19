@@ -895,8 +895,9 @@ export async function handleTournament(
         ? `${plan.productName}: ${plan.productGoal}\nCore: ${plan.coreFeatures.join('; ')}`
         : brief.slice(0, 800)
 
-      // Deploy stays Promise.all so write/install/HTTP can overlap, but
-      // Sandbox.create is serialized inside deployAndVerify (DNS/E2B handshake).
+      // Deploy tasks still Promise.all for event reporting, but
+      // deployAndVerify serializes create+install+boot (one sandbox at a time)
+      // and retries once on process death.
       const verifyTasks = withArchitecture.map(async (r) => {
         send({ type: 'candidate_verifying', id: r.id })
         const variantLabel =

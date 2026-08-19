@@ -2,7 +2,7 @@
  * Deterministic TS/TSX syntax checks for generated fragments.
  * ZERO OpenAI / E2B / network. Parse-only (no typecheck).
  */
-import { getFragmentFiles, type FragmentFile } from '@/lib/fragment'
+import { getFragmentFiles, healInspectStampsOnFragment, type FragmentFile } from '@/lib/fragment'
 import type { FragmentSchema } from '@/lib/schema'
 import type { DeepPartial } from '@evostack/shared'
 import ts from 'typescript'
@@ -173,10 +173,12 @@ export function normalizeFragmentSourceFiles<
     file_path?: string
   },
 >(fragment: T): { fragment: T; changed: boolean } {
+  const healedStamps = healInspectStampsOnFragment(fragment)
+  fragment = healedStamps.fragment
   const files = getFragmentFiles(fragment)
-  if (!files.length) return { fragment, changed: false }
+  if (!files.length) return { fragment, changed: healedStamps.changed }
 
-  let changed = false
+  let changed = healedStamps.changed
   const used = new Set(files.map((f) => normalizePath(f.file_path).toLowerCase()))
   const renamed = new Map<string, string>()
 

@@ -89,6 +89,19 @@ export async function getRunBrain(runId: string, token?: string) {
   return parseApiJsonText(await res.text())
 }
 
+export async function getRunCandidates(runId: string, token?: string) {
+  const res = await apiFetch(`/v1/runs/${runId}/candidates`, { token })
+  if (!res.ok) throw new Error(await res.text())
+  const parsed = parseApiJsonText(await res.text())
+  return Array.isArray(parsed) ? parsed : []
+}
+
+export async function getRunFragment(runId: string, token?: string) {
+  const res = await apiFetch(`/v1/runs/${runId}/fragment`, { token })
+  if (!res.ok) throw new Error(await res.text())
+  return parseApiJsonText(await res.text())
+}
+
 export async function saveRunBrain(
   runId: string,
   data: unknown,
@@ -133,17 +146,19 @@ export async function saveRunVersion(
 export async function listRuns(token?: string) {
   const res = await apiFetch('/v1/runs', { token })
   if (!res.ok) throw new Error(await res.text())
-  return res.json() as Promise<
-    Array<{
-      id: string
-      memoryVersion: number
-      selectedCandidate?: string | null
-      activeVersion?: number | null
-      hasTournament: boolean
-      status: string
-      updatedAt: string
-    }>
-  >
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) return []
+  return data as Array<{
+    id: string
+    title: string
+    preview: string
+    memoryVersion: number
+    selectedCandidate?: string | null
+    activeVersion?: number | null
+    hasTournament: boolean
+    status: string
+    updatedAt: string
+  }>
 }
 
 export async function getRequestLogs(token?: string, runId?: string) {

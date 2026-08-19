@@ -94,11 +94,11 @@ export function ImproveAppPanel({
       aria-label="Improvement progress"
     >
       <div className="px-3 py-2 border-b border-border/70 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+        <span className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
           Improvement
         </span>
         {round && (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[13px] text-muted-foreground">
             Round {round.roundNumber}
             {running && phase ? ` · ${phaseLabel(phase)}` : ''}
           </span>
@@ -106,7 +106,7 @@ export function ImproveAppPanel({
       </div>
 
       <div className="px-3 py-3 space-y-3">
-        <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+        <div className="font-mono text-[13px] tracking-[0.16em] uppercase text-muted-foreground">
           Parent v{round.parentVersion}
           {round.previousScore != null ? ` · Score ${round.previousScore}` : ''}
           {round.candidateMode === 'single' ? ' · 1 generation' : ''}
@@ -145,17 +145,17 @@ export function ImproveAppPanel({
                     : 'border-border'
                 }`}
               >
-                <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground">
+                <div className="font-mono text-[13px] tracking-[0.14em] uppercase text-muted-foreground">
                   {v.label}
                   {round.candidateMode === 'single' ? ' · iteration' : ''}
                 </div>
-                <div className="text-[12px] mt-1 capitalize">
+                <div className="text-[15px] mt-1 capitalize">
                   {isWinner && round.status === 'succeeded'
                     ? 'Promoted'
                     : status.replace(/_/g, ' ')}
                 </div>
                 {points != null && (
-                  <div className="font-mono text-[12px] mt-1">{points}</div>
+                  <div className="font-mono text-[15px] mt-1">{points}</div>
                 )}
               </div>
             )
@@ -164,12 +164,12 @@ export function ImproveAppPanel({
 
         {round.status === 'succeeded' && (
           <div className="space-y-2 border-t border-border/70 pt-3">
-            <div className="text-[13px]">
+            <div className="text-[16px]">
               <span className="font-mono text-brand-accent">
                 ✓ Improved successfully
               </span>
             </div>
-            <div className="font-mono text-[12px] text-muted-foreground">
+            <div className="font-mono text-[15px] text-muted-foreground">
               v{round.parentVersion}
               {newVersion != null ? ` → v${newVersion}` : ''}
               <span className="ml-2 text-foreground">+ New version created</span>
@@ -179,7 +179,7 @@ export function ImproveAppPanel({
                 <button
                   type="button"
                   onClick={onPreviewWinner}
-                  className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                  className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
                 >
                   Preview
                 </button>
@@ -188,7 +188,7 @@ export function ImproveAppPanel({
                 <button
                   type="button"
                   onClick={() => setShowDiff((v) => !v)}
-                  className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                  className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
                 >
                   {showDiff ? 'Hide changes' : 'View changes'}
                 </button>
@@ -211,10 +211,10 @@ export function ImproveAppPanel({
 
         {round.status === 'failed' && (
           <div className="space-y-2 border-t border-border/70 pt-3">
-            <p className="text-[13px]" role="status">
+            <p className="text-[16px]" role="status">
               Improvement wasn&apos;t promoted. Your current version is safe.
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[14px] text-muted-foreground">
               Kept v{round.parentVersion}
               {round.error ? ` · ${round.error}` : ''}
             </p>
@@ -222,7 +222,7 @@ export function ImproveAppPanel({
               <button
                 type="button"
                 onClick={onRetry}
-                className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
               >
                 Try again
               </button>

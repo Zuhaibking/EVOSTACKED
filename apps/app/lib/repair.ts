@@ -301,7 +301,7 @@ export function isSafeRepairPath(path: string): boolean {
   if (base === '.env' || (base.startsWith('.env.') && base !== '.env.example')) {
     return false
   }
-  if (!/^[a-zA-Z0-9._\-/@]+$/.test(normalized)) return false
+  if (!/^[a-zA-Z0-9._\-/@\[\]]+$/.test(normalized)) return false
   return true
 }
 

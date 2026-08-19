@@ -9,11 +9,21 @@ export const WORKSPACE_MODES: { id: WorkspaceMode; label: string }[] = [
   { id: 'database', label: 'Database' },
 ]
 
-export const PREVIEW_VIEWPORTS: { id: PreviewViewport; label: string }[] = [
+export const PREVIEW_VIEWPORTS: { id: PreviewViewport; label: 'Desktop' | 'Tablet' | 'Mobile' }[] = [
   { id: 'desktop', label: 'Desktop' },
   { id: 'tablet', label: 'Tablet' },
   { id: 'mobile', label: 'Mobile' },
 ]
+
+/** Device frames for the generated preview only. `null` = fill the pane. */
+export const PREVIEW_VIEWPORT_FRAMES: Record<
+  PreviewViewport,
+  { width: number; height: number } | null
+> = {
+  desktop: null,
+  tablet: { width: 768, height: 1024 },
+  mobile: { width: 390, height: 844 },
+}
 
 /** CommandBar docks in the sidebar after the first prompt/run, not before. */
 export function isArenaCommandDocked(opts: {

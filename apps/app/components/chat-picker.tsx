@@ -108,7 +108,7 @@ export function ChatPicker({
                           height={14}
                         />
                         <span>{model.name}</span>
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="text-[13px] uppercase tracking-wide text-muted-foreground">
                           {group}
                         </span>
                       </div>

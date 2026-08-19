@@ -2,6 +2,7 @@
 
 import { ArenaShell } from '@/components/arena/arena-shell'
 import { ArenaWorkspace } from '@/components/arena/arena-workspace'
+import { useDesignInspect } from '@/components/arena/use-design-inspect'
 import { AuthDialog, ViewType } from '@/components/auth-dialog'
 import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
@@ -59,10 +60,15 @@ import {
 import { shouldPreferMorph } from '@/lib/morph-preference'
 import type { ProjectExportMeta } from '@/lib/project-export'
 import {
+  attachFragmentToCandidatePool,
   compactArchitectureSummary,
   compactRepairNotes,
   compactSmokeSummary,
   compactVerificationSummary,
+  candidatesFromStoredRows,
+  extractFragment,
+  fragmentFromStoredMessages,
+  pickBootFragment,
 } from '@/lib/tournament-candidate-record'
 import {
   buildBrainFromTournament,
@@ -90,12 +96,21 @@ import {
   createRun,
   getRun,
   getRunBrain,
+  getRunCandidates,
+  getRunFragment,
   getRunMessages,
   getRunVersions,
+  listRuns,
   patchRun,
   saveRunBrain,
   saveRunVersion,
 } from '@/lib/api/client'
+import {
+  pickRestoreRunId,
+  readRunFromUrl,
+  writeRunToUrl,
+  type RunHistoryItem,
+} from '@/lib/run-history'
 import { usePostHog } from 'posthog-js/react'
 import { SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
@@ -124,11 +139,19 @@ export default function Home() {
   const [askKind, setAskKind] = useState<AskRequestKind | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
+  const [deployingId, setDeployingId] = useState<VariantId | undefined>()
   const [isAuthDialogOpen, setAuthDialog] = useState(false)
   const [authView, setAuthView] = useState<ViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [selectedCandidate, setSelectedCandidate] = useState<VariantId | undefined>()
+  const designInspect = useDesignInspect({
+    fragment,
+    setFragment: (next) => setFragment(next),
+    setChatInput: (text) => setChatInput(text),
+    setAskKind,
+    resetKey: `${result?.sbxId || ''}:${selectedCandidate || ''}`,
+  })
   const [hasTournament, setHasTournament] = useState(false)
   const [projectBrain, setProjectBrain] = useState<ProjectBrain | null>(null)
   const [evolutionRound, setEvolutionRound] = useState<EvolutionRound | null>(
@@ -213,12 +236,19 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false)
   const [chatLoading, setChatLoading] = useState(false)
   const [memoryRevision, setMemoryRevision] = useState(0)
+  const [runHistory, setRunHistory] = useState<RunHistoryItem[]>([])
   const skipBrainPushRef = useRef(true)
   const chatAbortRef = useRef<AbortController | null>(null)
+  const deployAbortRef = useRef<AbortController | null>(null)
+  const storedRunHintRef = useRef<string | null>(null)
+  const hadAuthTokenRef = useRef(false)
+  const loadRunSeqRef = useRef(0)
+  const restoredRunRef = useRef<string | null>(null)
 
   function applyVaultRunId(id: string) {
     vaultRunIdRef.current = id
     setVaultRunId(id)
+    writeRunToUrl(id)
   }
 
   /** New project/run → empty Version Vault (does not touch other runs' data). */
@@ -255,7 +285,7 @@ export default function Home() {
     } catch {
       // ignore corrupted snapshots
     } finally {
-      applyVaultRunId(snapRunId || createVaultRunId())
+      storedRunHintRef.current = snapRunId
       setVaultSnapshots([])
       setHydrated(true)
     }
@@ -306,54 +336,190 @@ export default function Home() {
     memoryRevision,
   ])
 
+  async function loadRunWorkspace(runId: string, token: string) {
+    const seq = ++loadRunSeqRef.current
+    const stale = () => seq !== loadRunSeqRef.current
+    try {
+      const meta = await getRun(runId, token)
+      if (stale()) return
+      setHasTournament(!!meta.hasTournament)
+      setMemoryRevision(meta.memoryRevision)
+      if (meta.selectedCandidate) {
+        setSelectedCandidate(meta.selectedCandidate as VariantId)
+      } else {
+        setSelectedCandidate(undefined)
+      }
+      const [serverMessages, brain, versions, storedCandidates, storedFragment] =
+        await Promise.all([
+          getRunMessages(runId, token).catch(() => []),
+          getRunBrain(runId, token).catch(() => null),
+          getRunVersions(runId, token).catch(() => []),
+          getRunCandidates(runId, token).catch(() => []),
+          getRunFragment(runId, token).catch(() => null),
+        ])
+      if (stale()) return
+      setMessages(Array.isArray(serverMessages) ? (serverMessages as Message[]) : [])
+      const snaps = (
+        Array.isArray(versions) ? (versions as VersionSnapshot[]) : []
+      )
+        .filter((snapshot) => extractFragment(snapshot?.fragment) || extractFragment(snapshot))
+        .sort((a, b) => a.version - b.version)
+      setVaultSnapshots(snaps)
+      setVaultRefreshKey((k) => k + 1)
+      const brainData =
+        brain && typeof brain === 'object' ? (brain as ProjectBrain) : null
+      const activeSnap =
+        (meta.activeVersion != null
+          ? snaps.find((snapshot) => snapshot.version === meta.activeVersion)
+          : undefined) || snaps.at(-1)
+      skipBrainPushRef.current = true
+      let vaultFragment: DeepPartial<FragmentSchema> | undefined
+      if (activeSnap && brainData) {
+        const restored = restoreFromSnapshot(activeSnap, brainData)
+        setProjectBrain(restored.brain)
+        vaultFragment =
+          extractFragment(restored.fragment) || extractFragment(activeSnap)
+        setResult(undefined)
+        if (restored.brain.activeCandidateId) {
+          setSelectedCandidate(restored.brain.activeCandidateId)
+        }
+      } else {
+        setProjectBrain(brainData)
+        vaultFragment =
+          extractFragment(activeSnap?.fragment) || extractFragment(activeSnap)
+        setResult(undefined)
+        if (!brainData) skipBrainPushRef.current = false
+      }
+
+      const winnerId =
+        brainData?.currentWinnerId || brainData?.judge?.winnerId || null
+      const preferredId =
+        (meta.selectedCandidate as VariantId | undefined) ||
+        brainData?.activeCandidateId ||
+        winnerId
+      const messageFragment = fragmentFromStoredMessages(serverMessages)
+      const tableFragment = extractFragment(storedFragment)
+      const restoredCandidates = attachFragmentToCandidatePool(
+        candidatesFromStoredRows(
+          Array.isArray(storedCandidates) ? storedCandidates : [],
+          { winnerId },
+        ),
+        vaultFragment || tableFragment || messageFragment,
+        preferredId,
+      )
+      const bootId =
+        preferredId && hasFragmentCode(restoredCandidates[preferredId]?.fragment)
+          ? preferredId
+          : VARIANTS.find((v) =>
+              hasFragmentCode(restoredCandidates[v.id]?.fragment),
+            )?.id
+      const bootFragment = pickBootFragment(restoredCandidates, preferredId, [
+        vaultFragment,
+        tableFragment,
+        messageFragment,
+      ])
+      const hasSpecimens = VARIANTS.some((v) =>
+        hasFragmentCode(restoredCandidates[v.id]?.fragment),
+      )
+      if (hasSpecimens) {
+        tournament.hydrate({
+          candidates: restoredCandidates as Record<VariantId, Candidate>,
+          phase: 'done',
+          plan: brainData?.plan,
+        })
+        setSpecimenArchive(
+          retainTournamentCandidates(
+            restoredCandidates as Record<VariantId, Candidate>,
+          ),
+        )
+        setHasTournament(true)
+        restoredRunRef.current = runId
+      } else {
+        tournament.reset()
+        setSpecimenArchive(null)
+        if (!meta.hasTournament) setHasTournament(false)
+      }
+
+      if (bootFragment && hasFragmentCode(bootFragment)) {
+        setFragment(bootFragment)
+        setWorkspaceMode('preview')
+        restoredRunRef.current = runId
+        if (stale()) return
+        try {
+          await deployFragment(bootFragment, {
+            skipChecks: true,
+            variantId: bootId,
+          })
+        } catch (err: unknown) {
+          if (stale()) return
+          setErrorMessage(
+            err instanceof Error ? err.message : 'Could not start this project',
+          )
+          setIsPreviewLoading(false)
+        }
+        return
+      }
+      setFragment(undefined)
+      setWorkspaceMode('code')
+      setIsPreviewLoading(false)
+      if (meta.hasTournament) {
+        setErrorMessage('This project has no saved source to start.')
+      }
+    } catch (err: unknown) {
+      if (stale()) return
+      skipBrainPushRef.current = false
+      setIsPreviewLoading(false)
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Could not open this project',
+      )
+    }
+  }
+
+  async function refreshRunHistory(token?: string) {
+    const auth = token || accessTokenRef.current
+    if (!auth) return
+    try {
+      setRunHistory(await listRuns(auth))
+    } catch {
+      /* list is additive; keep what we have */
+    }
+  }
+
   useEffect(() => {
-    const runId = vaultRunIdRef.current
     const token = session?.access_token
-    if (!hydrated || !runId || !token) return
+    if (!hydrated) return
+    if (!token) {
+      hadAuthTokenRef.current = false
+      return
+    }
+    const justSignedIn = !hadAuthTokenRef.current
+    hadAuthTokenRef.current = true
     let cancelled = false
     ;(async () => {
       try {
-        let meta
-        try {
-          meta = await getRun(runId, token)
-        } catch {
-          await createRun(token, runId)
-          meta = await getRun(runId, token)
-        }
+        const runs = await listRuns(token)
         if (cancelled) return
-        if (meta.hasTournament) setHasTournament(true)
-        setMemoryRevision(meta.memoryRevision)
-        if (meta.selectedCandidate) {
-          setSelectedCandidate(meta.selectedCandidate as VariantId)
-        }
-        const [serverMessages, brain, versions] = await Promise.all([
-          getRunMessages(runId, token),
-          getRunBrain(runId, token),
-          getRunVersions(runId, token),
-        ])
-        if (cancelled) return
-        if (Array.isArray(serverMessages) && serverMessages.length) {
-          setMessages(serverMessages as Message[])
-        }
-        if (brain && typeof brain === 'object') {
-          skipBrainPushRef.current = true
-          setProjectBrain(brain as ProjectBrain)
-        } else {
-          skipBrainPushRef.current = false
-        }
-        if (Array.isArray(versions)) {
-          setVaultSnapshots(
-            versions.filter((v: VersionSnapshot) => v?.fragment),
-          )
-        }
+        setRunHistory(runs)
+        const picked = pickRestoreRunId({
+          urlRunId: readRunFromUrl(),
+          storedRunId: storedRunHintRef.current,
+          runs,
+        })
+        if (!picked) return
+        if (!justSignedIn && restoredRunRef.current === picked) return
+        applyVaultRunId(picked)
+        setIsPreviewLoading(true)
+        await loadRunWorkspace(picked, token)
       } catch {
-        skipBrainPushRef.current = false
+        if (!cancelled) skipBrainPushRef.current = false
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [hydrated, session?.access_token, vaultRunId])
+    // Restore once per sign-in. Token refresh only refreshes the history list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, session?.access_token])
 
   useEffect(() => {
     if (!hydrated || !projectBrain) return
@@ -543,43 +709,97 @@ export default function Home() {
   function stop() {
     chatAbortRef.current?.abort()
     chatAbortRef.current = null
+    deployAbortRef.current?.abort()
+    deployAbortRef.current = null
     setChatLoading(false)
+    setIsPreviewLoading(false)
+    setDeployingId(undefined)
     tournament.stop()
   }
 
-  async function deployFragment(nextFragment: DeepPartial<FragmentSchema>) {
+  async function deployFragment(
+    nextFragment: DeepPartial<FragmentSchema>,
+    opts?: { skipChecks?: boolean; variantId?: VariantId },
+  ) {
+    deployAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    deployAbortRef.current = ctrl
+    const variantId = opts?.variantId ?? selectedCandidate
+    setDeployingId(variantId)
     setIsPreviewLoading(true)
+    setErrorMessage('')
     posthog.capture('fragment_generated', { template: nextFragment?.template })
     setFragment(nextFragment)
-    const response = await apiFetch('/v1/sandbox', {
-      method: 'POST',
-      token: accessTokenRef.current || session?.access_token,
-      body: JSON.stringify({
-        fragment: nextFragment,
-        runId: vaultRunIdRef.current,
-      }),
-    })
-    const result = await response.json()
-    if (
-      !response.ok ||
-      result?.code === 'FRAGMENT_INTEGRITY_FAILED' ||
-      (result?.error && !result?.sbxId && !result?.url)
-    ) {
+    try {
+      const response = await apiFetch('/v1/sandbox', {
+        method: 'POST',
+        token: accessTokenRef.current || session?.access_token,
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          fragment: nextFragment,
+          runId: vaultRunIdRef.current,
+          skipChecks: opts?.skipChecks === true,
+        }),
+      })
+      if (ctrl.signal.aborted) return
+      const result = await response.json()
+      if (
+        !response.ok ||
+        result?.code === 'FRAGMENT_INTEGRITY_FAILED' ||
+        (result?.error && !result?.sbxId && !result?.url)
+      ) {
+        setErrorMessage(
+          result?.error ||
+            'Fragment failed integrity validation and was not deployed.',
+        )
+        setResult(undefined)
+        setWorkspaceMode('code')
+        return
+      }
+      posthog.capture('sandbox_created', { url: result.url })
+      setResult(result)
+      setCurrentPreview({ fragment: nextFragment, result })
+      setMessage({ result })
+      setWorkspaceMode('preview')
+      if (
+        variantId &&
+        result?.sbxId &&
+        result?.template &&
+        typeof result.url === 'string'
+      ) {
+        const execution = {
+          sbxId: result.sbxId,
+          template: result.template,
+          url: result.url,
+        }
+        tournament.attachExecution(variantId, execution)
+        setSpecimenArchive((prev) => {
+          const current = prev?.[variantId]
+          if (!current) return prev
+          return {
+            ...prev,
+            [variantId]: { ...current, execution },
+          }
+        })
+      }
+    } catch (err: unknown) {
+      if (
+        (err instanceof Error && err.name === 'AbortError') ||
+        ctrl.signal.aborted
+      ) {
+        return
+      }
       setErrorMessage(
-        result?.error ||
-          'Fragment failed integrity validation and was not deployed.',
+        err instanceof Error ? err.message : 'Could not start this project',
       )
       setResult(undefined)
-      setWorkspaceMode('code')
-      setIsPreviewLoading(false)
-      return
+    } finally {
+      if (deployAbortRef.current === ctrl) {
+        setIsPreviewLoading(false)
+        setDeployingId(undefined)
+        deployAbortRef.current = null
+      }
     }
-    posthog.capture('sandbox_created', { url: result.url })
-    setResult(result)
-    setCurrentPreview({ fragment: nextFragment, result })
-    setMessage({ result })
-    setWorkspaceMode('preview')
-    setIsPreviewLoading(false)
   }
 
   async function submit(payload: Record<string, unknown>) {
@@ -970,50 +1190,11 @@ export default function Home() {
       return
     }
 
-    // No reusable Preview for this candidate — clear prior candidate's URL.
-    setResult(undefined)
-    setWorkspaceMode(action?.tab === 'fragment' ? 'preview' : 'code')
-    setIsPreviewLoading(false)
-
-    // Only attempt a fresh sandbox deploy when runtime did not already fail.
-    const runtimeStatus =
-      c.finalVerification?.status || c.verification?.status
-    if (runtimeStatus === 'failed' || runtimeStatus == null) {
-      return
-    }
-    if (sameCodeAlreadyRunning) return
-
-    if (!session) {
-      setAuthDialog(true)
-      return
-    }
-
-    let cancelled = false
-    setIsPreviewLoading(true)
-    apiFetch('/v1/sandbox', {
-      method: 'POST',
-      token: accessTokenRef.current || session.access_token,
-      body: JSON.stringify({
-        fragment: next,
-        runId: vaultRunIdRef.current,
-      }),
-    })
-      .then((r) => r.json())
-      .then((sandboxResult) => {
-        if (cancelled) return
-        if (sandboxResult?.error && !sandboxResult?.sbxId) {
-          setIsPreviewLoading(false)
-          return
-        }
-        setResult(sandboxResult)
-        setWorkspaceMode('preview')
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setIsPreviewLoading(false)
-      })
-    return () => {
-      cancelled = true
+    // Restore and chip Preview own sandbox create. This effect only swaps
+    // the pane — never queues Product/Premium/Innovate behind each other.
+    if (!sameCodeAlreadyRunning) {
+      setResult(undefined)
+      setWorkspaceMode(action?.tab === 'fragment' ? 'preview' : 'code')
     }
   }, [
     selectedCandidate,
@@ -1077,8 +1258,10 @@ export default function Home() {
     const isFirstGeneration = !fragment && !shouldUseMorph
 
     if (isFirstGeneration) {
-      // Tournament: 3 specimens — candidates only until Use this version.
-      beginNewVaultRun()
+      // Keep the restored chat unless this workspace already has turns.
+      if (updatedMessages.length > 1 || !vaultRunIdRef.current) {
+        beginNewVaultRun()
+      }
       setHasTournament(true)
       setSelectedCandidate(undefined)
       setFragment(undefined)
@@ -1099,6 +1282,7 @@ export default function Home() {
       } catch {
         /* local run id still used; Nest ensure() will create it */
       }
+      void refreshRunHistory(token)
       tournament.submit({
         userID: session?.user?.id,
         teamID: userTeam?.id,
@@ -1255,7 +1439,39 @@ export default function Home() {
     const nextId = beginNewVaultRun()
     evolutionActiveRef.current = false
     const token = accessTokenRef.current
-    if (token) void createRun(token, nextId)
+    if (token) {
+      void createRun(token, nextId)
+        .catch(() => {})
+        .then(() => refreshRunHistory(token))
+    }
+  }
+
+  function handleNewProject() {
+    const alreadyBlank = messages.length === 0 && !fragment && !projectBrain
+    if (alreadyBlank && vaultRunIdRef.current) return
+    handleClearChat()
+  }
+
+  async function handleSelectHistory(id: string) {
+    stop()
+    tournament.stop()
+    tournament.reset()
+    setSpecimenArchive(null)
+    setEvolutionRound(null)
+    setEvolutionBaseline(undefined)
+    setEvolutionParentEvidence(null)
+    evolutionActiveRef.current = false
+    applyVaultRunId(id)
+    setErrorMessage('')
+    setFragment(undefined)
+    setIsPreviewLoading(true)
+    setResult(undefined)
+    const token = accessTokenRef.current
+    if (!token) {
+      setIsPreviewLoading(false)
+      return
+    }
+    await loadRunWorkspace(id, token)
   }
 
   /**
@@ -1284,6 +1500,13 @@ export default function Home() {
 
     if (action.showIframe && action.result) {
       setResult({ ...action.result })
+      return
+    }
+    if (action.fragment && hasFragmentCode(action.fragment)) {
+      void deployFragment(action.fragment as DeepPartial<FragmentSchema>, {
+        skipChecks: true,
+        variantId: id,
+      })
     }
   }
 
@@ -1375,19 +1598,20 @@ export default function Home() {
     const restored = restoreFromSnapshot(snapshot, projectBrain)
     if (!restored) return
     setProjectBrain(restored.brain)
-    setFragment(restored.fragment)
-    if (restored.execution) {
-      setResult(restored.execution)
-      setWorkspaceMode('preview')
-    } else {
-      // Old sandbox may be gone — keep source local; Preview can redeploy on demand.
-      setResult(undefined)
-      setWorkspaceMode('code')
-    }
+    const nextFragment =
+      extractFragment(restored.fragment) || extractFragment(snapshot)
+    setFragment(nextFragment)
+    setResult(undefined)
     if (restored.brain.activeCandidateId) {
       setSelectedCandidate(restored.brain.activeCandidateId)
     }
     refreshVaultList()
+    if (nextFragment && hasFragmentCode(nextFragment)) {
+      setWorkspaceMode('preview')
+      void deployFragment(nextFragment, { skipChecks: true })
+      return
+    }
+    setWorkspaceMode('code')
   }
 
   function handleVaultPreview(snapshot: VersionSnapshot) {
@@ -1606,6 +1830,7 @@ export default function Home() {
       candidates={retainedCandidates}
       selectedId={selectedCandidate}
       activeId={projectBrain?.activeCandidateId}
+      deployingId={deployingId}
       onSelectCandidate={setSelectedCandidate}
       onPreviewCandidate={handleCandidatePreview}
       onViewSourceCandidate={handleCandidateViewSource}
@@ -1637,8 +1862,12 @@ export default function Home() {
             showLogin={() => setAuthDialog(true)}
             signOut={logout}
             onSocialClick={handleSocialClick}
-            onClear={handleClearChat}
-            canClear={messages.length > 0}
+            onNewProject={handleNewProject}
+            canNewProject={
+              messages.length > 0 || !!fragment || !!projectBrain
+            }
+            onSelectProject={handleSelectHistory}
+            runHistory={runHistory}
             canUndo={messages.length > 1 && !isLoading}
             onUndo={handleUndo}
             runId={vaultRunId || undefined}
@@ -1681,6 +1910,7 @@ export default function Home() {
             onAskKindChange={setAskKind}
             onSeedText={setChatInput}
             exportMeta={exportMeta}
+            inspect={designInspect}
             designPanel={
               evolutionRound ? (
                 <ImproveAppPanel

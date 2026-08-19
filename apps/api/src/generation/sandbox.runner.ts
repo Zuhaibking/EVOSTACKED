@@ -13,16 +13,19 @@ export async function handleSandbox(req: Request) {
     userID,
     teamID,
     accessToken,
+    skipChecks,
   }: {
     fragment: FragmentSchema
     userID: string | undefined
     teamID: string | undefined
     accessToken: string | undefined
+    skipChecks?: boolean
   } = (await req.json()) as {
     fragment: FragmentSchema
     userID: string | undefined
     teamID: string | undefined
     accessToken: string | undefined
+    skipChecks?: boolean
   }
 
   console.log('fragment', {
@@ -49,6 +52,7 @@ export async function handleSandbox(req: Request) {
       userID,
       teamID,
       accessToken,
+      skipChecks: skipChecks === true,
     })
 
     if (!execution) {

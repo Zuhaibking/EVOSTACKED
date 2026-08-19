@@ -7,6 +7,7 @@ import {
   isInfrastructureRuntimeFailure,
   isSandboxTransportError,
   resolveE2bControlApiUrl,
+  shouldRetrySandboxDeploy,
   withSandboxCreateLock,
   withSandboxCreateTransportRetry,
 } from './sandbox-transport'
@@ -115,6 +116,33 @@ describe('sandbox-transport', () => {
         'E2B_API_KEY is missing from the API process. Sandbox create skipped.',
       ]),
       true,
+    )
+  })
+
+  it('marks sandbox process death as infrastructure, not a compile repair', () => {
+    assert.equal(isInfrastructureRuntimeFailure(['signal: killed']), true)
+    assert.equal(isInfrastructureRuntimeFailure(['exit status 1']), true)
+    assert.equal(isInfrastructureRuntimeFailure(['exit status 137']), true)
+    assert.equal(
+      isInfrastructureRuntimeFailure(["Module not found: Can't resolve './Hero'"]),
+      false,
+    )
+  })
+
+  it('retries process death once, but not missing keys or compile overlays', () => {
+    assert.equal(shouldRetrySandboxDeploy(['signal: killed'], false), true)
+    assert.equal(shouldRetrySandboxDeploy(['exit status 1'], false), true)
+    assert.equal(shouldRetrySandboxDeploy(['signal: killed'], true), false)
+    assert.equal(
+      shouldRetrySandboxDeploy(
+        ['E2B_API_KEY is missing from the API process. Sandbox create skipped.'],
+        false,
+      ),
+      false,
+    )
+    assert.equal(
+      shouldRetrySandboxDeploy(["Module not found: Can't resolve './Hero'"], false),
+      false,
     )
   })
 })

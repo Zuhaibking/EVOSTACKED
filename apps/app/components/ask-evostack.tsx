@@ -95,10 +95,10 @@ export function AskEvoStack({
       aria-label="Ask EvoStack"
     >
       <div className="px-3 py-2 border-b border-border/70 flex flex-wrap items-center justify-between gap-2">
-        <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+        <span className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
           ✨ Ask EvoStack
         </span>
-        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[13px] text-muted-foreground">
           {healthLabel ? <span aria-label="App health">{healthLabel}</span> : null}
           {activeLabel ? (
             <span aria-live="polite">{activeLabel}</span>
@@ -111,7 +111,7 @@ export function AskEvoStack({
       <div className="p-3 space-y-3">
         <label
           htmlFor={inputId}
-          className="block text-[13px] text-foreground"
+          className="block text-[16px] text-foreground"
         >
           What do you want to change?
         </label>
@@ -126,11 +126,11 @@ export function AskEvoStack({
           placeholder="Make the dashboard more modern…"
           aria-label="Improvement request"
           aria-disabled={!hasActiveVersion || !!busy}
-          className="w-full resize-none bg-transparent border border-border px-2.5 py-2 text-[13px] leading-snug text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-brand/40 disabled:opacity-50"
+          className="w-full resize-none bg-transparent border border-border px-2.5 py-2 text-[16px] leading-snug text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-brand/40 disabled:opacity-50"
         />
 
         {!hasActiveVersion && (
-          <p className="text-[12px] text-muted-foreground" role="status">
+          <p className="text-[15px] text-muted-foreground" role="status">
             Generate an app and choose <span className="text-foreground">Use this version</span> before asking EvoStack to improve it.
           </p>
         )}
@@ -148,7 +148,7 @@ export function AskEvoStack({
                 disabled={!!busy}
                 aria-pressed={active}
                 onClick={() => selectQuickAction(action.id)}
-                className={`font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1 border transition-colors disabled:opacity-40 ${
+                className={`font-mono text-[13px] tracking-[0.12em] uppercase px-2 py-1 border transition-colors disabled:opacity-40 ${
                   active
                     ? 'border-foreground bg-foreground text-background'
                     : 'border-border hover:bg-foreground/[0.03]'
@@ -163,7 +163,7 @@ export function AskEvoStack({
 
         {(designMode || kind === 'design') && (
           <div className="space-y-1.5" aria-label="Design Mode starters">
-            <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-muted-foreground">
+            <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted-foreground">
               Design Mode · starter prompts
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -173,7 +173,7 @@ export function AskEvoStack({
                   type="button"
                   disabled={!!busy}
                   onClick={() => selectDesignStarter(prompt)}
-                  className="text-left text-[11px] px-2 py-1 border border-dashed border-border hover:bg-foreground/[0.03] disabled:opacity-40"
+                  className="text-left text-[14px] px-2 py-1 border border-dashed border-border hover:bg-foreground/[0.03] disabled:opacity-40"
                 >
                   {prompt}
                 </button>
@@ -184,7 +184,7 @@ export function AskEvoStack({
 
         {suggestions && suggestions.length > 0 && hasActiveVersion && (
           <div className="space-y-1.5" aria-label="Suggested improvements">
-            <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-muted-foreground">
+            <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted-foreground">
               Suggestions
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -194,7 +194,7 @@ export function AskEvoStack({
                   type="button"
                   disabled={!!busy}
                   onClick={() => selectSuggestion(s)}
-                  className="text-[11px] px-2 py-1 border border-border hover:bg-foreground/[0.03] disabled:opacity-40"
+                  className="text-[14px] px-2 py-1 border border-border hover:bg-foreground/[0.03] disabled:opacity-40"
                 >
                   {s.title}
                 </button>
@@ -205,8 +205,8 @@ export function AskEvoStack({
 
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 pt-1">
           <div className="space-y-0.5">
-            <div className="text-[12px] text-foreground">✨ {cost.title}</div>
-            <div className="font-mono text-[10px] text-muted-foreground">
+            <div className="text-[15px] text-foreground">✨ {cost.title}</div>
+            <div className="font-mono text-[13px] text-muted-foreground">
               {cost.detail}
             </div>
           </div>
@@ -215,7 +215,7 @@ export function AskEvoStack({
             disabled={!gate.ok || !!busy}
             onClick={submit}
             aria-label="Improve active application — 1 generation"
-            className="font-mono text-[11px] tracking-[0.14em] uppercase px-3 py-1.5 border border-border bg-foreground text-background disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+            className="font-mono text-[14px] tracking-[0.14em] uppercase px-3 py-1.5 border border-border bg-foreground text-background disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
           >
             {busy ? 'Improving…' : 'Improve →'}
           </button>

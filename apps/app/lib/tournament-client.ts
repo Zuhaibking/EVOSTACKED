@@ -196,6 +196,27 @@ export function useTournament() {
     setPhase('done')
   }, [])
 
+  const attachExecution = useCallback(
+    (id: VariantId, execution: ExecutionResult) => {
+      setCandidates((c) => {
+        const current = c[id]
+        if (!current) return c
+        return {
+          ...c,
+          [id]: {
+            ...current,
+            execution,
+            status:
+              current.status === 'pending' || current.status === 'not_attempted'
+                ? 'verified'
+                : current.status,
+          },
+        }
+      })
+    },
+    [],
+  )
+
   const submit = useCallback(
     async (args: TournamentSubmitArgs) => {
       reset()
@@ -467,5 +488,6 @@ export function useTournament() {
     stop,
     reset,
     hydrate,
+    attachExecution,
   }
 }

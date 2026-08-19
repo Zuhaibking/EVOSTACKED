@@ -476,12 +476,29 @@ test('E2B transport fetch failed does not trigger LLM source repair', () => {
     }),
     false,
   )
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      architectureCompliance: gymArchPass(),
+      verification: failedVerification(['signal: killed']),
+    }),
+    false,
+  )
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      architectureCompliance: gymArchPass(),
+      verification: failedVerification(['exit status 1']),
+    }),
+    false,
+  )
 })
 
 test('rejects path traversal', () => {
   assert.equal(isSafeRepairPath('../etc/passwd'), false)
   assert.equal(isSafeRepairPath('.env'), false)
   assert.equal(isSafeRepairPath('pages/index.tsx'), true)
+  assert.equal(isSafeRepairPath('pages/api/employees/[id].ts'), true)
 })
 
 test('malformed repair output is rejected; original preserved', () => {

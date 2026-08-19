@@ -65,6 +65,16 @@ export class RunsController {
     return row?.data ?? null
   }
 
+  @Get(':id/candidates')
+  listCandidates(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.runs.listCandidatesForUser(user.userId, id)
+  }
+
+  @Get(':id/fragment')
+  getLatestFragment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.runs.getLatestFragment(user.userId, id)
+  }
+
   @Post(':id/brain')
   saveBrain(
     @CurrentUser() user: AuthUser,

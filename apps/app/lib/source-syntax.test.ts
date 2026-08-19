@@ -128,4 +128,25 @@ const truncated = `export default function BuildYourOwn() {
   assert.equal(renamed.fragment.file_path, 'components/Hero.tsx')
 }
 
+{
+  const corrupted = [
+    'const scrollTo = (ref: React.RefObject<HTMLDivElement data-oid="pages/index.tsx:4">) => {',
+    '  return <section>Hi</section>',
+    '}',
+    'export default function Page(){ return <main>Hi</main> }',
+  ].join('\n')
+  assert.ok(parseGeneratedSource('pages/index.tsx', corrupted).length > 0)
+  const healed = normalizeFragmentSourceFiles({
+    file_path: 'pages/index.tsx',
+    code: [{ file_path: 'pages/index.tsx', file_content: corrupted }],
+  })
+  assert.equal(healed.changed, true)
+  const next = Array.isArray(healed.fragment.code)
+    ? healed.fragment.code[0]?.file_content || ''
+    : ''
+  assert.match(next, /RefObject<HTMLDivElement>/)
+  assert.doesNotMatch(next, /HTMLDivElement data-oid/)
+  assert.equal(parseGeneratedSource('pages/index.tsx', next).length, 0)
+}
+
 console.log('source-syntax.test.ts: all tests passed')

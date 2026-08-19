@@ -48,7 +48,7 @@ function TreeRows({
             }`}
             style={{ paddingLeft: 4 + depth * 12 }}
           >
-            <span className="text-[12px] truncate">
+            <span className="text-[15px] truncate">
               {depth > 0 && (
                 <span className="text-muted-foreground/70 mr-1">
                   {idx === nodes.length - 1 ? '└' : '├'}
@@ -59,19 +59,19 @@ function TreeRows({
               </span>
               {n.label}
               {n.isActive ? (
-                <span className="ml-1.5 font-mono text-[9px] tracking-[0.12em] uppercase text-brand-accent">
+                <span className="ml-1.5 font-mono text-[11px] tracking-[0.12em] uppercase text-brand-accent">
                   Active
                 </span>
               ) : null}
             </span>
           </button>
           {depth === 0 && nodes.length > 0 && n.children.length === 0 && idx < nodes.length - 1 && (
-            <div className="pl-3 text-[10px] text-muted-foreground/70 leading-none">↓</div>
+            <div className="pl-3 text-[13px] text-muted-foreground/70 leading-none">↓</div>
           )}
           {n.children.length > 0 && (
             <>
               <div
-                className="text-[10px] text-muted-foreground/70 leading-none"
+                className="text-[13px] text-muted-foreground/70 leading-none"
                 style={{ paddingLeft: 10 + depth * 12 }}
               >
                 ↓
@@ -136,14 +136,14 @@ export function VersionVaultPanel({
     return (
       <section className="mx-3 sm:mx-4 md:mx-6 mb-3 border border-border bg-background/80">
         <div className="px-3 py-2 border-b border-border/70 flex items-center justify-between gap-2">
-          <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+          <span className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
             Version Vault
           </span>
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[13px] text-muted-foreground">
             Active: none
           </span>
         </div>
-        <p className="px-3 py-3 text-[12px] text-muted-foreground">
+        <p className="px-3 py-3 text-[15px] text-muted-foreground">
           No saved versions
         </p>
       </section>
@@ -153,10 +153,10 @@ export function VersionVaultPanel({
   return (
     <section className="mx-3 sm:mx-4 md:mx-6 mb-3 border border-border bg-background/80">
       <div className="px-3 py-2 border-b border-border/70 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+        <span className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
           Version Vault
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span className="font-mono text-[13px] text-muted-foreground">
           {snapshots.length} saved
         </span>
       </div>
@@ -177,17 +177,17 @@ export function VersionVaultPanel({
 
         {selected && (
           <div className="p-3 space-y-2">
-            <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+            <div className="font-mono text-[13px] tracking-[0.16em] uppercase text-muted-foreground">
               Version {selected.version}
               {selected.version === active ? ' · Active' : ''}
             </div>
-            <div className="text-[13px] font-medium">{selected.label}</div>
+            <div className="text-[16px] font-medium">{selected.label}</div>
             {selected.userRequest && (
-              <p className="text-[12px] text-muted-foreground leading-snug">
+              <p className="text-[15px] text-muted-foreground leading-snug">
                 “{selected.userRequest}”
               </p>
             )}
-            <div className="font-mono text-[11px] space-y-0.5 text-muted-foreground">
+            <div className="font-mono text-[14px] space-y-0.5 text-muted-foreground">
               <div>
                 Score:{' '}
                 <span className="text-foreground">
@@ -215,7 +215,7 @@ export function VersionVaultPanel({
               <button
                 type="button"
                 onClick={() => onPreview(selected)}
-                className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
               >
                 Preview
               </button>
@@ -223,7 +223,7 @@ export function VersionVaultPanel({
                 <button
                   type="button"
                   onClick={() => setShowDiff((v) => !v)}
-                  className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                  className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
                 >
                   {showDiff ? 'Hide changes' : 'View changes'}
                 </button>
@@ -232,7 +232,7 @@ export function VersionVaultPanel({
                 <button
                   type="button"
                   onClick={() => setConfirmRestore(true)}
-                  className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border bg-foreground text-background"
+                  className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border bg-foreground text-background"
                 >
                   Restore
                 </button>
@@ -240,7 +240,7 @@ export function VersionVaultPanel({
             </div>
 
             {confirmRestore && (
-              <div className="border border-border/70 p-2 space-y-2 text-[12px]">
+              <div className="border border-border/70 p-2 space-y-2 text-[15px]">
                 <p>
                   Restore v{selected.version}? This becomes the active version for
                   Improve. Later versions are kept (branching). No API calls.
@@ -252,14 +252,14 @@ export function VersionVaultPanel({
                       onRestore(selected)
                       setConfirmRestore(false)
                     }}
-                    className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border bg-foreground text-background"
+                    className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border bg-foreground text-background"
                   >
                     Confirm restore
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmRestore(false)}
-                    className="font-mono text-[10px] tracking-[0.14em] uppercase px-2 py-1 border border-border"
+                    className="font-mono text-[13px] tracking-[0.14em] uppercase px-2 py-1 border border-border"
                   >
                     Cancel
                   </button>

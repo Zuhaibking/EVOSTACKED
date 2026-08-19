@@ -3,6 +3,7 @@
 import { DatabaseWorkspace } from '@/components/arena/database-workspace'
 import { DesignWorkspace } from '@/components/arena/design-workspace'
 import { DeployDialog } from '@/components/deploy-dialog'
+import type { DesignInspectController } from '@/lib/design-mode/controller'
 import { FragmentCode } from '@/components/fragment-code'
 import { Preview } from '@/components/preview'
 import { LoadingState } from '@/components/ui/loading-state'
@@ -56,6 +57,7 @@ export function ArenaWorkspace({
   onSeedText,
   designPanel,
   exportMeta,
+  inspect,
 }: {
   mode: WorkspaceMode
   onModeChange: (mode: WorkspaceMode) => void
@@ -79,6 +81,7 @@ export function ArenaWorkspace({
   onSeedText: (text: string) => void
   designPanel?: ReactNode
   exportMeta?: ProjectExportMeta | null
+  inspect?: DesignInspectController
 }) {
   const isLinkAvailable =
     result?.template &&
@@ -108,7 +111,7 @@ export function ArenaWorkspace({
 
   return (
     <div className="relative h-full w-full min-h-0 flex flex-col overflow-hidden">
-      <header className="shrink-0 flex items-center gap-2 px-2.5 sm:px-3 h-10 border-b border-border arena-glass">
+      <header className="shrink-0 flex flex-wrap items-center gap-2 px-2.5 sm:px-3 min-h-12 py-1.5 border-b border-border arena-glass">
         <div
           role="tablist"
           aria-label="Workspace"
@@ -121,7 +124,7 @@ export function ArenaWorkspace({
               type="button"
               aria-selected={mode === tab.id}
               onClick={() => onModeChange(tab.id)}
-              className={`h-6 px-2 font-mono text-[9px] tracking-[0.18em] uppercase ${
+              className={`h-8 px-2.5 font-mono text-[11px] tracking-[0.18em] uppercase ${
                 idx > 0 ? 'border-l border-border' : ''
               } ${
                 mode === tab.id
@@ -134,27 +137,29 @@ export function ArenaWorkspace({
           ))}
         </div>
 
-        <div className="hidden sm:inline-flex border border-border shrink-0">
-          {PREVIEW_VIEWPORTS.map((item, idx) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onViewportChange(item.id)}
-              className={`h-6 px-2 font-mono text-[8px] tracking-[0.14em] uppercase ${
-                idx > 0 ? 'border-l border-border' : ''
-              } ${
-                viewport === item.id
-                  ? 'bg-foreground/[0.08] text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {(fragment || result) && (
+          <div className="hidden md:inline-flex border border-border shrink-0">
+            {PREVIEW_VIEWPORTS.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onViewportChange(item.id)}
+                className={`h-8 px-2.5 font-mono text-[10px] tracking-[0.14em] uppercase ${
+                  idx > 0 ? 'border-l border-border' : ''
+                } ${
+                  viewport === item.id
+                    ? 'bg-foreground/[0.08] text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {(isChatLoading || isPreviewLoading) && (
-          <span className="hidden lg:inline font-mono text-[9px] tracking-[0.2em] uppercase text-brand truncate">
+          <span className="hidden lg:inline font-mono text-[11px] tracking-[0.2em] uppercase text-brand truncate">
             {isPreviewLoading ? 'sandboxing' : 'streaming'}
           </span>
         )}
@@ -167,13 +172,13 @@ export function ArenaWorkspace({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 rounded-none text-muted-foreground"
+                    className="h-9 w-9 rounded-none text-muted-foreground"
                     aria-label="Open preview"
                     onClick={() =>
                       window.open(previewUrl, '_blank', 'noopener,noreferrer')
                     }
                   >
-                    <ExternalLink className="h-3.5 w-3.5" />
+                    <ExternalLink className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Open preview</TooltipContent>
@@ -187,10 +192,10 @@ export function ArenaWorkspace({
                   variant="ghost"
                   size="sm"
                   disabled={!canZip}
-                  className="h-7 rounded-none px-2 font-mono text-[9px] tracking-[0.14em] uppercase text-muted-foreground disabled:opacity-30"
+                  className="h-9 rounded-none px-2.5 font-mono text-[11px] tracking-[0.14em] uppercase text-muted-foreground disabled:opacity-30"
                   onClick={handleDownloadZip}
                 >
-                  <Download className="h-3.5 w-3.5 mr-1.5 hidden sm:inline" />
+                  <Download className="h-4 w-4 mr-1.5 hidden sm:inline" />
                   <span className="hidden sm:inline">Download ZIP</span>
                   <span className="sm:hidden">ZIP</span>
                 </Button>
@@ -219,19 +224,18 @@ export function ArenaWorkspace({
               unavailableReason={unavailableReason}
               diagnostics={diagnostics}
               onViewSource={onViewSource}
+              inspect={inspect}
             />
           ) : (
-            <div className="arena-empty-hero h-full flex flex-col items-center justify-center px-6 text-center">
-              <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-muted-foreground">
-                Live preview
-              </p>
-              <p className="mt-2 font-display text-[22px] text-foreground">
-                Describe what you want to build
-              </p>
-              <p className="mt-1 text-[13px] text-muted-foreground max-w-md">
-                Product, Premium, and Innovate will appear in the sidebar after
-                the first generation.
-              </p>
+            <div className="arena-empty-hero h-full w-full flex flex-col items-center justify-center px-4 sm:px-6 text-center">
+              <div className="w-full max-w-[40rem] flex flex-col items-center">
+                <p className="font-mono text-[10px] tracking-[0.32em] uppercase text-muted-foreground">
+                  Live preview
+                </p>
+                <h2 className="mt-3 font-display text-[64px] font-bold leading-[1.05] tracking-[-2px] text-foreground [text-shadow:0_0_30px_rgba(255,255,255,0.15)]">
+                  Describe what you want to build
+                </h2>
+              </div>
             </div>
           )
         )}
@@ -241,6 +245,7 @@ export function ArenaWorkspace({
             askKind={askKind}
             onAskKindChange={onAskKindChange}
             onSeedText={onSeedText}
+            inspect={inspect}
           >
             {designPanel}
           </DesignWorkspace>
@@ -255,7 +260,7 @@ export function ArenaWorkspace({
             />
           ) : (
             <div className="h-full flex items-center justify-center">
-              <p className="font-mono text-[11px] text-muted-foreground">
+              <p className="font-mono text-[14px] text-muted-foreground">
                 No source yet.
               </p>
             </div>

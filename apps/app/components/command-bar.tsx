@@ -150,7 +150,7 @@ export function CommandBar({
           className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5"
           aria-label={`Remove ${file.name}`}
         >
-          <X className="h-2.5 w-2.5" />
+          <X className="h-4 w-4" />
         </button>
         <img
           src={URL.createObjectURL(file)}
@@ -181,7 +181,7 @@ export function CommandBar({
     >
       {isErrored && (
         <div
-          className={`flex items-center text-[12px] font-mono tracking-[0.06em] px-3 py-2 mb-2 border ${
+          className={`flex items-center text-[15px] font-mono tracking-[0.06em] px-3 py-2 mb-2 border ${
             isRateLimited
               ? 'border-orange-400/40 bg-orange-400/10 text-orange-500'
               : 'border-red-400/40 bg-red-400/10 text-red-500'
@@ -190,7 +190,7 @@ export function CommandBar({
           <span className="flex-1">{errorMessage}</span>
           <button
             type="button"
-            className="ml-2 px-2 py-0.5 border text-[10px] uppercase tracking-[0.18em] border-current"
+            className="ml-2 px-2 py-0.5 border text-[13px] uppercase tracking-[0.18em] border-current"
             onClick={retry}
           >
             Retry
@@ -199,15 +199,15 @@ export function CommandBar({
       )}
 
       <div
-        className={`border border-border bg-card/80 ${
+        className={`rounded-[10px] border border-[rgba(255,255,255,0.15)] bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-[12px] ${
           dragActive ? 'ring-1 ring-brand' : ''
         }`}
       >
         <TextareaAutosize
           autoFocus
-          minRows={1}
+          minRows={2}
           maxRows={4}
-          className="font-display text-[15px] sm:text-[16px] leading-[1.35] px-4 pt-2.5 pb-1.5 resize-none ring-0 bg-transparent w-full outline-none placeholder:text-muted-foreground/55"
+          className="font-display text-[19px] sm:text-[20px] leading-[1.35] min-h-[5.25rem] px-4 pt-3.5 pb-3 resize-none ring-0 bg-transparent w-full outline-none placeholder:text-muted-foreground/55"
           required
           placeholder="What do you want to build or change?"
           disabled={isErrored}
@@ -224,7 +224,7 @@ export function CommandBar({
                 type="button"
                 disabled={!chipsEnabled || isErrored}
                 onClick={() => toggleChip(action.id)}
-                className={`h-6 px-2 font-mono text-[9px] tracking-[0.18em] uppercase border transition-colors disabled:opacity-35 ${
+                className={`h-8 px-2.5 font-mono text-[11px] tracking-[0.18em] uppercase border transition-colors disabled:opacity-35 ${
                   askKind === action.id
                     ? 'border-foreground bg-foreground text-background'
                     : 'border-border text-muted-foreground hover:text-foreground'
@@ -258,12 +258,12 @@ export function CommandBar({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="rounded-none h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
+                  className="rounded-none h-9 w-9 text-muted-foreground hover:text-foreground shrink-0"
                   onClick={() =>
                     document.getElementById('arena-multimodal')?.click()
                   }
                 >
-                  <Paperclip className="h-3.5 w-3.5" />
+                  <Paperclip className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Attach image</TooltipContent>
@@ -275,10 +275,10 @@ export function CommandBar({
               disabled={isErrored}
               size="sm"
               type="submit"
-              className="rounded-none font-mono text-[10px] tracking-[0.22em] uppercase h-7 px-2.5 shrink-0 bg-foreground text-background border border-foreground hover:bg-brand hover:text-brand-foreground hover:border-brand"
+              className="rounded-none font-mono text-[13px] tracking-[0.22em] uppercase h-7 px-2.5 shrink-0 bg-foreground text-background border border-foreground hover:bg-brand hover:text-brand-foreground hover:border-brand"
             >
               Dispatch
-              <ArrowUp className="h-3 w-3 ml-1.5" />
+              <ArrowUp className="h-4 w-4 ml-1.5" />
             </Button>
           ) : (
             <Button
@@ -289,10 +289,10 @@ export function CommandBar({
                 e.preventDefault()
                 stop()
               }}
-              className="rounded-none font-mono text-[10px] tracking-[0.22em] uppercase h-7 px-2.5 shrink-0 border border-foreground"
+              className="rounded-none font-mono text-[13px] tracking-[0.22em] uppercase h-7 px-2.5 shrink-0 border border-foreground"
             >
               Halt
-              <Square className="h-3 w-3 ml-1.5" />
+              <Square className="h-4 w-4 ml-1.5" />
             </Button>
           )}
         </div>

@@ -49,21 +49,21 @@ export function ActiveVersionPicker({
   return (
     <section className="mx-3 sm:mx-4 md:mx-6 mb-3 border border-border bg-background/80">
       <div className="px-3 py-2 border-b border-border/70 flex flex-wrap items-center justify-between gap-2">
-        <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+        <span className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
           Choose your version
         </span>
         {activeId ? (
-          <span className="font-mono text-[10px] text-brand-accent">
+          <span className="font-mono text-[13px] text-brand-accent">
             {VARIANTS.find((v) => v.id === activeId)?.label} is active
           </span>
         ) : (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[13px] text-muted-foreground">
             Active: none
           </span>
         )}
       </div>
 
-      <p className="px-3 pt-3 text-[12px] text-muted-foreground">
+      <p className="px-3 pt-3 text-[15px] text-muted-foreground">
         All 3 candidates were generated. Preview each in the workspace, then
         choose the one you want to continue with.
       </p>
@@ -106,42 +106,42 @@ export function ActiveVersionPicker({
               }`}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="font-mono text-[11px] tracking-[0.14em] uppercase">
+                <span className="font-mono text-[14px] tracking-[0.14em] uppercase">
                   {c.label}
                 </span>
                 {c.isWinner && hasSource && (
-                  <span className="font-mono text-[9px] tracking-[0.12em] uppercase text-brand-accent">
+                  <span className="font-mono text-[11px] tracking-[0.12em] uppercase text-brand-accent">
                     🏆 Recommended
                   </span>
                 )}
               </div>
               {showStack ? (
-                <span className="inline-flex h-4 items-center px-1 border border-border/70 font-mono text-[8px] tracking-[0.14em] uppercase text-muted-foreground">
+                <span className="inline-flex h-4 items-center px-1 border border-border/70 font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground">
                   {stack}
                 </span>
               ) : null}
 
               {title && (
-                <p className="font-display text-[14px] leading-tight truncate">
+                <p className="font-display text-[18px] leading-tight truncate">
                   {title}
                 </p>
               )}
 
               {stillPending && (
-                <p className="text-[12px] text-muted-foreground" role="status">
+                <p className="text-[15px] text-muted-foreground" role="status">
                   Waiting to generate…
                 </p>
               )}
 
               {generationFailed && (
-                <p className="text-[12px] text-destructive" role="status">
+                <p className="text-[15px] text-destructive" role="status">
                   Candidate generation failed.
                   {c.error ? ` ${c.error}` : ''}
                 </p>
               )}
 
               {notAttempted && (
-                <p className="text-[11px] text-muted-foreground leading-snug" role="status">
+                <p className="text-[14px] text-muted-foreground leading-snug" role="status">
                   Not attempted
                   <br />
                   {c.error ||
@@ -150,7 +150,7 @@ export function ActiveVersionPicker({
               )}
 
               {hasSource && (
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono text-[13px] text-muted-foreground">
                   <span>Score</span>
                   <span className="text-foreground text-right">
                     {formatPct(c.scoreComposite)}
@@ -171,7 +171,7 @@ export function ActiveVersionPicker({
               )}
 
               {hasSource && !preview.available && (
-                <p className="text-[11px] text-muted-foreground leading-snug" role="status">
+                <p className="text-[14px] text-muted-foreground leading-snug" role="status">
                   Preview unavailable
                   <br />
                   Generation succeeded, but runtime deployment failed.
@@ -180,7 +180,7 @@ export function ActiveVersionPicker({
 
               {showFailure && (c.error || activation.reason) && (
                 <p
-                  className="text-[11px] border border-border/70 px-2 py-1.5 bg-background"
+                  className="text-[14px] border border-border/70 px-2 py-1.5 bg-background"
                   role="status"
                 >
                   {c.error ||
@@ -200,7 +200,7 @@ export function ActiveVersionPicker({
                     e.stopPropagation()
                     onPreview(c.id)
                   }}
-                  className={`flex-1 min-w-[4.5rem] font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1 border ${
+                  className={`flex-1 min-w-[4.5rem] font-mono text-[13px] tracking-[0.12em] uppercase px-2 py-1 border ${
                     preview.available
                       ? 'border-border bg-foreground text-background hover:opacity-90'
                       : 'border-border hover:bg-foreground/[0.03]'
@@ -215,7 +215,7 @@ export function ActiveVersionPicker({
                     e.stopPropagation()
                     onViewSource(c.id)
                   }}
-                  className="flex-1 min-w-[4.5rem] font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                  className="flex-1 min-w-[4.5rem] font-mono text-[13px] tracking-[0.12em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
                 >
                   Source
                 </button>
@@ -228,7 +228,7 @@ export function ActiveVersionPicker({
                       setFailureId((id) => (id === c.id ? null : c.id))
                       onViewFailure?.(c.id)
                     }}
-                    className="flex-1 min-w-[4.5rem] font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
+                    className="flex-1 min-w-[4.5rem] font-mono text-[13px] tracking-[0.12em] uppercase px-2 py-1 border border-border hover:bg-foreground/[0.03]"
                   >
                     Failure Details
                   </button>
@@ -246,7 +246,7 @@ export function ActiveVersionPicker({
                       ? undefined
                       : activation.reason || 'Cannot activate'
                   }
-                  className={`flex-1 min-w-[5rem] font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1 border ${
+                  className={`flex-1 min-w-[5rem] font-mono text-[13px] tracking-[0.12em] uppercase px-2 py-1 border ${
                     isActive
                       ? 'border-brand-accent text-brand-accent'
                       : activation.ok
@@ -264,7 +264,7 @@ export function ActiveVersionPicker({
       </div>
 
       {!activeId && (
-        <p className="px-3 pb-3 text-[12px] text-muted-foreground">
+        <p className="px-3 pb-3 text-[15px] text-muted-foreground">
           Recommended is optional — only your choice becomes the active version.
         </p>
       )}

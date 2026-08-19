@@ -30,10 +30,10 @@ function StatusLine({
       : 'text-destructive'
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+      <span className="font-mono text-[13px] tracking-[0.16em] uppercase text-muted-foreground">
         {label}
       </span>
-      <span className={`font-mono text-[11px] ${tone}`}>
+      <span className={`font-mono text-[14px] ${tone}`}>
         <span className="mr-1.5">{mark}</span>
         {status}
       </span>
@@ -68,13 +68,13 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-foreground/[0.02]"
       >
-        <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+        <span className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
           Project Brain
         </span>
         <span className="font-display text-sm text-foreground truncate">
           {summary.productName}
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+        <span className="font-mono text-[13px] text-muted-foreground shrink-0">
           {open ? '▾' : '▸'} v{summary.currentVersion || 0}
         </span>
       </button>
@@ -83,10 +83,10 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
         <div className="px-3 pb-3 border-t border-border/70 space-y-3">
           {summary.purpose && (
             <div>
-              <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-muted-foreground mb-1">
+              <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted-foreground mb-1">
                 Purpose
               </div>
-              <p className="text-[13px] leading-snug text-foreground/90">
+              <p className="text-[16px] leading-snug text-foreground/90">
                 {summary.purpose}
               </p>
             </div>
@@ -94,14 +94,14 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
 
           {summary.features.length > 0 && (
             <div>
-              <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-muted-foreground mb-1">
+              <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted-foreground mb-1">
                 Features
               </div>
               <ul className="space-y-0.5">
                 {summary.features.map((f) => (
                   <li
                     key={f}
-                    className="text-[12px] text-foreground/85 flex gap-2"
+                    className="text-[15px] text-foreground/85 flex gap-2"
                   >
                     <span className="text-brand-accent shrink-0">✓</span>
                     <span>{f}</span>
@@ -116,10 +116,10 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
             <StatusLine label="Runtime" status={summary.runtimeStatus} />
             <StatusLine label="Smoke" status={summary.smokeStatus} />
             <div className="flex items-baseline justify-between gap-3 py-0.5">
-              <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+              <span className="font-mono text-[13px] tracking-[0.16em] uppercase text-muted-foreground">
                 Active version
               </span>
-              <span className="font-mono text-[11px] text-foreground">
+              <span className="font-mono text-[14px] text-foreground">
                 v{brain.activeVersion || summary.currentVersion || 0}
                 {brain.activeCandidateLabel
                   ? ` · ${brain.activeCandidateLabel}`
@@ -132,7 +132,7 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
 
           {history.length > 0 && (
             <div className="border-t border-border/60 pt-2">
-              <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-muted-foreground mb-1.5">
+              <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted-foreground mb-1.5">
                 Version history
               </div>
               <ul className="space-y-1">
@@ -151,19 +151,19 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
                           : ''
                       }`}
                     >
-                      <span className="text-[12px] truncate">
+                      <span className="text-[15px] truncate">
                         <span className="font-mono text-muted-foreground mr-1.5">
                           v{v.version}
                         </span>
                         {v.label}
                         {v.isWinner ? ' 🏆' : ''}
                       </span>
-                      <span className="font-mono text-[11px] text-muted-foreground shrink-0">
+                      <span className="font-mono text-[14px] text-muted-foreground shrink-0">
                         {v.score ?? '—'}
                       </span>
                     </button>
                     {idx < history.length - 1 && (
-                      <div className="pl-3 text-[10px] text-muted-foreground/70 leading-none">
+                      <div className="pl-3 text-[13px] text-muted-foreground/70 leading-none">
                         ↓
                       </div>
                     )}
@@ -172,8 +172,8 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
               </ul>
 
               {selected && (
-                <div className="mt-2 border border-border/70 p-2 space-y-1 text-[12px]">
-                  <div className="font-mono text-[9px] tracking-[0.16em] uppercase text-muted-foreground">
+                <div className="mt-2 border border-border/70 p-2 space-y-1 text-[15px]">
+                  <div className="font-mono text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
                     v{selected.version} metadata
                   </div>
                   <div>{selected.label}</div>
@@ -230,7 +230,7 @@ export function ProjectBrainPanel({ brain }: { brain: ProjectBrain | null }) {
           )}
 
           {summary.judgeReasoning && (
-            <p className="text-[11px] text-muted-foreground leading-snug border-t border-border/60 pt-2">
+            <p className="text-[14px] text-muted-foreground leading-snug border-t border-border/60 pt-2">
               {summary.judgeReasoning}
             </p>
           )}

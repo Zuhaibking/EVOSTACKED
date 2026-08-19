@@ -8,6 +8,12 @@ import { Agent, setGlobalDispatcher } from 'undici'
 const TRANSPORT_MESSAGE =
   /fetch failed|Failed to fetch|network|socket|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|UND_ERR|Connect Timeout|other side closed|getaddrinfo/i
 
+/** Sandbox process was killed/OOM'd — not a compile error the LLM should rewrite. */
+const SANDBOX_PROCESS_DEATH =
+  /signal:\s*(?:killed|SIGKILL|SIGTERM)|exit status 137|exit code 137/i
+const BARE_SANDBOX_EXIT =
+  /^(?:runtimeError:\s*)?(?:deploymentError:\s*)?(?:exit status 1|exit code 1)$/i
+
 const DNS_MESSAGE = /ENOTFOUND|EAI_AGAIN|getaddrinfo|ERR_NAME_NOT_RESOLVED/i
 
 /** Documented E2B control plane. Preview hosts stay on e2b.app unless the SDK says otherwise. */
@@ -86,7 +92,10 @@ export function isInfrastructureRuntimeFailure(errors: string[] | undefined): bo
   if (list.length === 0) return false
   const transport = list.some((e) => isSandboxTransportError(e))
   const missingKey = list.some((e) => /E2B_API_KEY/i.test(e))
-  return transport || missingKey
+  const processDeath = list.some(
+    (e) => SANDBOX_PROCESS_DEATH.test(e) || BARE_SANDBOX_EXIT.test(e.trim()),
+  )
+  return transport || missingKey || processDeath
 }
 
 export function formatSandboxCreateError(error: unknown): string {
@@ -113,8 +122,8 @@ function sleep(ms: number) {
 }
 
 /**
- * One sandbox create at a time. Generation stays parallel; only the E2B
- * control-plane handshake is serialized so DNS/TLS is not slammed ×3.
+ * One sandbox boot at a time. Generation stays parallel; create + install +
+ * Next start are serialized so three apps cannot OOM the same E2B host.
  */
 export function withSandboxCreateLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = sandboxCreateTail.then(fn, fn)
@@ -152,12 +161,21 @@ export async function withSandboxCreateTransportRetry<T>(
   throw lastError
 }
 
-/** Serialize + retry Sandbox.create (used by tournament, repair, and /v1/sandbox). */
+/** True when a failed boot should be retried on a fresh sandbox (not LLM-repaired). */
+export function shouldRetrySandboxDeploy(
+  errors: string[] | undefined,
+  previewReachable?: boolean,
+): boolean {
+  if (previewReachable) return false
+  const list = (errors || []).filter(Boolean)
+  if (list.some((e) => /E2B_API_KEY/i.test(e))) return false
+  return isInfrastructureRuntimeFailure(list)
+}
+
+/** Retry Sandbox.create transport; full boot is serialized by deployAndVerify. */
 export function createSandboxSerialized<T>(
   create: () => Promise<T>,
   opts?: { delayMs?: number; attempts?: number },
 ): Promise<T> {
-  return withSandboxCreateLock(() =>
-    withSandboxCreateTransportRetry(create, opts),
-  )
+  return withSandboxCreateTransportRetry(create, opts)
 }

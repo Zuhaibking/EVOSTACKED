@@ -33,11 +33,11 @@ import { useMemo, useState } from 'react'
 function DatabaseEmpty({ title, body }: { title: string; body: string }) {
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 text-center">
-      <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+      <p className="font-mono text-[13px] tracking-[0.22em] uppercase text-muted-foreground">
         Database
       </p>
-      <p className="mt-2 text-[14px] text-foreground">{title}</p>
-      <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-[18px] text-foreground">{title}</p>
+      <p className="mt-1.5 max-w-md text-[16px] leading-relaxed text-muted-foreground">
         {body}
       </p>
     </div>
@@ -133,13 +133,13 @@ export function DatabaseWorkspace({
       >
         <div className="px-3 py-3 border-b border-border">
           <DbLabel>Database</DbLabel>
-          <p className="mt-1 font-display text-[16px] leading-tight">
+          <p className="mt-1 font-display text-[20px] leading-tight">
             Control center
           </p>
         </div>
         {groups.map((group) => (
           <div key={group} className="px-2 py-2">
-            <p className="px-1.5 mb-1 font-mono text-[8px] tracking-[0.2em] uppercase text-muted-foreground/80">
+            <p className="px-1.5 mb-1 font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground/80">
               {group}
             </p>
             {DATABASE_SECTION_META.filter((item) => item.group === group).map(
@@ -149,7 +149,7 @@ export function DatabaseWorkspace({
                   type="button"
                   aria-current={section === item.id ? 'page' : undefined}
                   onClick={() => setSection(item.id)}
-                  className={`w-full text-left px-2 h-7 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors ${
+                  className={`w-full text-left px-2 h-7 font-mono text-[13px] tracking-[0.12em] uppercase transition-colors ${
                     section === item.id
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground'
@@ -166,7 +166,7 @@ export function DatabaseWorkspace({
       <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         <div className="shrink-0 h-10 px-3 border-b border-border flex items-center gap-2">
           <DbBadge tone="good">schema</DbBadge>
-          <span className="ml-auto font-mono text-[10px] text-muted-foreground truncate">
+          <span className="ml-auto font-mono text-[13px] text-muted-foreground truncate">
             {title || 'generated project'}
             {files.length ? ` · ${files.length} files` : ''}
           </span>

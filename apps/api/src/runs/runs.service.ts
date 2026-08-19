@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma/prisma.service'
 import { MemoryService } from '../memory/memory.service'
+import { textFromStoredContent, titleFromRunSources } from './run-title'
 
 @Injectable()
 export class RunsService {
@@ -47,7 +48,7 @@ export class RunsService {
   }
 
   async list(userId: string) {
-    return this.prisma.run.findMany({
+    const rows = await this.prisma.run.findMany({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
       take: 50,
@@ -59,7 +60,34 @@ export class RunsService {
         hasTournament: true,
         status: true,
         updatedAt: true,
+        messages: {
+          where: { role: 'user' },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { content: true },
+        },
+        projectBrain: { select: { data: true } },
       },
+    })
+    return rows.map((row) => {
+      const brain = (row.projectBrain?.data || {}) as {
+        plan?: { productName?: string; productGoal?: string }
+      }
+      const preview = textFromStoredContent(row.messages[0]?.content)
+      return {
+        id: row.id,
+        memoryVersion: row.memoryVersion,
+        selectedCandidate: row.selectedCandidate,
+        activeVersion: row.activeVersion,
+        hasTournament: row.hasTournament,
+        status: row.status,
+        updatedAt: row.updatedAt,
+        title: titleFromRunSources({
+          productName: brain.plan?.productName,
+          firstUserText: preview,
+        }),
+        preview: (brain.plan?.productGoal || preview).slice(0, 180),
+      }
     })
   }
 
@@ -179,11 +207,30 @@ export class RunsService {
     return this.prisma.projectBrain.findFirst({ where: { userId, runId } })
   }
 
-  async listCandidates(runId: string) {
+  async listCandidates(runId: string, userId?: string) {
     return this.prisma.candidate.findMany({
-      where: { runId },
+      where: userId ? { runId, userId } : { runId },
       orderBy: { updatedAt: 'desc' },
     })
+  }
+
+  async listCandidatesForUser(userId: string, runId: string) {
+    await this.get(userId, runId)
+    const rows = await this.listCandidates(runId, userId)
+    return rows.map((c) => ({
+      variantId: c.variantId,
+      status: c.status,
+      data: c.data,
+    }))
+  }
+
+  async getLatestFragment(userId: string, runId: string) {
+    await this.get(userId, runId)
+    const row = await this.prisma.fragment.findFirst({
+      where: { userId, runId },
+      orderBy: { createdAt: 'desc' },
+    })
+    return row?.data ?? null
   }
 
   /** Unlisted public share — run id is the capability. */

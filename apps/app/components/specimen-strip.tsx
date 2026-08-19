@@ -148,10 +148,10 @@ export function SpecimenStrip({
         <div className="flex items-stretch gap-2 sm:gap-3 py-2 sm:py-2.5">
           {/* Left rail — masthead label + phase meta, stacked */}
           <div className="hidden md:flex flex-col justify-center shrink-0 pr-1 border-r border-border/70 mr-1">
-            <span className="font-mono text-[9px] tracking-[0.26em] uppercase text-muted-foreground leading-tight">
+            <span className="font-mono text-[11px] tracking-[0.26em] uppercase text-muted-foreground leading-tight">
               § Specimens
             </span>
-            <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-foreground/70 tabular leading-tight mt-0.5">
+            <span className="font-mono text-[11px] tracking-[0.2em] uppercase text-foreground/70 tabular leading-tight mt-0.5">
               {phase === 'generating' && (
                 <>
                   <span className="text-brand-accent">●</span> {doneCount}/{list.length} live
@@ -188,8 +188,8 @@ export function SpecimenStrip({
             aria-expanded={open}
             className="self-stretch inline-flex flex-col items-center justify-center w-8 sm:w-9 border border-border hover:border-foreground/70 hover:bg-foreground/[0.04] text-muted-foreground hover:text-foreground transition-colors shrink-0 gap-0.5"
           >
-            {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            <span className="font-mono text-[7px] tracking-[0.2em] uppercase hidden sm:inline">
+            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            <span className="font-mono text-[11px] tracking-[0.2em] uppercase hidden sm:inline">
               {open ? 'hide' : 'show'}
             </span>
           </button>
@@ -216,8 +216,8 @@ export function SpecimenStrip({
             </div>
 
             {phase === 'done' && verdictReasoning && (
-              <p className="mt-2.5 font-display italic text-[12px] sm:text-[13px] text-muted-foreground leading-relaxed max-w-3xl">
-                <span className="font-mono not-italic text-[9px] sm:text-[10px] tracking-[0.22em] uppercase text-foreground mr-2 whitespace-nowrap">
+              <p className="mt-2.5 font-display italic text-[15px] sm:text-[16px] text-muted-foreground leading-relaxed max-w-3xl">
+                <span className="font-mono not-italic text-[11px] sm:text-[13px] tracking-[0.22em] uppercase text-foreground mr-2 whitespace-nowrap">
                   Editor’s note ·
                 </span>
                 {verdictReasoning}
@@ -294,7 +294,7 @@ function CandidateTab({
       disabled={isPending}
       title={`${c.label}${c.fragment?.title ? ' — ' + c.fragment.title : ''}${isError ? ' — inspect failure metadata' : ''}`}
       className={`
-        group relative flex items-stretch h-12 sm:h-[52px] text-left min-w-0
+        group relative flex items-stretch h-12 sm:h-[65px] text-left min-w-0
         border transition-colors overflow-hidden
         ${
           isSelected || isWin
@@ -316,7 +316,7 @@ function CandidateTab({
 
       {/* Sigil column — full-height brutalist square */}
       <span
-        className={`flex items-center justify-center w-9 sm:w-11 shrink-0 border-r font-display text-[15px] sm:text-[17px] font-black leading-none ${
+        className={`flex items-center justify-center w-9 sm:w-11 shrink-0 border-r font-display text-[19px] sm:text-[21px] font-black leading-none ${
           isWin
             ? 'border-brand-accent/60 text-brand-accent bg-brand-accent/[0.06]'
             : isSelected
@@ -331,32 +331,32 @@ function CandidateTab({
       <span className="flex-1 min-w-0 flex flex-col justify-center px-2 sm:px-2.5 py-1 gap-0.5">
         {/* Row 1 — label · status · composite · winner mark */}
         <span className="flex items-center gap-1.5 min-w-0">
-          <span className="font-mono text-[9px] sm:text-[10px] tracking-[0.2em] uppercase text-muted-foreground shrink-0">
+          <span className="font-mono text-[11px] sm:text-[13px] tracking-[0.2em] uppercase text-muted-foreground shrink-0">
             {c.label}
           </span>
-          <span className="font-mono text-[8px] tracking-[0.16em] uppercase text-muted-foreground/50 tabular shrink-0 hidden md:inline">
+          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground/50 tabular shrink-0 hidden md:inline">
             · {String(idx + 1).padStart(2, '0')}
           </span>
-          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot(c.status)} ml-auto`} />
+          <span className={`h-2 w-2 rounded-full shrink-0 ${statusDot(c.status)} ml-auto`} />
           <span
-            className={`font-display text-[12px] sm:text-[13px] tabular leading-none shrink-0 ${
+            className={`font-display text-[15px] sm:text-[16px] tabular leading-none shrink-0 ${
               isWin ? 'text-brand-accent' : 'text-foreground'
             }`}
           >
             {composite}
           </span>
-          {isWin && <span className="text-brand-accent text-[11px] leading-none shrink-0">🏆</span>}
+          {isWin && <span className="text-brand-accent text-[14px] leading-none shrink-0">🏆</span>}
         </span>
 
         {/* Row 2 — candidate title (the actual generated identity) */}
         <span
-          className={`font-display text-[12px] sm:text-[13px] leading-tight truncate ${
+          className={`font-display text-[15px] sm:text-[16px] leading-tight truncate ${
             isGen ? 'italic text-muted-foreground/70' : 'text-foreground'
           }`}
         >
           {isGen && !c.fragment?.title ? (
             <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
               streaming…
             </span>
           ) : (
@@ -465,11 +465,11 @@ function CandidateCard({
       {/* Body: title + description */}
       <div className="px-2.5 lg:px-3 pt-2 lg:pt-2.5 pb-1.5 lg:pb-2 relative">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <p className="font-display italic text-[10px] lg:text-[11px] text-muted-foreground truncate">
+          <p className="font-display italic text-[13px] lg:text-[14px] text-muted-foreground truncate">
             {c.label} · <span className="not-italic font-mono tracking-[0.14em] text-muted-foreground/70">{String(idx + 1).padStart(3, '0')}</span>
           </p>
           <span
-            className={`font-mono text-[9px] lg:text-[10px] tracking-[0.18em] uppercase whitespace-nowrap shrink-0 inline-flex items-center gap-1 ${
+            className={`font-mono text-[11px] lg:text-[13px] tracking-[0.18em] uppercase whitespace-nowrap shrink-0 inline-flex items-center gap-1 ${
               isWin
                 ? 'text-brand-accent'
                 : isError
@@ -477,18 +477,18 @@ function CandidateCard({
                   : 'text-foreground/80'
             }`}
           >
-            {isGen && <Loader2 className="h-3 w-3 animate-spin" />}
+            {isGen && <Loader2 className="h-4 w-4 animate-spin" />}
             {isWin ? '🏆 Recommended' : STATUS_COPY[c.status]}
           </span>
         </div>
 
-        <p className="font-display text-[13px] sm:text-[14px] lg:text-[15px] leading-tight line-clamp-2 min-h-[2.6em]">
+        <p className="font-display text-[16px] sm:text-[18px] lg:text-[19px] leading-tight line-clamp-2 min-h-[2.6em]">
           {c.fragment?.title || (
             <SkeletonText loading={isGen || isPending} text={isError ? 'failed' : '—'} />
           )}
         </p>
         {(c.fragment?.description || isGen) && (
-          <p className="mt-1 lg:mt-1.5 text-[10px] sm:text-[11px] text-muted-foreground leading-snug line-clamp-2">
+          <p className="mt-1 lg:mt-1.5 text-[13px] sm:text-[14px] text-muted-foreground leading-snug line-clamp-2">
             {c.fragment?.description || (
               <span className="opacity-60 italic">drafting description…</span>
             )}
@@ -498,7 +498,7 @@ function CandidateCard({
 
       {/* Telemetry / file path */}
       {(isGen || (isDone && !c.scoreComposite)) && (
-        <div className="px-2.5 lg:px-3 pb-1.5 flex items-center font-mono text-[9px] lg:text-[10px] tracking-[0.14em] uppercase text-muted-foreground tabular gap-x-1.5 lg:gap-x-2 overflow-hidden whitespace-nowrap">
+        <div className="px-2.5 lg:px-3 pb-1.5 flex items-center font-mono text-[11px] lg:text-[13px] tracking-[0.14em] uppercase text-muted-foreground tabular gap-x-1.5 lg:gap-x-2 overflow-hidden whitespace-nowrap">
           <span className="shrink-0">
             <span className="text-foreground">{files.length.toString().padStart(2, '0')}</span>
             <span className="text-muted-foreground/60"> files</span>
@@ -531,7 +531,7 @@ function CandidateCard({
         <pre
           ref={tailRef}
           aria-hidden
-          className="mx-2.5 lg:mx-3 mb-1.5 px-2 py-1 bg-background/60 border border-border/60 font-mono text-[9px] lg:text-[10px] leading-[1.4] text-muted-foreground/90 max-h-[42px] lg:max-h-[52px] overflow-hidden whitespace-pre"
+          className="mx-2.5 lg:mx-3 mb-1.5 px-2 py-1 bg-background/60 border border-border/60 font-mono text-[11px] lg:text-[13px] leading-[1.4] text-muted-foreground/90 max-h-[42px] lg:max-h-[52px] overflow-hidden whitespace-pre"
         >
           {tail}
           <span className="inline-block w-1.5 h-3 bg-brand align-[-2px] ml-0.5 animate-pulse" />
@@ -544,7 +544,7 @@ function CandidateCard({
           {deps.slice(0, 2).map((d) => (
             <span
               key={d}
-              className="font-mono text-[9px] tracking-[0.14em] uppercase border border-border px-1.5 py-0.5 text-muted-foreground truncate max-w-[120px]"
+              className="font-mono text-[11px] tracking-[0.14em] uppercase border border-border px-1.5 py-0.5 text-muted-foreground truncate max-w-[120px]"
             >
               {d}
             </span>
@@ -552,18 +552,18 @@ function CandidateCard({
           {deps.slice(2, 4).map((d) => (
             <span
               key={d}
-              className="hidden lg:inline-block font-mono text-[9px] tracking-[0.14em] uppercase border border-border px-1.5 py-0.5 text-muted-foreground truncate max-w-[120px]"
+              className="hidden lg:inline-block font-mono text-[11px] tracking-[0.14em] uppercase border border-border px-1.5 py-0.5 text-muted-foreground truncate max-w-[120px]"
             >
               {d}
             </span>
           ))}
           {deps.length > 2 && (
-            <span className="lg:hidden font-mono text-[9px] tracking-[0.14em] uppercase text-muted-foreground/60 px-1 py-0.5">
+            <span className="lg:hidden font-mono text-[11px] tracking-[0.14em] uppercase text-muted-foreground/60 px-1 py-0.5">
               +{deps.length - 2}
             </span>
           )}
           {deps.length > 4 && (
-            <span className="hidden lg:inline-block font-mono text-[9px] tracking-[0.14em] uppercase text-muted-foreground/60 px-1 py-0.5">
+            <span className="hidden lg:inline-block font-mono text-[11px] tracking-[0.14em] uppercase text-muted-foreground/60 px-1 py-0.5">
               +{deps.length - 4}
             </span>
           )}
@@ -590,13 +590,13 @@ function CandidateCard({
         c.smoke) && (
         <div className="px-2.5 lg:px-3 pb-1 flex flex-wrap gap-1">
           {c.status === 'architecture_checking' && (
-            <span className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
+            <span className="font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
               Arch…
             </span>
           )}
           {c.architectureCompliance && (
             <span
-              className={`font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
+              className={`font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
                 c.architectureCompliance.status === 'passed'
                   ? 'border-brand-accent/50 text-brand-accent'
                   : c.architectureCompliance.status === 'partial'
@@ -613,7 +613,7 @@ function CandidateCard({
             </span>
           )}
           {c.status === 'repairing' && (
-            <span className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
+            <span className="font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
               {c.repairReason === 'architecture'
                 ? 'Repairing · Architecture'
                 : c.repairReason === 'combined'
@@ -627,7 +627,7 @@ function CandidateCard({
           )}
           {c.repairAttempt?.success && (
             <span
-              className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand-accent/50 text-brand-accent"
+              className="font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand-accent/50 text-brand-accent"
               title={c.repairAttempt.explanation || ''}
             >
               Repaired ✓
@@ -635,7 +635,7 @@ function CandidateCard({
           )}
           {c.repairAttempt && !c.repairAttempt.success && (
             <span
-              className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-destructive/50 text-destructive"
+              className="font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-destructive/50 text-destructive"
               title={c.repairAttempt.error || ''}
             >
               Repair failed
@@ -643,7 +643,7 @@ function CandidateCard({
           )}
           {(c.finalVerification || c.verification) && (
             <span
-              className={`font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
+              className={`font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
                 (c.finalVerification || c.verification)!.status === 'passed'
                   ? 'border-brand-accent/50 text-brand-accent'
                   : (c.finalVerification || c.verification)!.status ===
@@ -665,13 +665,13 @@ function CandidateCard({
             </span>
           )}
           {c.status === 'testing' && (
-            <span className="font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
+            <span className="font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border border-brand/50 text-brand">
               Testing…
             </span>
           )}
           {c.smoke && (
             <span
-              className={`font-mono text-[9px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
+              className={`font-mono text-[11px] tracking-[0.16em] uppercase px-1.5 py-0.5 border ${
                 c.smoke.status === 'passed'
                   ? 'border-brand-accent/50 text-brand-accent'
                   : c.smoke.status === 'not_testable'
@@ -696,18 +696,18 @@ function CandidateCard({
 
       {/* Composite footer + critique on hover */}
       <footer className="border-t border-border/70 px-2.5 lg:px-3 py-1.5 flex items-center justify-between gap-2">
-        <span className="font-mono text-[9px] lg:text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
+        <span className="font-mono text-[11px] lg:text-[13px] tracking-[0.2em] uppercase text-muted-foreground">
           Composite
         </span>
         <span
-          className={`font-display text-[13px] lg:text-base tabular shrink-0 ${
+          className={`font-display text-[16px] lg:text-base tabular shrink-0 ${
             isWin ? 'text-brand-accent' : ''
           }`}
         >
           {c.scoreComposite != null
             ? c.scoreComposite.toFixed(2)
             : isGen
-              ? <span className="text-[10px] lg:text-[11px] text-muted-foreground/50">awaiting</span>
+              ? <span className="text-[13px] lg:text-[14px] text-muted-foreground/50">awaiting</span>
               : hasFragmentCode(c.fragment)
                 ? '·'
                 : '—'}
@@ -715,7 +715,7 @@ function CandidateCard({
       </footer>
 
       {c.scoreComment && (
-        <p className="hidden lg:block px-2.5 lg:px-3 pb-2 pt-1 text-[11px] italic text-muted-foreground leading-snug line-clamp-2">
+        <p className="hidden lg:block px-2.5 lg:px-3 pb-2 pt-1 text-[14px] italic text-muted-foreground leading-snug line-clamp-2">
           “{c.scoreComment}”
         </p>
       )}
@@ -734,17 +734,17 @@ function Stat({
 }) {
   return (
     <div className="px-1.5 lg:px-2.5 py-1 lg:py-1.5 min-w-0">
-      <dt className="font-mono text-[8px] lg:text-[9px] tracking-[0.18em] lg:tracking-[0.22em] uppercase text-muted-foreground truncate">
+      <dt className="font-mono text-[10px] lg:text-[11px] tracking-[0.18em] lg:tracking-[0.22em] uppercase text-muted-foreground truncate">
         {label}
       </dt>
-      <dd className="font-display text-[13px] lg:text-[15px] tabular leading-none mt-0.5 truncate">
+      <dd className="font-display text-[16px] lg:text-[19px] tabular leading-none mt-0.5 truncate">
         {value === '—' && pulsing ? (
           <span className="inline-block w-6 lg:w-8 h-3 bg-foreground/20 animate-pulse align-middle" />
         ) : (
           <>
             {value}
             {value !== '—' && (
-              <span className="text-[9px] lg:text-[10px] text-muted-foreground ml-0.5 hidden md:inline">
+              <span className="text-[11px] lg:text-[13px] text-muted-foreground ml-0.5 hidden md:inline">
                 /100
               </span>
             )}
@@ -759,7 +759,7 @@ function SkeletonText({ loading, text }: { loading: boolean; text: string }) {
   if (!loading) return <>{text}</>
   return (
     <span className="inline-flex flex-col gap-1.5">
-      <span className="block h-3 w-32 bg-foreground/15 animate-pulse" />
+      <span className="block h-4 w-42 bg-foreground/15 animate-pulse" />
       <span className="block h-3 w-20 bg-foreground/10 animate-pulse" />
     </span>
   )

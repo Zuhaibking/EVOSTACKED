@@ -46,6 +46,9 @@ export function candidateLoadingLabel(
       return 'Generating'
     case 'architecture_checking':
       return 'Verifying'
+    case 'done':
+    case 'architecture_checked':
+    case 'architecture_partial':
     case 'verifying':
       return 'Building'
     case 'repairing':

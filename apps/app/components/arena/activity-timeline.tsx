@@ -19,7 +19,7 @@ export function ActivityTimeline({
 
   if (items.length === 0) {
     return (
-      <p className="font-mono text-[10px] text-muted-foreground">
+      <p className="font-mono text-[13px] text-muted-foreground">
         Waiting for a run.
       </p>
     )
@@ -46,14 +46,14 @@ export function ActivityTimeline({
           <li key={item.id}>
             <div className="flex items-start gap-1.5">
               <span
-                className={`font-mono text-[10px] leading-4 ${tone} ${
+                className={`font-mono text-[13px] leading-4 ${tone} ${
                   item.tone === 'work' ? 'animate-pulse motion-reduce:animate-none' : ''
                 }`}
               >
                 {mark}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="font-mono text-[10px] leading-4 text-foreground/90 truncate">
+                <p className="font-mono text-[13px] leading-4 text-foreground/90 truncate">
                   {item.label}
                 </p>
                 {item.tone === 'fail' && item.candidateId && (
@@ -61,7 +61,7 @@ export function ActivityTimeline({
                     {item.allowSource && onViewSource && (
                       <button
                         type="button"
-                        className="font-mono text-[8px] tracking-[0.14em] uppercase text-muted-foreground hover:text-foreground"
+                        className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground hover:text-foreground"
                         onClick={() => onViewSource(item.candidateId!)}
                       >
                         View source
@@ -70,7 +70,7 @@ export function ActivityTimeline({
                     {item.allowDetails && (
                       <button
                         type="button"
-                        className="font-mono text-[8px] tracking-[0.14em] uppercase text-muted-foreground hover:text-foreground"
+                        className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground hover:text-foreground"
                         onClick={() => {
                           setOpenId(detailsOpen ? null : item.id)
                           onViewDetails?.(item.candidateId!)
@@ -86,7 +86,7 @@ export function ActivityTimeline({
                     {details.slice(0, 8).map((line) => (
                       <p
                         key={line}
-                        className="font-mono text-[9px] text-muted-foreground break-words"
+                        className="font-mono text-[11px] text-muted-foreground break-words"
                       >
                         {line}
                       </p>

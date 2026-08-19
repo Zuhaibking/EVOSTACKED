@@ -15,7 +15,14 @@ import {
 import {
   createSandboxSerialized,
   formatSandboxCreateError,
+  shouldRetrySandboxDeploy,
+  withSandboxCreateLock,
 } from '@/lib/sandbox-transport'
+import {
+  buildInspectInjectFiles,
+  shouldInjectInspect,
+} from '@/lib/design-mode/inject'
+import { sanitizeInspectStamps, stampDataOids } from '@/lib/design-mode/rewrite-classes'
 import {
   isForbiddenManifestPath,
   resolveInstallCommand,
@@ -168,8 +175,30 @@ async function waitForHttp(
  * Create an E2B sandbox, write candidate files, install deps if needed,
  * and collect deterministic runtime evidence. Keeps the sandbox alive on
  * success so the client can reuse it for preview.
+ *
+ * Full boot (create + install + Next start) is serialized so concurrent
+ * tournament specimens cannot OOM each other. Infra deaths retry once.
  */
 export async function deployAndVerify(
+  fragment: FragmentSchema,
+  opts: DeployAndVerifyOptions = {},
+): Promise<DeployAndVerifyResult> {
+  return withSandboxCreateLock(async () => {
+    const first = await deployAndVerifyOnce(fragment, opts)
+    if (
+      opts.skipChecks ||
+      !shouldRetrySandboxDeploy(
+        first.verification.errors,
+        first.verification.previewReachable,
+      )
+    ) {
+      return first
+    }
+    return deployAndVerifyOnce(fragment, opts)
+  })
+}
+
+async function deployAndVerifyOnce(
   fragment: FragmentSchema,
   opts: DeployAndVerifyOptions = {},
 ): Promise<DeployAndVerifyResult> {
@@ -279,9 +308,24 @@ export async function deployAndVerify(
     }
 
     // Write generated source. Never overlay template package.json / lockfiles.
+    const injectInspect = shouldInjectInspect(sandboxTemplate)
     for (const file of files) {
       if (isForbiddenManifestPath(file.file_path)) continue
-      await sbx.files.write(file.file_path, file.file_content)
+      const content = injectInspect
+        ? stampDataOids(file.file_path, file.file_content)
+        : sanitizeInspectStamps(file.file_content)
+      await sbx.files.write(file.file_path, content)
+    }
+
+    if (injectInspect) {
+      try {
+        const extras = buildInspectInjectFiles(files.map((file) => file.file_path))
+        for (const extra of extras) {
+          await sbx.files.write(extra.file_path, extra.file_content)
+        }
+      } catch {
+        warnings.push('Inspect probe was not injected; preview still runs.')
+      }
     }
 
     // Confirm expected files exist on disk.

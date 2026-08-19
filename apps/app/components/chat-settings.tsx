@@ -41,7 +41,7 @@ export function ChatSettings({
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-muted-foreground h-6 w-6 rounded-sm"
+                className="text-muted-foreground h-8 w-8 rounded-sm"
               >
                 <Settings2 className="h-4 w-4" />
               </Button>

@@ -56,7 +56,7 @@ function RecordDetail({
         <button
           type="button"
           onClick={onClose}
-          className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+          className="font-mono text-[13px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
         >
           Close
         </button>
@@ -64,10 +64,10 @@ function RecordDetail({
       <dl className="p-3 space-y-2.5">
         {Object.entries(row).map(([key, value]) => (
           <div key={key}>
-            <dt className="font-mono text-[9px] tracking-[0.16em] uppercase text-muted-foreground">
+            <dt className="font-mono text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
               {key}
             </dt>
-            <dd className="mt-0.5 text-[12px] break-words text-foreground">
+            <dd className="mt-0.5 text-[15px] break-words text-foreground">
               {cell(value)}
             </dd>
           </div>
@@ -117,7 +117,7 @@ function Grid({
             onChange={setQuery}
             placeholder="Search records"
           />
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular">
+          <span className="shrink-0 font-mono text-[13px] text-muted-foreground tabular">
             {visible.length}
           </span>
         </div>
@@ -140,7 +140,7 @@ function Grid({
                 {columns.map((col) => (
                   <td
                     key={col}
-                    className="px-2.5 py-1.5 font-mono text-[11px] text-foreground/90 max-w-[220px] truncate"
+                    className="px-2.5 py-1.5 font-mono text-[14px] text-foreground/90 max-w-[220px] truncate"
                   >
                     {cell(row[col])}
                   </td>
@@ -162,7 +162,7 @@ function Grid({
                   setSortDir('asc')
                 }
               }}
-              className="h-6 px-2 border border-border font-mono text-[9px] tracking-[0.12em] uppercase text-muted-foreground hover:text-foreground"
+              className="h-8 px-2.5 border border-border font-mono text-[11px] tracking-[0.12em] uppercase text-muted-foreground hover:text-foreground"
             >
               Sort {col}
             </button>
@@ -194,7 +194,7 @@ export function OverviewPanel({
         <h2 className="mt-1 font-display text-[24px] text-foreground">
           {projectName || 'Generated project'}
         </h2>
-        <p className="mt-1 text-[13px] text-muted-foreground max-w-xl">
+        <p className="mt-1 text-[16px] text-muted-foreground max-w-xl">
           Database information for this generated project, inspected from its
           own schema and data files.
         </p>
@@ -236,7 +236,7 @@ export function OverviewPanel({
           </DbBadge>
         </div>
         {recentLogs.length === 0 ? (
-          <p className="px-3 py-4 text-[13px] text-muted-foreground">
+          <p className="px-3 py-4 text-[16px] text-muted-foreground">
             No preview diagnostics are available for this generated project yet.
           </p>
         ) : (
@@ -248,10 +248,10 @@ export function OverviewPanel({
               >
                 <DbBadge tone={toneFromStatus(log.level)}>{log.level}</DbBadge>
                 <div className="min-w-0">
-                  <p className="font-mono text-[11px] text-foreground truncate">
+                  <p className="font-mono text-[14px] text-foreground truncate">
                     {log.message}
                   </p>
-                  <p className="font-mono text-[10px] text-muted-foreground">
+                  <p className="font-mono text-[13px] text-muted-foreground">
                     {log.source}
                     {log.timestamp ? ` · ${log.timestamp}` : ''}
                   </p>
@@ -292,7 +292,7 @@ export function TablesPanel({
           <section>
             <DbLabel>Generated project</DbLabel>
             {generated.length === 0 ? (
-              <p className="mt-2 text-[13px] text-muted-foreground">
+              <p className="mt-2 text-[16px] text-muted-foreground">
                 No generated schema tables were detected in this project.
               </p>
             ) : (
@@ -311,10 +311,10 @@ export function TablesPanel({
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-[12px]">{table.name}</span>
+                        <span className="font-mono text-[15px]">{table.name}</span>
                         <DbBadge>{table.source}</DbBadge>
                       </div>
-                      <p className="mt-0.5 font-mono text-[10px] text-muted-foreground truncate">
+                      <p className="mt-0.5 font-mono text-[13px] text-muted-foreground truncate">
                         {table.columns.length} columns
                         {table.mappedName ? ` · ${table.mappedName}` : ''}
                         {table.primaryKeys.length
@@ -350,12 +350,12 @@ function TableDetail({ table }: { table: GeneratedDbTable }) {
     <div className="p-3 space-y-3">
       <DbLabel>{table.source}</DbLabel>
       <h3 className="font-display text-[20px]">{table.name}</h3>
-      <p className="font-mono text-[10px] text-muted-foreground break-all">
+      <p className="font-mono text-[13px] text-muted-foreground break-all">
         {table.filePath}
         {table.mappedName ? ` · ${table.mappedName}` : ''}
       </p>
       {table.primaryKeys.length > 0 ? (
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-[15px] text-muted-foreground">
           Primary key: {table.primaryKeys.join(', ')}
         </p>
       ) : null}
@@ -366,8 +366,8 @@ function TableDetail({ table }: { table: GeneratedDbTable }) {
             className="px-2.5 py-1.5 border-b border-border/70 last:border-0"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[11px]">{col.name}</span>
-              <span className="font-mono text-[10px] text-muted-foreground">
+              <span className="font-mono text-[14px]">{col.name}</span>
+              <span className="font-mono text-[13px] text-muted-foreground">
                 {col.type}
                 {col.isArray ? '[]' : ''}
                 {col.optional ? '?' : ''}
@@ -388,7 +388,7 @@ function TableDetail({ table }: { table: GeneratedDbTable }) {
           <DbLabel>Relationships</DbLabel>
           <ul className="mt-1 space-y-1">
             {table.relations.map((rel) => (
-              <li key={`${rel.field}-${rel.to}`} className="font-mono text-[11px]">
+              <li key={`${rel.field}-${rel.to}`} className="font-mono text-[14px]">
                 {rel.field} → {rel.to} ({rel.kind})
               </li>
             ))}
@@ -426,8 +426,8 @@ export function DataPanel({ sources }: { sources: DataSource[] }) {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <span className="block font-mono text-[11px] truncate">{item.label}</span>
-            <span className="block font-mono text-[9px] uppercase tracking-[0.14em]">
+            <span className="block font-mono text-[14px] truncate">{item.label}</span>
+            <span className="block font-mono text-[11px] uppercase tracking-[0.14em]">
               {item.origin}
               {item.available ? ` · ${item.rows.length}` : ''}
             </span>
@@ -496,13 +496,13 @@ export function AnalyticsPanel({
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3">
       <DbLabel>Analytics</DbLabel>
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[16px] text-muted-foreground">
         Observed counts only. Nothing here is estimated or filled in.
       </p>
       {metrics.map((metric) => (
         <div key={metric.label} className="border border-border px-3 py-2.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-[11px] uppercase tracking-[0.12em]">
+            <span className="font-mono text-[14px] uppercase tracking-[0.12em]">
               {metric.label}
             </span>
             <span className="font-display text-[20px] tabular">{metric.value}</span>
@@ -513,7 +513,7 @@ export function AnalyticsPanel({
               style={{ width: `${Math.round((metric.value / max) * 100)}%` }}
             />
           </div>
-          <p className="mt-1 text-[12px] text-muted-foreground">{metric.hint}</p>
+          <p className="mt-1 text-[15px] text-muted-foreground">{metric.hint}</p>
         </div>
       ))}
     </div>
@@ -544,19 +544,19 @@ export function ApiPanel({
 
   return (
     <div className="h-full min-h-0 flex flex-col p-3 gap-2">
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-[16px] text-muted-foreground">
         Routes parsed from this generated project source.
       </p>
       <div className="flex-1 min-h-0">
         <DbTableFrame columns={['method', 'route', 'status', 'description']}>
           {rows.map((row) => (
             <tr key={`${row.method}:${row.route}:${row.description}`} className="border-b border-border/70">
-              <td className="px-2.5 py-1.5 font-mono text-[11px]">{row.method}</td>
-              <td className="px-2.5 py-1.5 font-mono text-[11px]">{row.route}</td>
+              <td className="px-2.5 py-1.5 font-mono text-[14px]">{row.method}</td>
+              <td className="px-2.5 py-1.5 font-mono text-[14px]">{row.route}</td>
               <td className="px-2.5 py-1.5">
                 <DbBadge tone={toneFromStatus(row.status)}>{row.status}</DbBadge>
               </td>
-              <td className="px-2.5 py-1.5 text-[12px] text-muted-foreground">
+              <td className="px-2.5 py-1.5 text-[15px] text-muted-foreground">
                 {row.description}
               </td>
             </tr>
@@ -588,10 +588,10 @@ export function IntegrationsPanel({
       {items.map((item) => (
         <div key={`${item.name}-${item.evidence}`} className="border border-border p-3">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-display text-[18px]">{item.name}</h3>
+            <h3 className="font-display text-[23px]">{item.name}</h3>
             <DbBadge>{item.kind}</DbBadge>
           </div>
-          <p className="mt-1 text-[12px] text-muted-foreground">{item.evidence}</p>
+          <p className="mt-1 text-[15px] text-muted-foreground">{item.evidence}</p>
         </div>
       ))}
     </div>
@@ -614,14 +614,14 @@ export function EnvironmentPanel({
   }
   return (
     <div className="h-full min-h-0 p-3">
-      <p className="mb-2 text-[13px] text-muted-foreground">
+      <p className="mb-2 text-[16px] text-muted-foreground">
         Names and configured state only. Secret values are never displayed.
       </p>
       <DbTableFrame columns={['name', 'origin', 'configured', 'sensitivity']}>
         {rows.map((row) => (
           <tr key={`${row.origin}:${row.name}:${row.filePath}`} className="border-b border-border/70">
-            <td className="px-2.5 py-1.5 font-mono text-[11px]">{row.name}</td>
-            <td className="px-2.5 py-1.5 font-mono text-[10px] uppercase text-muted-foreground">
+            <td className="px-2.5 py-1.5 font-mono text-[14px]">{row.name}</td>
+            <td className="px-2.5 py-1.5 font-mono text-[13px] uppercase text-muted-foreground">
               {row.origin}
             </td>
             <td className="px-2.5 py-1.5">
@@ -665,7 +665,7 @@ export function LogsPanel({ logs }: { logs: WorkspaceLog[] }) {
             key={item}
             type="button"
             onClick={() => setLevel(item)}
-            className={`h-8 px-2 border font-mono text-[9px] tracking-[0.14em] uppercase ${
+            className={`h-8 px-2 border font-mono text-[11px] tracking-[0.14em] uppercase ${
               level === item
                 ? 'border-foreground bg-foreground text-background'
                 : 'border-border text-muted-foreground hover:text-foreground'
@@ -689,8 +689,8 @@ export function LogsPanel({ logs }: { logs: WorkspaceLog[] }) {
             >
               <DbBadge tone={toneFromStatus(log.level)}>{log.level}</DbBadge>
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] text-foreground">{log.message}</p>
-                <p className="font-mono text-[10px] text-muted-foreground">
+                <p className="text-[16px] text-foreground">{log.message}</p>
+                <p className="font-mono text-[13px] text-muted-foreground">
                   {log.source}
                   {log.timestamp ? ` · ${log.timestamp}` : ''}
                 </p>
@@ -707,22 +707,22 @@ export function WorkflowsPanel({ steps }: { steps: WorkflowStep[] }) {
   return (
     <div className="h-full overflow-y-auto p-4">
       <DbLabel>Workflows</DbLabel>
-      <p className="mt-1 mb-4 text-[13px] text-muted-foreground max-w-xl">
+      <p className="mt-1 mb-4 text-[16px] text-muted-foreground max-w-xl">
         Prompt through publish, using only state this run already has. Later
         steps stay pending until real evidence exists.
       </p>
       <ol className="space-y-2">
         {steps.map((step, index) => (
           <li key={step.id} className="border border-border px-3 py-2.5 flex gap-3">
-            <span className="font-mono text-[10px] text-muted-foreground tabular w-5">
+            <span className="font-mono text-[13px] text-muted-foreground tabular w-5">
               {String(index + 1).padStart(2, '0')}
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-display text-[18px]">{step.label}</span>
+                <span className="font-display text-[23px]">{step.label}</span>
                 <DbBadge tone={toneFromStatus(step.status)}>{step.status}</DbBadge>
               </div>
-              <p className="mt-0.5 text-[12px] text-muted-foreground">{step.detail}</p>
+              <p className="mt-0.5 text-[15px] text-muted-foreground">{step.detail}</p>
             </div>
           </li>
         ))}
@@ -751,10 +751,10 @@ export function SecurityPanel({
       {generated.map((item) => (
         <div key={item.id} className="border border-border px-3 py-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-display text-[18px]">{item.label}</h3>
+            <h3 className="font-display text-[23px]">{item.label}</h3>
             <DbBadge tone={toneFromStatus(item.status)}>{item.status}</DbBadge>
           </div>
-          <p className="mt-1 text-[13px] text-muted-foreground">{item.detail}</p>
+          <p className="mt-1 text-[16px] text-muted-foreground">{item.detail}</p>
         </div>
       ))}
     </div>
@@ -784,7 +784,7 @@ export function SettingsPanel({
       <div className="flex items-center justify-between gap-2">
         <div>
           <DbLabel>Settings</DbLabel>
-          <p className="mt-1 text-[13px] text-muted-foreground">
+          <p className="mt-1 text-[16px] text-muted-foreground">
             Read-only generated-project database context. No secrets, no writes.
           </p>
         </div>
@@ -795,10 +795,10 @@ export function SettingsPanel({
             key={row.label}
             className="px-3 py-2 border-b border-border/70 last:border-0 flex items-center justify-between gap-3"
           >
-            <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground">
+            <span className="font-mono text-[13px] tracking-[0.14em] uppercase text-muted-foreground">
               {row.label}
             </span>
-            <span className="font-mono text-[12px] text-foreground truncate">
+            <span className="font-mono text-[15px] text-foreground truncate">
               {row.value}
             </span>
           </div>

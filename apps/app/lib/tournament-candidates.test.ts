@@ -31,7 +31,7 @@ import { VARIANTS, type VariantId } from './tournament'
 import type { ExecutionResult } from './types'
 import type { VerificationResult } from './verification'
 import type { SmokeSuiteResult } from './smoke'
-import { buildCandidateRecordData } from './tournament-candidate-record'
+import { buildCandidateRecordData, attachFragmentToCandidatePool, candidatesFromStoredRows, extractFragment, fragmentFromStoredMessages, pickBootFragment } from './tournament-candidate-record'
 
 function frag(title: string) {
   return {
@@ -717,6 +717,71 @@ async function assertParallelRunner() {
   assert.equal(failures.length, 1)
   assert.equal(failures[0]?.item.id, 'rich')
   assert.deepEqual(values, ['minimal', 'playful'])
+}
+
+{
+  const restored = candidatesFromStoredRows(
+    [
+      {
+        variantId: 'minimal',
+        status: 'generating',
+        data: {
+          fragment: frag('Product'),
+          scores: { composite: 0.81, comment: 'clear' },
+        },
+      },
+    ],
+    { winnerId: 'minimal' },
+  )
+  assert.equal(restored.minimal.status, 'verified')
+  assert.equal(restored.minimal.isWinner, true)
+  assert.equal(restored.rich.status, 'pending')
+  assert.ok(restored.minimal.fragment)
+  assert.equal((restored.minimal as { execution?: unknown }).execution, undefined)
+
+  const failedWithSource = candidatesFromStoredRows([
+    {
+      variantId: 'rich',
+      status: 'verify_failed',
+      data: { fragment: frag('Premium'), error: 'exit status 1' },
+    },
+  ])
+  assert.equal(failedWithSource.rich.status, 'verified')
+  assert.ok(failedWithSource.rich.fragment)
+
+  const pinned = attachFragmentToCandidatePool(
+    candidatesFromStoredRows([]),
+    frag('Vault'),
+    'rich',
+  )
+  assert.equal(pinned.rich.status, 'verified')
+  assert.equal((pinned.rich.fragment as { title?: string }).title, 'Vault')
+  assert.equal(pinned.minimal.status, 'pending')
+
+  const fromMessage = fragmentFromStoredMessages([
+    { role: 'assistant', object: frag('From chat') },
+  ])
+  assert.equal((fromMessage as { title?: string }).title, 'From chat')
+  assert.ok(extractFragment({ fragment: frag('Nested') }))
+  const boot = pickBootFragment(pinned, 'rich')
+  assert.equal((boot as { title?: string }).title, 'Vault')
+}
+
+{
+  const page = fs.readFileSync(path.join(process.cwd(), 'app/app/page.tsx'), 'utf8')
+  assert.match(page, /getRunCandidates/)
+  assert.match(page, /getRunFragment/)
+  assert.match(page, /candidatesFromStoredRows/)
+  assert.match(page, /deployFragment\(bootFragment/)
+  assert.match(page, /skipChecks:\s*true/)
+  assert.equal((page.match(/apiFetch\('\/v1\/sandbox'/g) || []).length, 1)
+  const switcher = fs.readFileSync(
+    path.join(process.cwd(), 'components/candidate-switcher.tsx'),
+    'utf8',
+  )
+  assert.match(switcher, /Starting/)
+  assert.match(switcher, /deployingId === c\.id/)
+  assert.match(switcher, /candidatePreviewIsHealthy\(c\) \|\| hasSource/)
 }
 
 assertParallelRunner()

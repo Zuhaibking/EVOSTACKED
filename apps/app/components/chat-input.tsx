@@ -113,7 +113,7 @@ export function ChatInput({
             onClick={() => handleFileRemove(file)}
             className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5 cursor-pointer"
           >
-            <X className="h-2.5 w-2.5" />
+            <X className="h-4 w-4" />
           </span>
           <img
             src={URL.createObjectURL(file)}
@@ -154,7 +154,7 @@ export function ChatInput({
     >
       {isErrored && (
         <div
-          className={`flex items-center text-[12px] font-mono tracking-[0.06em] px-3 py-2 mb-2 border ${
+          className={`flex items-center text-[15px] font-mono tracking-[0.06em] px-3 py-2 mb-2 border ${
             isRateLimited
               ? 'border-orange-400/40 bg-orange-400/10 text-orange-500'
               : 'border-red-400/40 bg-red-400/10 text-red-500'
@@ -163,7 +163,7 @@ export function ChatInput({
           <span className="flex-1">{errorMessage}</span>
           <button
             type="button"
-            className={`ml-2 px-2 py-0.5 border text-[10px] uppercase tracking-[0.18em] ${
+            className={`ml-2 px-2 py-0.5 border text-[13px] uppercase tracking-[0.18em] ${
               isRateLimited
                 ? 'border-orange-400/60 hover:bg-orange-400/20'
                 : 'border-red-400/60 hover:bg-red-400/20'
@@ -192,7 +192,7 @@ export function ChatInput({
               autoFocus
               minRows={2}
               maxRows={6}
-              className="font-display text-[17px] sm:text-[18px] leading-[1.35] px-4 sm:px-5 pt-4 pb-3 resize-none ring-0 bg-inherit w-full m-0 outline-none placeholder:font-display placeholder:italic placeholder:text-muted-foreground/55"
+              className="font-display text-[21px] sm:text-[23px] leading-[1.35] px-4 sm:px-5 pt-4 pb-3 resize-none ring-0 bg-inherit w-full m-0 outline-none placeholder:font-display placeholder:italic placeholder:text-muted-foreground/55"
               required
               placeholder="Describe a project, a constraint, an iteration…"
               disabled={isErrored}
@@ -203,7 +203,7 @@ export function ChatInput({
             {/* Editorial gutter mark */}
             <span
               aria-hidden
-              className="hidden sm:block absolute left-1.5 top-3.5 font-display italic text-[13px] text-muted-foreground/40 select-none"
+              className="hidden sm:block absolute left-1.5 top-3.5 font-display italic text-[16px] text-muted-foreground/40 select-none"
             >
               ¶
             </span>
@@ -237,13 +237,13 @@ export function ChatInput({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="rounded-none h-7 w-7 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground shrink-0"
+                    className="rounded-none h-9 w-9 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground shrink-0"
                     onClick={(e) => {
                       e.preventDefault()
                       document.getElementById('multimodal')?.click()
                     }}
                   >
-                    <Paperclip className="h-3.5 w-3.5" />
+                    <Paperclip className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Attach image</TooltipContent>
@@ -257,7 +257,7 @@ export function ChatInput({
                 size="sm"
                 type="submit"
                 className="
-                  group rounded-none font-mono text-[10px] sm:text-[11px] tracking-[0.22em] uppercase
+                  group rounded-none font-mono text-[13px] sm:text-[14px] tracking-[0.22em] uppercase
                   h-7 sm:h-8 px-2.5 sm:px-3 shrink-0
                   bg-foreground text-background border border-foreground
                   hover:bg-brand hover:text-brand-foreground hover:border-brand
@@ -266,7 +266,7 @@ export function ChatInput({
               >
                 <span className="hidden sm:inline">Dispatch</span>
                 <span className="sm:hidden">Send</span>
-                <ArrowUp className="h-3 w-3 sm:h-3.5 sm:w-3.5 ml-1 sm:ml-1.5 transition-transform group-hover:-translate-y-0.5" />
+                <ArrowUp className="h-4 w-4 sm:h-3.5 sm:w-3.5 ml-1 sm:ml-1.5 transition-transform group-hover:-translate-y-0.5" />
               </Button>
             ) : (
               <Button
@@ -278,13 +278,13 @@ export function ChatInput({
                   stop()
                 }}
                 className="
-                  rounded-none font-mono text-[10px] sm:text-[11px] tracking-[0.22em] uppercase
+                  rounded-none font-mono text-[13px] sm:text-[14px] tracking-[0.22em] uppercase
                   h-7 sm:h-8 px-2.5 sm:px-3 shrink-0
                   border border-foreground
                 "
               >
                 Halt
-                <Square className="h-3 w-3 sm:h-3.5 sm:w-3.5 ml-1 sm:ml-1.5" />
+                <Square className="h-4 w-4 sm:h-3.5 sm:w-3.5 ml-1 sm:ml-1.5" />
               </Button>
             )}
           </div>
@@ -292,7 +292,7 @@ export function ChatInput({
       </div>
 
       {/* Tight footnote — single line, low-key */}
-      <p className="mt-2 font-mono text-[9px] tracking-[0.2em] uppercase text-muted-foreground/60 text-center">
+      <p className="mt-2 font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground/60 text-center">
         ⌘+enter to dispatch · Apache-2.0 ·{' '}
         <a
           href="https://github.com/e2b-dev/fragments"

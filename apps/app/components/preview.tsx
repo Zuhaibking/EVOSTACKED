@@ -2,6 +2,7 @@
 
 import { FragmentPreview } from './fragment-preview'
 import { formatPreviewUnavailableTitle } from '@/lib/build-failure-diagnostics'
+import type { DesignInspectController } from '@/lib/design-mode/controller'
 import { FragmentSchema } from '@/lib/schema'
 import type { PreviewViewport } from '@/lib/arena-workspace'
 import { ExecutionResult } from '@/lib/types'
@@ -15,6 +16,7 @@ export function Preview({
   unavailableReason,
   diagnostics,
   onViewSource,
+  inspect,
 }: {
   fragment?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
@@ -22,6 +24,7 @@ export function Preview({
   unavailableReason?: string | null
   diagnostics?: string[]
   onViewSource: () => void
+  inspect?: DesignInspectController
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
 
@@ -29,17 +32,17 @@ export function Preview({
 
   if (result) {
     return (
-      <FragmentPreview result={result} viewport={viewport} />
+      <FragmentPreview result={result} viewport={viewport} inspect={inspect} />
     )
   }
 
   return (
     <div className="h-full flex flex-col items-start justify-center gap-3 px-6 py-8">
-      <p className="text-[14px] text-foreground" role="status">
+      <p className="text-[18px] text-foreground" role="status">
         {formatPreviewUnavailableTitle(unavailableReason)}
       </p>
       {unavailableReason ? (
-        <p className="text-[12px] text-muted-foreground max-w-md">
+        <p className="text-[15px] text-muted-foreground max-w-md">
           {unavailableReason}
         </p>
       ) : null}
@@ -47,7 +50,7 @@ export function Preview({
         <button
           type="button"
           onClick={onViewSource}
-          className="font-mono text-[11px] tracking-[0.14em] uppercase px-3 py-1.5 border border-border hover:bg-foreground/[0.03]"
+          className="font-mono text-[14px] tracking-[0.14em] uppercase px-3 py-1.5 border border-border hover:bg-foreground/[0.03]"
         >
           View Source
         </button>
@@ -55,7 +58,7 @@ export function Preview({
           <button
             type="button"
             onClick={() => setDetailsOpen((v) => !v)}
-            className="font-mono text-[11px] tracking-[0.14em] uppercase px-3 py-1.5 border border-border hover:bg-foreground/[0.03]"
+            className="font-mono text-[14px] tracking-[0.14em] uppercase px-3 py-1.5 border border-border hover:bg-foreground/[0.03]"
           >
             View details
           </button>
@@ -64,7 +67,7 @@ export function Preview({
       {detailsOpen && diagnostics && diagnostics.length > 0 && (
         <div className="max-h-32 overflow-y-auto max-w-md space-y-1">
           {diagnostics.slice(0, 8).map((line) => (
-            <p key={line} className="font-mono text-[10px] text-muted-foreground">
+            <p key={line} className="font-mono text-[13px] text-muted-foreground">
               {line}
             </p>
           ))}

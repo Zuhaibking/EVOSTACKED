@@ -25,7 +25,7 @@ export function ArenaShell({
 }) {
   return (
     <div
-      className="flex flex-col h-dvh overflow-hidden bg-background arena-workspace"
+      className="flex flex-col w-full overflow-hidden bg-background arena-workspace"
       data-command-docked={commandDocked ? 'true' : 'false'}
     >
       <div className="shrink-0 border-b border-border arena-glass">{topbar}</div>
@@ -56,7 +56,7 @@ export function ArenaShell({
             commandDocked ? '' : 'md:row-span-2',
           )}
         >
-          <div className="w-full h-full min-h-0 min-w-0 overflow-hidden">
+          <div className="w-full h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
             {sidebar}
           </div>
         </aside>
@@ -83,8 +83,8 @@ export function ArenaShell({
             className={cn(
               'w-full min-w-0',
               commandDocked || !commandOverlaysWorkspace
-                ? 'px-3 pt-2 pb-3 [&_form]:w-full [&_form]:px-0 [&_form]:sm:px-0 [&_textarea]:min-h-[4.5rem]'
-                : '[&_form]:w-full md:[&_form]:border-t-0 md:[&_form]:px-0 md:[&_form]:sm:px-0 md:[&_form]:bg-transparent',
+                ? 'px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] [&_form]:w-full [&_form]:px-0 [&_form]:sm:px-0 [&_textarea]:min-h-[4.5rem]'
+                : '[&_form]:w-full md:[&_form]:border-t-0 md:[&_form]:px-0 md:[&_form]:sm:px-0 md:[&_form]:bg-transparent [&_textarea]:min-h-[5.25rem]',
             )}
           >
             {commandBar}

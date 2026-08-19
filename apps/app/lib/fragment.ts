@@ -1,3 +1,4 @@
+import { sanitizeInspectStamps } from '@/lib/design-mode/stamp-oids'
 import { FragmentSchema } from '@/lib/schema'
 import type { DeepPartial } from '@evostack/shared'
 
@@ -12,11 +13,7 @@ export type FragmentCode =
   | Array<DeepPartial<FragmentFile> | FragmentFile>
   | undefined
 
-/**
- * Normalize fragment.code (string | file[]) into a stable file list.
- * Keeps preview, sandbox, morph, and localStorage snapshots working across formats.
- */
-export function getFragmentFiles(
+function collectFragmentFiles(
   fragment:
     | DeepPartial<FragmentSchema>
     | FragmentSchema
@@ -51,6 +48,55 @@ export function getFragmentFiles(
   }
 
   return []
+}
+
+/**
+ * Normalize fragment.code (string | file[]) into a stable file list.
+ * Heals inspect stamps that were wrongly written into TypeScript generics
+ * so Source / sandbox write never serve that broken form.
+ */
+export function getFragmentFiles(
+  fragment:
+    | DeepPartial<FragmentSchema>
+    | FragmentSchema
+    | { file_path?: string; code?: FragmentCode }
+    | undefined
+    | null,
+): FragmentFile[] {
+  return collectFragmentFiles(fragment).map((f) => ({
+    file_path: f.file_path,
+    file_content: sanitizeInspectStamps(f.file_content),
+  }))
+}
+
+/**
+ * Persist generic-oid heals into `fragment.code` so stored candidates
+ * (in-memory tournament results, DB snapshots) stay parseable.
+ */
+export function healInspectStampsOnFragment<
+  T extends {
+    code?: FragmentSchema['code'] | DeepPartial<FragmentSchema>['code']
+    file_path?: string
+  },
+>(fragment: T): { fragment: T; changed: boolean } {
+  const raw = collectFragmentFiles(fragment)
+  if (!raw.length) return { fragment, changed: false }
+
+  let changed = false
+  const next = raw.map((f) => {
+    const file_content = sanitizeInspectStamps(f.file_content)
+    if (file_content !== f.file_content) changed = true
+    return { file_path: f.file_path, file_content }
+  })
+  if (!changed) return { fragment, changed: false }
+
+  if (typeof fragment.code === 'string') {
+    return {
+      fragment: { ...fragment, code: next[0]?.file_content ?? fragment.code },
+      changed: true,
+    }
+  }
+  return { fragment: { ...fragment, code: next }, changed: true }
 }
 
 export function getPrimaryFile(
@@ -163,17 +209,18 @@ export function applyFileUpdate(
   filePath: string,
   nextContent: string,
 ): FragmentSchema['code'] {
+  const healed = sanitizeInspectStamps(nextContent)
   const files = getFragmentFiles(fragment)
   if (files.length === 0) {
-    return [{ file_path: filePath, file_content: nextContent }]
+    return [{ file_path: filePath, file_content: healed }]
   }
 
   const idx = files.findIndex((f) => f.file_path === filePath)
   if (idx === -1) {
-    return [...files, { file_path: filePath, file_content: nextContent }]
+    return [...files, { file_path: filePath, file_content: healed }]
   }
 
   return files.map((f, i) =>
-    i === idx ? { file_path: filePath, file_content: nextContent } : f,
+    i === idx ? { file_path: filePath, file_content: healed } : f,
   )
 }

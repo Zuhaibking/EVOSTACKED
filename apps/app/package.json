@@ -29,6 +29,7 @@
     "test:app-health": "tsx lib/app-health.test.ts",
     "test:ask-evostack": "tsx lib/ask-evostack.test.ts",
     "test:tournament-candidates": "tsx lib/tournament-candidates.test.ts",
+    "test:specimen-status": "tsx lib/specimen-status.test.ts",
     "test:provider-retry": "tsx lib/provider-retry.test.ts",
     "test:provider-quota": "tsx lib/provider-quota.test.ts",
     "test:generation-pipeline": "tsx lib/generation-pipeline.test.ts",
@@ -43,6 +44,9 @@
     "test:arena-activity": "tsx lib/arena-activity.test.ts",
     "test:arena-loading": "tsx lib/arena-loading.test.ts",
     "test:arena-workspace": "tsx lib/arena-workspace.test.ts",
+    "test:run-history": "tsx lib/run-history.test.ts",
+    "test:clerk-auth": "tsx lib/clerk-auth-transfer.test.ts",
+    "test:design-mode": "tsx lib/design-mode/design-mode.test.ts",
     "test:product-demo": "tsx lib/landing-product-demo.test.ts",
     "test:source-syntax": "tsx lib/source-syntax.test.ts",
     "test:sandbox-transport": "tsx lib/sandbox-transport.test.ts",
@@ -59,7 +63,7 @@
     "test:model-router": "tsx lib/model-router.test.ts",
     "bench": "tsx lib/benchmark.run.ts",
     "preview": "tsx lib/preview.run.ts",
-    "test": "npm run test:provider-retry && npm run test:provider-quota && npm run test:fragment-integrity && npm run test:prepare-fragment-integrity && npm run test:css-integrity && npm run test:source-syntax && npm run test:verification && npm run test:prompt && npm run test:stack-advisor && npm run test:hydration-safety && npm run test:candidate-smoke && npm run test:preview-execution && npm run test:tournament-candidates && npm run test:evolution && npm run test:project-brain && npm run test:version-vault && npm run test:models && npm run test:ask-evostack && npm run test:smoke && npm run test:candidate-preview && npm run test:runtime-preview-diagnostics && npm run test:repair && npm run test:generation-pipeline && npm run test:arena-activity && npm run test:arena-loading && npm run test:arena-workspace && npm run test:product-demo && npm run test:sandbox-transport && npm run test:project-zip && npm run test:project-export && npm run test:generation-cost && npm run test:morph-preference && npm run test:public-share && npm run test:generated-database && npm run test:database-control-center && npm run test:dependency-closure && npm run test:provider-integrity && npm run test:skills && npm run test:model-router"
+    "test": "npm run test:provider-retry && npm run test:provider-quota && npm run test:fragment-integrity && npm run test:prepare-fragment-integrity && npm run test:css-integrity && npm run test:source-syntax && npm run test:verification && npm run test:prompt && npm run test:stack-advisor && npm run test:hydration-safety && npm run test:candidate-smoke && npm run test:preview-execution && npm run test:tournament-candidates && npm run test:specimen-status && npm run test:evolution && npm run test:project-brain && npm run test:version-vault && npm run test:models && npm run test:ask-evostack && npm run test:smoke && npm run test:candidate-preview && npm run test:runtime-preview-diagnostics && npm run test:repair && npm run test:generation-pipeline && npm run test:arena-activity && npm run test:arena-loading && npm run test:arena-workspace && npm run test:run-history && npm run test:product-demo && npm run test:sandbox-transport && npm run test:project-zip && npm run test:project-export && npm run test:generation-cost && npm run test:morph-preference && npm run test:public-share && npm run test:generated-database && npm run test:database-control-center && npm run test:dependency-closure && npm run test:provider-integrity && npm run test:skills && npm run test:model-router && npm run test:clerk-auth && npm run test:design-mode"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.6",

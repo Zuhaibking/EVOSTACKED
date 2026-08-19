@@ -175,4 +175,91 @@ describe('RunsService chat persist', () => {
     assert.equal(row!.candidates.length, 1)
     assert.equal((row!.brain as any).plan.productName, 'CRM')
   })
+
+  it('list returns titled history from first user message and plan', async () => {
+    const prisma = {
+      run: {
+        findMany: async () => [
+          {
+            id: 'run_chat',
+            memoryVersion: 3,
+            selectedCandidate: 'minimal',
+            activeVersion: 1,
+            hasTournament: true,
+            status: 'active',
+            updatedAt: new Date('2026-08-19T00:00:00.000Z'),
+            messages: [
+              {
+                content: {
+                  role: 'user',
+                  content: [{ type: 'text', text: 'Build a CRM' }],
+                },
+              },
+            ],
+            projectBrain: { data: { plan: { productName: 'Harbor Ledger' } } },
+          },
+        ],
+      },
+    } as any
+    const svc = new RunsService(prisma, {} as any)
+    const listed = await svc.list('userA')
+    assert.equal(listed[0].id, 'run_chat')
+    assert.equal(listed[0].title, 'Harbor Ledger')
+    assert.equal(listed[0].preview, 'Build a CRM')
+  })
+
+  it('listCandidatesForUser returns rows for the JWT user only', async () => {
+    const prisma = {
+      run: {
+        findFirst: async ({ where }: any) =>
+          where.id === 'run1' && where.userId === 'userA'
+            ? { id: 'run1', userId: 'userA' }
+            : null,
+      },
+      candidate: {
+        findMany: async ({ where }: any) =>
+          where.runId === 'run1' && where.userId === 'userA'
+            ? [
+                {
+                  variantId: 'minimal',
+                  status: 'tested',
+                  data: { fragment: { title: 'Product' } },
+                },
+              ]
+            : [],
+      },
+    } as any
+    const svc = new RunsService(prisma, {} as any)
+    const rows = await svc.listCandidatesForUser('userA', 'run1')
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].variantId, 'minimal')
+    await assert.rejects(
+      () => svc.listCandidatesForUser('userB', 'run1'),
+      /not found/i,
+    )
+  })
+
+  it('getLatestFragment returns the newest fragment row for the JWT user', async () => {
+    const prisma = {
+      run: {
+        findFirst: async ({ where }: any) =>
+          where.id === 'run1' && where.userId === 'userA'
+            ? { id: 'run1', userId: 'userA' }
+            : null,
+      },
+      fragment: {
+        findFirst: async ({ where }: any) =>
+          where.runId === 'run1' && where.userId === 'userA'
+            ? { data: { title: 'Ledger', code: [{ file_path: 'a.tsx', file_content: 'x' }] } }
+            : null,
+      },
+    } as any
+    const svc = new RunsService(prisma, {} as any)
+    const data = await svc.getLatestFragment('userA', 'run1')
+    assert.equal((data as { title?: string }).title, 'Ledger')
+    await assert.rejects(
+      () => svc.getLatestFragment('userB', 'run1'),
+      /not found/i,
+    )
+  })
 })

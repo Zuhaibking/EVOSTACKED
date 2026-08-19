@@ -58,7 +58,7 @@ describe('arenaLoadingLabel', () => {
   it('maps in-flight specimen status to a compact label without inventing steps', () => {
     assert.equal(candidateLoadingLabel('generating'), 'Generating')
     assert.equal(candidateLoadingLabel('verifying'), 'Building')
-    assert.equal(candidateLoadingLabel('done'), null)
+    assert.equal(candidateLoadingLabel('done'), 'Building')
     assert.equal(candidateLoadingLabel(undefined), null)
   })
 })

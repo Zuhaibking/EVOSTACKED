@@ -39,16 +39,16 @@ function Section({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-foreground/[0.02]"
       >
-        <span className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+        <span className="font-mono text-[11px] tracking-[0.22em] uppercase text-muted-foreground">
           {title}
         </span>
         <span className="flex items-center gap-2 min-w-0">
           {!open && summary ? (
-            <span className="font-mono text-[9px] text-muted-foreground truncate">
+            <span className="font-mono text-[11px] text-muted-foreground truncate">
               {summary}
             </span>
           ) : null}
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[13px] text-muted-foreground">
             {open ? '–' : '+'}
           </span>
         </span>
@@ -74,6 +74,7 @@ export function ProjectSidebar({
   candidates,
   selectedId,
   activeId,
+  deployingId,
   onSelectCandidate,
   onPreviewCandidate,
   onViewSourceCandidate,
@@ -103,6 +104,7 @@ export function ProjectSidebar({
   candidates: Record<VariantId, Candidate>
   selectedId?: VariantId
   activeId?: VariantId
+  deployingId?: VariantId
   onSelectCandidate: (id: VariantId) => void
   onPreviewCandidate: (id: VariantId) => void
   onViewSourceCandidate: (id: VariantId) => void
@@ -136,8 +138,8 @@ export function ProjectSidebar({
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden">
       <Section title="Project" summary={name}>
-        <p className="font-display text-[15px] leading-tight">{name}</p>
-        <p className="mt-1 text-[12px] text-muted-foreground line-clamp-3">
+        <p className="font-display text-[19px] leading-tight">{name}</p>
+        <p className="mt-1 text-[15px] text-muted-foreground line-clamp-3">
           {purpose}
         </p>
         {features.length > 0 && (
@@ -145,7 +147,7 @@ export function ProjectSidebar({
             {features.map((feature) => (
               <li
                 key={feature}
-                className="font-mono text-[10px] text-muted-foreground truncate"
+                className="font-mono text-[13px] text-muted-foreground truncate"
               >
                 · {feature}
               </li>
@@ -159,7 +161,7 @@ export function ProjectSidebar({
         defaultOpen={false}
         summary={`+ ${vaultSnapshots.length} versions`}
       >
-        <p className="mb-2 font-mono text-[10px] text-muted-foreground">
+        <p className="mb-2 font-mono text-[13px] text-muted-foreground">
           Active {activeVersion != null && activeVersion >= 1 ? `v${activeVersion}` : 'none'}
         </p>
         <div className="[&>section]:mx-0 [&>section]:mb-0 [&>section]:border-border/60">
@@ -174,7 +176,7 @@ export function ProjectSidebar({
       </Section>
 
       <Section title="Run" summary={`#${runShort}`}>
-        <div className="space-y-1 font-mono text-[10px] text-muted-foreground">
+        <div className="space-y-1 font-mono text-[13px] text-muted-foreground">
           <p>Run #{runShort}</p>
           <p>Tournament {tournamentPhase}</p>
           <p>Runtime {runtime}</p>
@@ -198,6 +200,7 @@ export function ProjectSidebar({
           candidates={candidates}
           selectedId={selectedId}
           activeId={activeId}
+          deployingId={deployingId}
           onSelect={onSelectCandidate}
           onPreview={onPreviewCandidate}
           onViewSource={onViewSourceCandidate}
@@ -227,7 +230,7 @@ export function ProjectSidebar({
         />
         {messages.length > 0 && (
           <details className="mt-2 border-t border-border/60 pt-2">
-            <summary className="font-mono text-[9px] tracking-[0.16em] uppercase text-muted-foreground cursor-pointer">
+            <summary className="font-mono text-[11px] tracking-[0.16em] uppercase text-muted-foreground cursor-pointer">
               Transcript
             </summary>
             <div className="mt-2 max-h-40 overflow-hidden [&>#chat-container]:max-h-40 [&>#chat-container]:pb-2">
