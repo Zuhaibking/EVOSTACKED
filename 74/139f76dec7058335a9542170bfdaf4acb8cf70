@@ -1,0 +1,348 @@
+apps/api/src/generation/sandbox.runner.ts
+  s_8f5f32c9ec763f::t_e2d7c5e9b21577 16,22,28
+  s_8f5f32c9ec763f::t_78aaac84a58908 55
+apps/app/app/app/page.tsx
+  s_8f5f32c9ec763f::t_08ea9722ac8e08 100
+  s_8f5f32c9ec763f::t_b5f5083c519bd9 511
+  s_8f5f32c9ec763f::t_75245d9b986c73 1506-1509
+  s_8f5f32c9ec763f::t_358877e59feca4 449-450,452
+  s_8f5f32c9ec763f::t_6e5138f6e5cfcc 509
+  s_8f5f32c9ec763f::t_a5e9d745fd4083 339-351,360-364,366-375,377-379,383-387,391,461,469-470,475-487,490-496,500,502-508,510,512,514,520-522
+  s_8f5f32c9ec763f::t_26117387fa4be1 99
+  s_8f5f32c9ec763f::t_9f57533466d140 1467-1468,1470-1473
+  s_8f5f32c9ec763f::t_d603452dcbba98 5
+  s_8f5f32c9ec763f::t_2f521641f4ed32 148-154
+  s_8f5f32c9ec763f::t_b75949ce153405 288
+  s_8f5f32c9ec763f::t_ddc21c005b3158 103,108-113
+  s_8f5f32c9ec763f::t_f8d44a9069e30b 436,446
+  s_8f5f32c9ec763f::t_4de166c276cb4d 451
+  s_8f5f32c9ec763f::t_8dff2b6ed70576 1458-1459,1465-1466
+  s_8f5f32c9ec763f::t_48b93965fa1a79 1503-1505
+  s_8f5f32c9ec763f::t_e068096c8f7e07 242
+  s_8f5f32c9ec763f::t_8d7521d1cc59a9 1611
+  s_8f5f32c9ec763f::t_ee11be1e9ef7eb 239,243-245,251
+  s_8f5f32c9ec763f::t_0d0051d4fb086e 1865-1870
+  s_8f5f32c9ec763f::t_e75504eb30fe02 410-415
+  s_8f5f32c9ec763f::t_4bb4e168676561 246
+  s_8f5f32c9ec763f::t_69e7763ad692ed 770,774-782
+  s_8f5f32c9ec763f::t_110edfbd013633 69-71
+  s_8f5f32c9ec763f::t_a7b575a67fb790 712-713,715-716
+  s_8f5f32c9ec763f::t_bab7b5791009ef 1449-1454
+  s_8f5f32c9ec763f::t_0931f0e141ef40 142
+  s_8f5f32c9ec763f::t_467f1080906a2c 1261-1264,1285
+  s_8f5f32c9ec763f::t_2031197b09d698 353,357,359,382,392-399,402-406,408-409,421-435,437,439,441-442,445,447,460,463-464,471
+  s_8f5f32c9ec763f::t_1017ee362c110b 63,68
+  s_8f5f32c9ec763f::t_ea1c040254b9bf 1833
+  s_8f5f32c9ec763f::t_a9119a7ca24deb 720-728,730,733-769,771-773,783-791,793,796-801
+  s_8f5f32c9ec763f::t_831902ecc0f814 1442,1446-1448,1455-1457,1460-1464,1469,1474
+  s_8f5f32c9ec763f::t_c19f5df1552f4e 352,354-356,358,365,376,380-381,388-390,400-401,407,416-420,438,440,443-444,448,453-459,462,465-468,472-474
+  s_8f5f32c9ec763f::t_84b6671e482f6d 1443-1445
+  s_8f5f32c9ec763f::t_5d427bcae56324 1601-1604,1609-1610,1612-1614
+  s_8f5f32c9ec763f::t_61cf321fb3c2a8 1193-1197
+  s_8f5f32c9ec763f::t_3e92b5cb4b21b9 1913
+apps/app/components/preview.tsx
+  s_8f5f32c9ec763f::t_b79c8de7eff26d 5,19,27
+  s_8f5f32c9ec763f::t_6b330ae276c02d 35
+  s_8f5f32c9ec763f::t_8503184950cad7 41,45,53,61,70
+apps/app/components/chat-picker.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 111
+apps/app/lib/arena-workspace.ts
+  s_8f5f32c9ec763f::t_b4846148186bb1 12,18-26
+  s_8f5f32c9ec763f::t_170bd9974f2f1a 27
+apps/app/lib/clerk-auth-transfer.test.ts
+  s_8f5f32c9ec763f::t_f7b8673a68ac81 9,11,13-26,46-48,59-74,87,99-130,132-135,160-161,172-208,210-215,238-262
+  s_8f5f32c9ec763f::t_3d2bc29a2ac18d 162-171
+  s_8f5f32c9ec763f::t_519dd8c2902eac 1-8,10,12,27-45,49-58,75-86,88-98,131,136-159,209,216-237
+apps/app/lib/arena-loading.test.ts
+  s_8f5f32c9ec763f::t_89206bb4f4f82b 61
+apps/app/lib/tournament-candidate-record.ts
+  s_8f5f32c9ec763f::t_4fddf3c2c4bf19 198-246
+  s_8f5f32c9ec763f::t_06e8a6f088b213 251-258,260-262
+  s_8f5f32c9ec763f::t_8537fd04f7cbac 155-197,247-250,259,263-293,295-340
+  s_8f5f32c9ec763f::t_8db977d7e4351a 294
+  s_8f5f32c9ec763f::t_e0db021aa9a306 2,4,11
+apps/app/components/arena/arena-shell.tsx
+  s_8f5f32c9ec763f::t_bac012edffa7fc 28
+  s_8f5f32c9ec763f::t_86fd16fdb30fd8 87
+  s_8f5f32c9ec763f::t_a3479eec08c0cc 59
+  s_8f5f32c9ec763f::t_464d94ae9e6ba0 86
+apps/app/components/chat-input.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 116,157,166,195,206,240,246,260,269,281,287,295
+apps/app/lib/api/client.ts
+  s_8f5f32c9ec763f::t_b4a07da1d7403f 92-98
+  s_8f5f32c9ec763f::t_7706c4f566db05 99-104
+  s_8f5f32c9ec763f::t_74aea5beee78ea 149-161
+apps/app/components/active-version-picker.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 52,56,60,66,109,113,119,125,131,137,144,153,174,183,203,218,231,249,267
+apps/app/components/ui/loading-state.tsx
+  s_8f5f32c9ec763f::t_939d3c8c4df944 14,16-17,19,26,57,62-70,77,82-87,90
+apps/app/lib/verify-candidate.ts
+  s_8f5f32c9ec763f::t_79549b87940c14 18-19,25
+  s_8f5f32c9ec763f::t_093d95fd9568a5 22-24
+  s_8f5f32c9ec763f::t_323889d10ee464 316
+  s_8f5f32c9ec763f::t_b7b6516cebfa74 311,314-315,317-328
+  s_8f5f32c9ec763f::t_2cedd8784ddb14 178-180,185-201
+  s_8f5f32c9ec763f::t_ec17b84a596b8e 21
+  s_8f5f32c9ec763f::t_6771f5c5c0b5b3 202-203
+apps/app/components/arena/arena-workspace.tsx
+  s_713cb4c818667b::t_704db962226ddd 231-234,236-238
+  s_8f5f32c9ec763f::t_d99c036d54ba51 227
+  s_8f5f32c9ec763f::t_f71b355033056e 60
+  s_8f5f32c9ec763f::t_8503184950cad7 114,127,147,162,175,181,195,198,263
+  s_8f5f32c9ec763f::t_3f950a5f8e2834 6
+  s_8f5f32c9ec763f::t_d1362362bb9605 140
+  s_8f5f32c9ec763f::t_11f37ac7c870c1 84
+  s_8f5f32c9ec763f::t_ea9f8adeb39c90 159
+  s_8f5f32c9ec763f::t_a7b787a953f474 141-146,148-158
+  s_8f5f32c9ec763f::t_60ab35dafac40b 230
+  s_8f5f32c9ec763f::t_57d965f0612d04 235
+  s_8f5f32c9ec763f::t_6ba3b22c85d522 248
+apps/app/lib/specimen-status.test.ts
+  s_8f5f32c9ec763f::t_4ec4afcf52c8f5 1-62
+apps/app/components/ask-evostack.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 98,101,114,129,133,151,166,176,187,197,208-209,218
+apps/app/package.json
+  s_8f5f32c9ec763f::t_a2ec6ab257c327 66
+  s_8f5f32c9ec763f::t_2aa3a98b229417 47
+  s_8f5f32c9ec763f::t_6b8a2dfc07c1c7 48
+  s_8f5f32c9ec763f::t_e40d0721911249 32
+  s_8f5f32c9ec763f::t_b986f1939e4a5e 49
+apps/app/components/arena/use-design-inspect.ts
+  s_8f5f32c9ec763f::t_4ae5c58f25682a 1-151
+apps/app/lib/repair.test.ts
+  s_8f5f32c9ec763f::t_7bff9995857038 479-494
+  s_8f5f32c9ec763f::t_36582216f1520d 501
+apps/app/components/run-history.tsx
+  s_8f5f32c9ec763f::t_3fa5e5ed8fbb46 14-17
+  s_8f5f32c9ec763f::t_916db332241f95 87
+  s_8f5f32c9ec763f::t_59460a0cc123ce 3-10,12,18-20,23,25-26,30,32-33,35-36,39-86,88-114
+  s_8f5f32c9ec763f::t_b19e6c54943686 1-2,11,13,21-22,24,27-29,31,34,37-38,115-116
+apps/api/src/runs/runs.service.spec.ts
+  s_8f5f32c9ec763f::t_eea70c82873140 178-209
+  s_8f5f32c9ec763f::t_eaec2c618f3f52 210-240
+  s_8f5f32c9ec763f::t_826a17070af0ea 241-264
+apps/app/lib/fragment.ts
+  s_8f5f32c9ec763f::t_1dce3202d6b689 16,53-100
+  s_8f5f32c9ec763f::t_42be5cabdc291a 1
+  s_8f5f32c9ec763f::t_6f8bbb05bf5854 212,215,220,224
+  s_8f5f32c9ec763f::t_1527e872534be7 101
+apps/app/app/globals.css
+  s_8f5f32c9ec763f::t_2e6c3231d65555 570
+  s_8f5f32c9ec763f::t_a32b15f11c7821 280,286,289,299-336,339-343,346-361
+  s_8f5f32c9ec763f::t_186e227fd03e43 113-128
+  s_8f5f32c9ec763f::t_4096e3666ccf37 84-86,88
+  s_8f5f32c9ec763f::t_5c3c1dfa5f676f 257-259
+  s_713cb4c818667b::t_3e21ffc470c723 281
+  s_713cb4c818667b::t_2e9b9b0b83399c 282
+  s_8f5f32c9ec763f::t_662367718f7590 290
+  s_8f5f32c9ec763f::t_defbe1cdc204a5 260
+  s_8f5f32c9ec763f::t_50fca5d6b10198 362,371-398
+  s_8f5f32c9ec763f::t_5bc0cceac56695 337-338,344-345
+  s_8f5f32c9ec763f::t_0598112c887d41 363
+apps/app/lib/run-history.test.ts
+  s_8f5f32c9ec763f::t_595b98aa95f1c2 73-83
+  s_8f5f32c9ec763f::t_bf967e97bc7461 1-71,90
+  s_8f5f32c9ec763f::t_4f3211368bb45e 72,84-89
+apps/app/components/arena/database/panels.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 59,67,70,120,143,165,197,239,251,254,295,314,317,353,358,369-370,391,429-430,499,505,516,547,554-555,559,591,594,617,623-624,668,692-693,710,717,722,725,754,757,787,798,801
+apps/app/components/arena/activity-timeline.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 22,49,56,64,73,89
+apps/app/components/arena/design-palette.tsx
+  s_8f5f32c9ec763f::t_bf06e27a2d4c56 4
+  s_8f5f32c9ec763f::t_9d46b2f8f15964 36
+  s_8f5f32c9ec763f::t_6ea3588d3212d2 1-3,5-35,37-371
+  s_8f5f32c9ec763f::t_c77971e9a06774 372
+apps/app/components/arena/database/ui.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 6,30,56,60,77,88,96,117,137
+apps/app/lib/design-mode/controller.ts
+  s_8f5f32c9ec763f::t_4b007f2ff1c63e 1-16
+apps/app/lib/arena-loading.ts
+  s_8f5f32c9ec763f::t_fe0a8b366b0bb1 49-51
+apps/api/src/runs/run-title.ts
+  s_8f5f32c9ec763f::t_c850ccf7fda9be 1-31
+apps/app/components/evolution-report-panel.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 26,29,46,49,55,58,68,73,89
+apps/app/components/arena/design-workspace.tsx
+  s_8f5f32c9ec763f::t_56f79fc9dbfd71 48-49
+  s_8f5f32c9ec763f::t_141a68c64ef998 3,11,19,26
+  s_8f5f32c9ec763f::t_8503184950cad7 43,46,60,82
+  s_8f5f32c9ec763f::t_9cb72a0ab94a6d 89-94
+apps/api/src/runs/runs.service.ts
+  s_8f5f32c9ec763f::t_59b341563025e1 210,212,217-224
+  s_8f5f32c9ec763f::t_e231cee99da08e 5
+  s_8f5f32c9ec763f::t_ca88c7a5ca6d24 91,225,227-235
+  s_8f5f32c9ec763f::t_5ff37505b9dab6 51,63-69,72-90
+  s_8f5f32c9ec763f::t_cf3150072d1a89 226
+apps/app/components/recommendations-panel.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 31,42,45,49,57
+apps/app/components/improve-app-panel.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 97,101,109,148,152,158,167,172,182,191,214,217,225
+apps/app/components/specimen-strip.tsx
+  s_8f5f32c9ec763f::t_0e0fed464d04bd 192
+  s_8f5f32c9ec763f::t_8503184950cad7 151,154,191,219-220,297,319,334,337,340,342,348,353,359,468,472,480,485,491,501,534,547,555,561,566,593,599,616,630,638,646,668,674,699,703,710,718,737,740,747,762
+apps/app/components/fragment-preview.tsx
+  s_8f5f32c9ec763f::t_2dbb4405e63459 5,16,20,30
+apps/app/lib/sandbox-transport.ts
+  s_8f5f32c9ec763f::t_22376403b4a9a0 125-126
+  s_8f5f32c9ec763f::t_76017eb69cfd3e 164-175,180
+  s_8f5f32c9ec763f::t_773d446f771835 95-98
+  s_8f5f32c9ec763f::t_6034d4925fa7a8 11-16
+apps/app/lib/sandbox-transport.test.ts
+  s_8f5f32c9ec763f::t_b8e548c1d733c4 121-130
+  s_8f5f32c9ec763f::t_0940b17f8c92d3 10
+  s_8f5f32c9ec763f::t_2aa1d8353102e7 131-147
+apps/api/src/runs/runs.controller.ts
+  s_8f5f32c9ec763f::t_5a397a22b8bde8 73-77
+  s_8f5f32c9ec763f::t_0333da34482de0 68-72
+apps/app/lib/design-mode/inject.ts
+  s_8f5f32c9ec763f::t_179b4d7b4e4c73 106-118,124-133
+  s_8f5f32c9ec763f::t_3fbc8c06afa419 1-105,119-123,134-156
+apps/app/lib/design-mode/stamp-oids.ts
+  s_8f5f32c9ec763f::t_3d2b9ffa6beab5 1-106
+apps/app/app/layout.tsx
+  s_8f5f32c9ec763f::t_0f8678030c6d9d 7-13
+apps/app/components/auth-dialog.tsx
+  s_8f5f32c9ec763f::t_f598b3fb961c92 29-30,42-43,50,62,67-68,73,76,92-96,98-99,101,103-110,114,117,119,121-124,128-129,142-154,162,173-180,183,190,200-209,212-215,221-222,266-268,314,339,342,347
+  s_8f5f32c9ec763f::t_eb2a921119ad83 134-137
+  s_8f5f32c9ec763f::t_a9adb0f2aaf014 11-13,16,19
+  s_8f5f32c9ec763f::t_2e16404fcab130 66,69-72,74-75,77
+  s_8f5f32c9ec763f::t_8e25f3a4b1b9b1 80
+  s_8f5f32c9ec763f::t_cf48e291ff5c8a 185-188
+  s_8f5f32c9ec763f::t_1719fb3f8d23a9 3,10,17,23,26-28,36,44-49,53-61,63-65,81-83,132,165-167,169-172,189,191-199,216-219
+  s_8f5f32c9ec763f::t_2045fee6d4606f 14-15,24,51-52,78-79,84-85,116,118,120,125,133,138-141,155-161,163-164,181-182,184,210-211,220,225-265,269-313,315-316,318-338,340-341,343-346,348-352,354-365
+  s_8f5f32c9ec763f::t_e3bc43bd8616f9 86-91,97,100,102,111-113,115,126-127,130-131
+  s_8f5f32c9ec763f::t_632df5558c86e8 168
+  s_8f5f32c9ec763f::t_f7eb6a1aef257d 25
+apps/app/lib/repair.ts
+  s_8f5f32c9ec763f::t_ab59bbe298b925 304
+apps/app/lib/tournament-client.ts
+  s_8f5f32c9ec763f::t_c8261026a8e724 491
+  s_8f5f32c9ec763f::t_d985e1537d4251 199-219
+apps/app/components/project-brain-panel.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 33,36,71,77,86,89,97,104,119,122,135,154,161,166,175-176,233
+apps/app/lib/source-syntax.ts
+  s_8f5f32c9ec763f::t_5b33134426f014 176-177,179,181
+  s_8f5f32c9ec763f::t_90b352af4116e1 5
+apps/app/components/navbar.tsx
+  s_8f5f32c9ec763f::t_b032a89db2dd7b 98-107
+  s_8f5f32c9ec763f::t_8503184950cad7 76,83,91,95,112,117,119,125,141,159,174,176,199,215,236,239
+  s_8f5f32c9ec763f::t_2bf18df0d4b602 33-36,49-52
+  s_8f5f32c9ec763f::t_60421a8f5c3815 90
+  s_8f5f32c9ec763f::t_b761bd01ec781e 22,24,26
+  s_8f5f32c9ec763f::t_6ff2f645e72398 127
+apps/api/src/generation/tournament.runner.ts
+  s_8f5f32c9ec763f::t_37dbf7fcf7bdf8 898-900
+apps/app/components/chat-settings.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 44
+apps/app/components/arena/database-workspace.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 36,39-40,136,142,152,169
+apps/app/components/app-health-panel.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 38,42,53,57,73,76,85,94,104,108,116
+apps/app/components/project-sidebar.tsx
+  s_8f5f32c9ec763f::t_fdc38813d769f2 203
+  s_8f5f32c9ec763f::t_3dbd7e7e91b3ff 77
+  s_8f5f32c9ec763f::t_8503184950cad7 42,47,51,141-142,150,164,179,233
+  s_8f5f32c9ec763f::t_c49549ee835a4e 107
+apps/app/lib/run-history.ts
+  s_8f5f32c9ec763f::t_fe566395f4d5e3 1-49,51-52,55-69
+  s_8f5f32c9ec763f::t_c2c2cfba186989 50
+  s_8f5f32c9ec763f::t_ee807188a0682d 53-54
+apps/app/lib/arena-workspace.test.ts
+  s_8f5f32c9ec763f::t_5677d02ef225c5 32-42
+  s_8f5f32c9ec763f::t_c150af14bb635f 29-31
+  s_8f5f32c9ec763f::t_9b5832f9308c76 5-8,10-20,22-27,43,45-50,54-55,61-99
+  s_8f5f32c9ec763f::t_aa104f1e9e7e22 44
+apps/app/lib/design-mode/protocol.ts
+  s_8f5f32c9ec763f::t_5c2197e75b7a9d 1-165
+apps/app/lib/source-syntax.test.ts
+  s_8f5f32c9ec763f::t_71dfbcdea3eda2 131-151
+apps/app/lib/design-mode/rewrite-classes.ts
+  s_8f5f32c9ec763f::t_015976719115c8 5
+  s_8f5f32c9ec763f::t_050b36ab3aaee1 119-120,122,127
+  s_8f5f32c9ec763f::t_4b9a9ff632bac4 48
+  s_8f5f32c9ec763f::t_97af4821aaac4e 12,22-32,37-47,49-67
+  s_8f5f32c9ec763f::t_f3c92774e3a154 79
+  s_8f5f32c9ec763f::t_a1eaf019becd08 8-11
+  s_8f5f32c9ec763f::t_b7f90673efab33 1-4,6-7,13-21,33-36,68-78,80-118,121,123-126,128-161,166-197
+  s_8f5f32c9ec763f::t_56fbf75ff06382 162-165
+apps/app/lib/design-mode/design-mode.test.ts
+  s_8f5f32c9ec763f::t_373e7a2d3b7f04 185-197
+  s_8f5f32c9ec763f::t_f05c83acdd26af 3-4
+  s_8f5f32c9ec763f::t_47b9079e2bb489 136-145
+  s_8f5f32c9ec763f::t_9f70eb80996505 198-210
+  s_8f5f32c9ec763f::t_53f39ced7ef19a 267-268
+  s_8f5f32c9ec763f::t_b5f286ffa9f53f 238-266,269-284
+  s_8f5f32c9ec763f::t_9f7b8bb26fda67 13
+  s_8f5f32c9ec763f::t_b9d20c9eb04cce 219-221
+  s_8f5f32c9ec763f::t_628d9c2c27154a 1-2,5-12,14-135,146-184,211-218,222-237
+apps/app/components/candidate-switcher.tsx
+  s_8f5f32c9ec763f::t_dd0f7dca46e3e5 63-65
+  s_8f5f32c9ec763f::t_6916afce413763 77-79
+  s_8f5f32c9ec763f::t_4f660c7a27b25e 41,50
+  s_8f5f32c9ec763f::t_3bd90dc2ca9f3b 27,29-30
+  s_8f5f32c9ec763f::t_8503184950cad7 109,113,118,123,126,147,159,168
+  s_8f5f32c9ec763f::t_2e70ccf01226fe 104
+  s_8f5f32c9ec763f::t_ca66f384ff7192 92,97
+  s_8f5f32c9ec763f::t_1111c58195442b 6,18
+  s_8f5f32c9ec763f::t_58b56350132ece 10
+  s_2fdc3e7adc4ede::t_43c040a05bc823 17
+apps/app/lib/specimen-status.ts
+  s_8f5f32c9ec763f::t_8e4b120d5ced8a 1-63
+apps/app/lib/design-mode/tailwind-map.ts
+  s_8f5f32c9ec763f::t_cd202b0158d7df 1-213
+apps/app/components/fragment-web.tsx
+  s_8f5f32c9ec763f::t_c5e8bc3e6850d2 1-3,11-15,17-18,23,27,30-31,34,39-89,93-108,110-114,133-156
+  s_8f5f32c9ec763f::t_8503184950cad7 116,123,127
+  s_8f5f32c9ec763f::t_53175d35a05451 109
+apps/app/components/version-vault-panel.tsx
+  s_8f5f32c9ec763f::t_8503184950cad7 51,62,69,74,139,142,146,156,159,180,184,186,190,218,226,235,243,255,262
+apps/app/lib/tournament-candidates.test.ts
+  s_8f5f32c9ec763f::t_dae5be383e2498 784
+  s_8f5f32c9ec763f::t_810487128c8e3c 742-751
+  s_8f5f32c9ec763f::t_263ac6dfa4c1e9 777
+  s_8f5f32c9ec763f::t_0ec9b55acdfb1a 34
+  s_8f5f32c9ec763f::t_55b129254e9899 776,783
+  s_8f5f32c9ec763f::t_8db9958534c2d0 722-739,741,752-759,768-772,774,778-782,785-786
+  s_8f5f32c9ec763f::t_d37578b7806cc9 773,775
+  s_8f5f32c9ec763f::t_0204955331b38e 740,760-767
+apps/app/lib/clerk-auth-transfer.ts
+  s_8f5f32c9ec763f::t_ab9231f6920864 1-10,12-22,24-25,42,54,65,72-75,112-136,138-139,141-144,167-190,192-193,197-205,211-234
+  s_8f5f32c9ec763f::t_14615ac89359ba 11,23,26-41,43-53,55-64,66-71,76-111,137,140,145-157,162-166,191,194-196,206-210
+  s_8f5f32c9ec763f::t_88f2350001001f 158-161
+apps/app/components/command-bar.tsx
+  s_8f5f32c9ec763f::t_63a9a3ec3bd9f4 202
+  s_8f5f32c9ec763f::t_28c34a48e1b5c4 208,210
+  s_8f5f32c9ec763f::t_8503184950cad7 153,184,193,227,261,266,278,281,292,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "74139f76dec7058335a9542170bfdaf4acb8cf70",
+  "prompts": {},
+  "sessions": {
+    "s_2fdc3e7adc4ede": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "d228b616-2072-4eb0-895c-435ba8fde921",
+        "model": "composer-2.5"
+      },
+      "human_author": "Suhaib <suhaibking310@gmail.com>"
+    },
+    "s_713cb4c818667b": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f78ab9e7-6720-41c8-9028-71d1d6aaa477",
+        "model": "grok-4.6"
+      },
+      "human_author": "Suhaib <suhaibking310@gmail.com>"
+    },
+    "s_8f5f32c9ec763f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "43347562-50e2-4f91-8ab7-2dd120835e90",
+        "model": "grok-4.6"
+      },
+      "human_author": "Suhaib <suhaibking310@gmail.com>"
+    }
+  }
+}
