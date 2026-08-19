@@ -79,15 +79,20 @@ function assertThrowsCode(fn: () => unknown, code: string) {
   assert.ok(ollama?.localOnly)
   assert.equal(getModelGroupLabel(ollama!), 'LOCAL')
 
-  // Exactly one paid model: Astra 1.2 → gpt-4.1 / openai
+  // Two paid models, both OpenAI: gpt-4.1 generates, gpt-4.1-mini is the
+  // cheap-role routing target (plan / repair / morph).
   const paid = catalog.filter((m) => m.tier === 'paid')
-  assert.equal(paid.length, 1)
-  assert.equal(paid[0].id, 'gpt-4.1')
-  assert.equal(paid[0].name, 'Astra 1.2')
-  assert.equal(paid[0].providerId, 'openai')
-  assert.equal(paid[0].tier, 'paid')
-  assert.notEqual(paid[0].localOnly, true)
-  assert.equal(getModelGroupLabel(paid[0]), 'PAID')
+  assert.equal(paid.length, 2)
+  assert.deepEqual(
+    paid.map((m) => m.id).sort(),
+    ['gpt-4.1', 'gpt-4.1-mini'],
+  )
+  for (const m of paid) {
+    assert.equal(m.providerId, 'openai')
+    assert.notEqual(m.localOnly, true)
+    assert.equal(getModelGroupLabel(m), 'PAID')
+  }
+  assert.equal(findCatalogModel('gpt-4.1')!.name, 'Astra 1.2')
 
   // Removed paid models must not appear
   for (const id of ['gpt-5', 'o3', 'gpt-5-mini', 'gpt-4o-mini', 'gpt-5-nano']) {
@@ -139,8 +144,8 @@ withEnv(
   () => {
     const client = getModelClient(
       {
-        id: 'gemini-2.0-flash',
-        name: 'Gemini 2.0 Flash',
+        id: 'gemini-3.6-flash',
+        name: 'Gemini 3.6 Flash',
         provider: 'Google',
         providerId: 'google',
       },
@@ -667,7 +672,7 @@ assertThrowsCode(
 assertThrowsCode(
   () =>
     resolveCatalogModel({
-      id: 'gemini-2.0-flash',
+      id: 'gemini-3.6-flash',
       providerId: 'openai',
     }),
   'provider_model_mismatch',
@@ -769,8 +774,8 @@ withEnv(
     try {
       getModelClient(
         {
-          id: 'gemini-2.0-flash',
-          name: 'Gemini 2.0 Flash',
+          id: 'gemini-3.6-flash',
+          name: 'Gemini 3.6 Flash',
           provider: 'Google',
           providerId: 'google',
         },
@@ -866,9 +871,70 @@ withEnv(
   },
 )
 
+// A revoked key can be blackholed: socket accepted, no response, no status
+// code. Measured 2026-08-19 on NVIDIA_API_KEY (HTTP 000 after 25s) while
+// NVIDIA_API_KEY_2 answered in 1.5s. The pool must survive that.
+async function testNvidiaHangFailsOverToAlternate() {
+  const calls: string[] = []
+  const mockFetch: typeof fetch = async (_input, init) => {
+    const auth = new Headers(init?.headers).get('Authorization') || ''
+    calls.push(auth)
+    if (auth.includes('nvidia-key-a')) {
+      // Never resolves on its own — only the headers deadline ends it.
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () =>
+          reject(new Error('aborted')),
+        )
+      })
+    }
+    return new Response('ok', { status: 200 })
+  }
+  const wrapped = createNvidiaCredentialFetch({
+    credentials: ['nvidia-key-a', 'nvidia-key-b'],
+    primaryIndex: 0,
+    fetchImpl: mockFetch,
+    timeoutMs: 50,
+  })
+  const res = await wrapped('https://integrate.api.nvidia.com/v1/chat/completions', {
+    headers: { Authorization: 'Bearer nvidia-key-a' },
+  })
+  assert.equal(res.status, 200)
+  assert.equal(calls.length, 2)
+  assert.match(calls[1], /nvidia-key-b/)
+  assert.doesNotMatch(calls.join(' '), /openai|sk-/i)
+}
+
+// A caller-cancelled request must not burn the alternate credential.
+async function testNvidiaCallerAbortDoesNotFailOver() {
+  let calls = 0
+  const mockFetch: typeof fetch = async (_input, init) => {
+    calls += 1
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    })
+  }
+  const wrapped = createNvidiaCredentialFetch({
+    credentials: ['nvidia-key-a', 'nvidia-key-b'],
+    primaryIndex: 0,
+    fetchImpl: mockFetch,
+    timeoutMs: 10_000,
+  })
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), 20)
+  await assert.rejects(() =>
+    wrapped('https://integrate.api.nvidia.com/v1/chat/completions', {
+      headers: { Authorization: 'Bearer nvidia-key-a' },
+      signal: controller.signal,
+    }),
+  )
+  assert.equal(calls, 1)
+}
+
 async function finishModelsTests() {
   await testNvidiaCredentialFailover()
   await testNvidiaNonRetryableNoLoop()
+  await testNvidiaHangFailsOverToAlternate()
+  await testNvidiaCallerAbortDoesNotFailOver()
   restoreEnv()
   console.log('models.test.ts: all provider foundation tests passed')
 }

@@ -1,4 +1,6 @@
 import { ApplicationPlan, formatApplicationPlan } from '@/lib/plan'
+import { buildSkillsSection } from '@/lib/skills'
+import { classifyAppStack } from '@/lib/stack-advisor'
 import { formatTemplateGuardrails } from '@/lib/template-guardrails'
 import { Templates, templatesToPrompt } from '@/lib/templates'
 
@@ -153,11 +155,16 @@ export function buildGenerationPrompt(options: {
   variantDirection?: string
   /** Compact memory pack text — already truncated by formatMemoryForPrompt. */
   memoryContext?: string | null
+  /** User brief — sharpens skill-pack selection. Plan alone works without it. */
+  brief?: string | null
 }): string {
   const parts = [
     systemRulesPrompt(),
     options.memoryContext?.trim() ? options.memoryContext.trim() : '',
     options.plan ? formatApplicationPlan(options.plan) : mentalPlanningPrompt(),
+    buildSkillsSection({
+      kind: classifyAppStack({ prompt: options.brief, plan: options.plan }),
+    }),
     formatTemplateGuardrails(options.template),
     options.variantDirection
       ? `## Specimen direction (this candidate only)\n${options.variantDirection}\n`
@@ -224,6 +231,12 @@ ${issues}
     options.memoryContext?.trim() ? options.memoryContext.trim() : '',
     evolutionRules,
     options.plan ? formatApplicationPlan(options.plan) : '',
+    buildSkillsSection({
+      kind: classifyAppStack({
+        prompt: options.userRequest,
+        plan: options.plan,
+      }),
+    }),
     formatTemplateGuardrails(options.template),
     options.variantDirection
       ? `## Specimen direction (this candidate only)\n${options.variantDirection}\n`

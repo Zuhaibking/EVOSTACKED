@@ -12,6 +12,12 @@ import {
   normalizeApplicationPlan,
 } from '@/lib/plan'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
+import {
+  describeRoute,
+  resolveBudgetMode,
+  routeModel,
+  routedConfig,
+} from '@/lib/model-router'
 import { buildEvolutionPrompt, buildGenerationPrompt } from '@/lib/prompt'
 import { formatBaselineFilesForPrompt, buildSingleIterationVerdict } from '@/lib/evolution'
 import { formatNonBlockingIntegrityWarnings } from '@/lib/fragment-integrity'
@@ -257,13 +263,39 @@ export async function handleTournament(
 
   const { model: _modelNameString, apiKey: _apiKey, ...modelParams } = config
 
+  // Per-role routing: generation keeps the user's model, plan/repair drop to a
+  // cheap one. BYOK or a missing server key falls back to the user's model.
+  const budgetMode = resolveBudgetMode()
+  const genRoute = routeModel({ role: 'generate', userModel: model, config, mode: budgetMode })
+  const planRoute = routeModel({ role: 'plan', userModel: model, config, mode: budgetMode })
+  const repairRoute = routeModel({ role: 'repair', userModel: model, config, mode: budgetMode })
+  console.log('[evostack:model-router]', {
+    mode: budgetMode,
+    routes: [genRoute, planRoute, repairRoute].map(describeRoute),
+  })
+
   let modelClient
   try {
-    // Single catalog-validated client for plan → gen → repair → judge.
-    // Never remaps free providers to paid / OpenAI.
-    modelClient = getModelClient(model, config)
+    // Catalog-validated client. Never remaps free providers to paid / OpenAI.
+    modelClient = getModelClient(genRoute.model, routedConfig(config, genRoute))
   } catch (error: any) {
     return handleAPIError(error, { hasOwnApiKey: !!config.apiKey })
+  }
+
+  // Plan client falls back to the generation client so a routing miss can never
+  // fail the whole tournament.
+  let planClient = modelClient
+  let planModel = genRoute.model
+  if (planRoute.routed) {
+    try {
+      planClient = getModelClient(planRoute.model, routedConfig(config, planRoute))
+      planModel = planRoute.model
+    } catch (error: any) {
+      console.warn(
+        '[evostack:model-router] plan model unavailable; using generation model',
+        error instanceof Error ? error.message : error,
+      )
+    }
   }
 
   const brief = isEvolution
@@ -276,7 +308,9 @@ export async function handleTournament(
     recentMessages: memoryPack?.recentMessages,
     brain: memoryPack?.brain,
   })
-  const cacheModelId = llmModelCacheId(model)
+  // Plan cache is keyed on the model that actually produces the plan, so
+  // switching budget mode never replays another model's plan.
+  const cacheModelId = llmModelCacheId(planModel)
   const planTemperature = 0.2
   const planningSystem = memoryContext
     ? `${PLANNING_SYSTEM_PROMPT}\n\n${memoryContext}`
@@ -447,7 +481,7 @@ export async function handleTournament(
         const runPlanOnce = () =>
           withProviderRetry(async () =>
             generateObject({
-              model: modelClient as LanguageModel,
+              model: planClient as LanguageModel,
               schema: applicationPlanSchema,
               system: planningSystem,
               prompt: planPrompt,
@@ -671,6 +705,7 @@ export async function handleTournament(
                   plan,
                   variantDirection: variant.systemSuffix,
                   memoryContext,
+                  brief,
                 })
 
             const genParams = withGenerationTokenBudget(
@@ -1022,8 +1057,8 @@ export async function handleTournament(
               architectureCompliance: v.initialArchitectureCompliance,
               repairAttempts: v.repairAttempts,
               plan,
-              model,
-              config,
+              model: repairRoute.model,
+              config: routedConfig(config, repairRoute),
               deployOpts: { userID, teamID, accessToken },
               productContext,
               llmCache: runtime.llmCache,
