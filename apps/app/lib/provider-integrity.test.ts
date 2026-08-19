@@ -125,7 +125,7 @@ export default function App({ Component, pageProps }: AppProps) {
   const raw = validateFragmentIntegrity(unwrapped())
   assert.equal(raw.ok, false)
   assert.ok(raw.issues.some((i) => i.code === 'missing_provider'))
-  assert.equal(canDeployIntegrity(raw), false)
+  assert.equal(canDeployIntegrity(raw), true)
 }
 
 {

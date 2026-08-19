@@ -7,6 +7,8 @@ import { ProjectBrainPanel } from '@/components/project-brain-panel'
 import { VersionVaultPanel } from '@/components/version-vault-panel'
 import type { ArenaActivityItem } from '@/lib/arena-activity'
 import type { AppHealthReport } from '@/lib/app-health'
+import type { GenerationCostSummary } from '@/lib/generation-cost'
+import { formatCostSummary } from '@/lib/generation-cost'
 import type { Message } from '@/lib/messages'
 import type { ProjectBrain } from '@/lib/project-brain'
 import type { FragmentSchema } from '@/lib/schema'
@@ -80,6 +82,7 @@ export function ProjectSidebar({
   onViewSource,
   detailsFor,
   appHealth,
+  generationCost,
   providerBudgetLabel,
 }: {
   projectBrain: ProjectBrain | null
@@ -108,6 +111,7 @@ export function ProjectSidebar({
   onViewSource: (id: VariantId) => void
   detailsFor: (id: VariantId) => string[]
   appHealth?: AppHealthReport | null
+  generationCost?: GenerationCostSummary | null
   providerBudgetLabel?: string | null
 }) {
   const name =
@@ -178,6 +182,11 @@ export function ProjectSidebar({
           {appHealth ? (
             <p>
               Health {appHealth.score} · {appHealth.statusLabel}
+            </p>
+          ) : null}
+          {generationCost ? (
+            <p title={`${generationCost.modelName} · ${generationCost.calls} calls · ${generationCost.source}`}>
+              Tokens {formatCostSummary(generationCost)}
             </p>
           ) : null}
           {providerBudgetLabel ? <p>{providerBudgetLabel}</p> : null}

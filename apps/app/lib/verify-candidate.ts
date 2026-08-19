@@ -474,7 +474,12 @@ export async function deployAndVerify(
     dependenciesInstalled,
     processStarted,
     previewReachable,
-    errors,
+    errors:
+      httpStatus &&
+      errors.length > 0 &&
+      !errors.some((e) => /HTTP\s+\d{3}/i.test(e))
+        ? [`${errors[0]} — HTTP ${httpStatus}`, ...errors.slice(1)]
+        : errors,
     warnings,
     durationMs,
     sbxId,

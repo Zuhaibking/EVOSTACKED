@@ -31,6 +31,7 @@ import { VARIANTS, type VariantId } from './tournament'
 import type { ExecutionResult } from './types'
 import type { VerificationResult } from './verification'
 import type { SmokeSuiteResult } from './smoke'
+import { buildCandidateRecordData } from './tournament-candidate-record'
 
 function frag(title: string) {
   return {
@@ -391,6 +392,45 @@ function fullTournament(): Record<VariantId, Candidate> {
   assert.doesNotMatch(src, /version-vault/)
   assert.doesNotMatch(src, /\bfetch\s*\(/)
   assert.doesNotMatch(src, /@e2b/)
+}
+
+{
+  const switcher = fs.readFileSync(
+    path.join(process.cwd(), 'components/candidate-switcher.tsx'),
+    'utf8',
+  )
+  assert.match(switcher, /stackLabel/)
+  assert.match(switcher, /stackLabelForTemplate/)
+  const picker = fs.readFileSync(
+    path.join(process.cwd(), 'components/active-version-picker.tsx'),
+    'utf8',
+  )
+  assert.match(picker, /stackLabel/)
+}
+
+{
+  const row = buildCandidateRecordData({
+    id: 'minimal',
+    status: 'generating',
+    template: 'streamlit-developer',
+    stackLabel: 'Streamlit',
+  })
+  assert.equal(row.template, 'streamlit-developer')
+  assert.equal(row.stackLabel, 'Streamlit')
+  const fromFrag = buildCandidateRecordData({
+    id: 'rich',
+    status: 'error',
+    fragment: { template: 'vue-developer' },
+  })
+  assert.equal(fromFrag.template, 'vue-developer')
+  assert.equal(fromFrag.stackLabel, 'Vue/Nuxt')
+  const repeat = buildCandidateRecordData({
+    id: 'playful',
+    status: 'generating',
+    template: 'nextjs-developer',
+    stackLabel: 'Next.js (repeat)',
+  })
+  assert.equal(repeat.stackLabel, 'Next.js (repeat)')
 }
 
 // Failed runtime preview is unavailable but candidate retained — real error shown

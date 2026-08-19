@@ -80,7 +80,7 @@ export type Verdict = z.infer<typeof verdictSchema>
 
 export type TournamentEvent =
   | { type: 'plan'; plan: ApplicationPlan }
-  | { type: 'candidate_start'; id: VariantId; label: string; sigil: string }
+  | { type: 'candidate_start'; id: VariantId; label: string; sigil: string; template?: string; stackLabel?: string }
   | { type: 'candidate_chunk'; id: VariantId; fragment: any }
   | { type: 'candidate_done'; id: VariantId; fragment: any }
   | { type: 'candidate_error'; id: VariantId; error: string }

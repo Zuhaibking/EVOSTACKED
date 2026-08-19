@@ -89,4 +89,90 @@ describe('RunsService chat persist', () => {
     assert.equal(again.id, 'run_local')
     assert.equal(runs.length, 1)
   })
+
+  it('createCandidate writes a row for the run', async () => {
+    const run = {
+      id: 'run1',
+      userId: 'userA',
+      memoryVersion: 1,
+      selectedCandidate: null,
+      activeVersion: null,
+      hasTournament: true,
+      status: 'active',
+    }
+    const rows: any[] = []
+    const prisma = {
+      run: {
+        findFirst: async ({ where }: any) =>
+          where.id === run.id && where.userId === run.userId ? run : null,
+      },
+      candidate: {
+        create: async ({ data }: any) => {
+          const row = { id: 'cand_1', ...data }
+          rows.push(row)
+          return row
+        },
+        updateMany: async ({ where, data }: any) => {
+          const row = rows.find((r) => r.id === where.id)
+          if (!row) return { count: 0 }
+          Object.assign(row, data)
+          return { count: 1 }
+        },
+      },
+    } as any
+    const svc = new RunsService(prisma, {} as any)
+    const created = await svc.createCandidate('userA', 'run1', 'minimal', 'tested', {
+      variant: 'Product',
+      scores: { composite: 0.8 },
+      template: 'nextjs-developer',
+      stackLabel: 'Next.js',
+    })
+    assert.equal(created.variantId, 'minimal')
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].data.template, 'nextjs-developer')
+    assert.equal(rows[0].data.stackLabel, 'Next.js')
+    await svc.updateCandidate('userA', 'run1', 'cand_1', 'tested', {
+      scores: { composite: 0.9 },
+    })
+    assert.equal(rows[0].status, 'tested')
+    assert.equal(rows[0].data.scores.composite, 0.9)
+  })
+
+  it('getPublicShare returns run artifacts without requiring a user', async () => {
+    const prisma = {
+      run: {
+        findFirst: async ({ where }: any) =>
+          where.id === 'run_pub' ? { id: 'run_pub', userId: 'userA' } : null,
+      },
+      message: {
+        findMany: async () => [
+          {
+            content: {
+              role: 'user',
+              content: [{ type: 'text', text: 'Build a CRM' }],
+            },
+          },
+        ],
+      },
+      projectBrain: {
+        findFirst: async () => ({ data: { plan: { productName: 'CRM' } } }),
+      },
+      candidate: {
+        findMany: async () => [
+          {
+            variantId: 'minimal',
+            status: 'tested',
+            data: { variant: 'Product' },
+          },
+        ],
+      },
+    } as any
+    const svc = new RunsService(prisma, {} as any)
+    const missing = await svc.getPublicShare('nope')
+    assert.equal(missing, null)
+    const row = await svc.getPublicShare('run_pub')
+    assert.ok(row)
+    assert.equal(row!.candidates.length, 1)
+    assert.equal((row!.brain as any).plan.productName, 'CRM')
+  })
 })

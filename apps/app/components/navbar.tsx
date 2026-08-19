@@ -18,9 +18,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toast } from '@/components/ui/use-toast'
 import type { AuthSession } from '@/lib/auth'
 import { GitHubLogoIcon } from '@radix-ui/react-icons'
-import { ArrowRight, Loader2, LogOut, Menu, Trash, Undo } from 'lucide-react'
+import { ArrowRight, Loader2, LogOut, Menu, Share2, Trash, Undo } from 'lucide-react'
 import Link from 'next/link'
 
 export function NavBar({
@@ -120,6 +121,38 @@ export function NavBar({
       </div>
 
       <div className="flex items-center gap-0.5 ml-auto pr-2 sm:pr-3 shrink-0 border-l border-border pl-2">
+        {runId ? (
+          <TooltipProvider>
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-none text-muted-foreground hover:text-foreground"
+                  aria-label="Copy share link"
+                  onClick={async () => {
+                    const url = `${window.location.origin}/r/${runId}`
+                    try {
+                      await navigator.clipboard.writeText(url)
+                      toast({
+                        title: 'Share link copied',
+                        description: 'Anyone with the link can view this run.',
+                      })
+                    } catch {
+                      toast({
+                        title: 'Copy failed',
+                        description: url,
+                      })
+                    }
+                  }}
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Copy share link</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
         <TooltipProvider>
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>

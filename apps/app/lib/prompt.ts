@@ -1,4 +1,5 @@
 import { ApplicationPlan, formatApplicationPlan } from '@/lib/plan'
+import { formatTemplateGuardrails } from '@/lib/template-guardrails'
 import { Templates, templatesToPrompt } from '@/lib/templates'
 
 /** Core system rules shared by tournament + chat generation. */
@@ -109,6 +110,13 @@ Invalid HTML (causes "Hydration failed" / nested <a> in <a>):
 }
 
 export function templatesSection(template: Templates): string {
+  const ids = Object.keys(template || {})
+  if (ids.length === 1) {
+    return `## Template (mandatory)
+You MUST generate this candidate using ONLY this template (id "${ids[0]}"). Do not switch stacks.
+${templatesToPrompt(template)}
+`
+  }
   return `## Templates available
 ${templatesToPrompt(template)}
 `
@@ -143,10 +151,14 @@ export function buildGenerationPrompt(options: {
   template: Templates
   plan?: ApplicationPlan | null
   variantDirection?: string
+  /** Compact memory pack text — already truncated by formatMemoryForPrompt. */
+  memoryContext?: string | null
 }): string {
   const parts = [
     systemRulesPrompt(),
+    options.memoryContext?.trim() ? options.memoryContext.trim() : '',
     options.plan ? formatApplicationPlan(options.plan) : mentalPlanningPrompt(),
+    formatTemplateGuardrails(options.template),
     options.variantDirection
       ? `## Specimen direction (this candidate only)\n${options.variantDirection}\n`
       : '',
@@ -172,6 +184,8 @@ export function buildEvolutionPrompt(options: {
   productName?: string
   knownIssues?: string[]
   fileTree?: string[]
+  /** Compact memory pack text — already truncated by formatMemoryForPrompt. */
+  memoryContext?: string | null
 }): string {
   const issues =
     options.knownIssues && options.knownIssues.length > 0
@@ -207,8 +221,10 @@ ${issues}
 
   const parts = [
     systemRulesPrompt(),
+    options.memoryContext?.trim() ? options.memoryContext.trim() : '',
     evolutionRules,
     options.plan ? formatApplicationPlan(options.plan) : '',
+    formatTemplateGuardrails(options.template),
     options.variantDirection
       ? `## Specimen direction (this candidate only)\n${options.variantDirection}\n`
       : '',

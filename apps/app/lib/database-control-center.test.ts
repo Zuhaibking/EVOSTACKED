@@ -41,6 +41,11 @@ describe('database control center catalogs', () => {
       ),
     )
     assert.ok(
+      EVOSTACK_PLATFORM_ENDPOINTS.some(
+        (e) => e.method === 'GET' && e.route === '/v1/public/runs/:id',
+      ),
+    )
+    assert.ok(
       EVOSTACK_PLATFORM_ENDPOINTS.every((e) => e.route.startsWith('/')),
     )
   })

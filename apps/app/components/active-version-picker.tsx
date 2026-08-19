@@ -4,6 +4,7 @@ import { hasFragmentCode } from '@/lib/fragment'
 import type { Candidate } from '@/lib/tournament-client'
 import type { VariantId } from '@/lib/tournament'
 import { VARIANTS } from '@/lib/tournament'
+import { stackLabelForTemplate } from '@/lib/templates'
 import {
   architectureScoreLabel,
   canActivateCandidate,
@@ -83,6 +84,13 @@ export function ActiveVersionPicker({
           const title =
             (typeof c.fragment?.title === 'string' && c.fragment.title) ||
             null
+          const stack =
+            c.stackLabel ||
+            (c.template ? stackLabelForTemplate(c.template) : '') ||
+            (typeof c.fragment?.template === 'string'
+              ? stackLabelForTemplate(c.fragment.template)
+              : '')
+          const showStack = !!stack && stack !== 'Unknown'
 
           return (
             <div
@@ -107,6 +115,11 @@ export function ActiveVersionPicker({
                   </span>
                 )}
               </div>
+              {showStack ? (
+                <span className="inline-flex h-4 items-center px-1 border border-border/70 font-mono text-[8px] tracking-[0.14em] uppercase text-muted-foreground">
+                  {stack}
+                </span>
+              ) : null}
 
               {title && (
                 <p className="font-display text-[14px] leading-tight truncate">

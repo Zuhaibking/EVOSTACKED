@@ -74,6 +74,21 @@ function makePrisma(store: {
       },
     },
     llmResponseCache: {
+      findFirst: async ({ where }: any) => {
+        return (
+          llmCaches.find(
+            (c) =>
+              c.userId === where.userId &&
+              c.runId === where.runId &&
+              c.memoryVersion === where.memoryVersion &&
+              c.cacheKey === where.cacheKey,
+          ) || null
+        )
+      },
+      create: async ({ data }: any) => {
+        llmCaches.push(data)
+        return data
+      },
       deleteMany: async ({ where }: any) => {
         const next = llmCaches.filter(
           (c) => !(c.userId === where.userId && c.runId === where.runId),
@@ -204,5 +219,37 @@ describe('MemoryService', () => {
     const next = await svc.bumpAndInvalidate('userA', 'run1')
     assert.equal(next, 2)
     assert.equal(svc.peekL1(memoryCacheKey('userA', 'run1', 1)), undefined)
+  })
+
+  it('stores and reads LLM response cache for the current memory version', async () => {
+    const store = {
+      run: { id: 'run1', userId: 'userA', memoryVersion: 3 },
+      llmCaches: [] as any[],
+    }
+    const svc = new MemoryService(makePrisma(store))
+    await svc.setLlmCached({
+      userId: 'userA',
+      runId: 'run1',
+      memoryVersion: 3,
+      model: 'nvidia:test',
+      promptHash: 'abc123',
+      payload: { productName: 'Cached Plan' },
+    })
+    const hit = await svc.getLlmCached({
+      userId: 'userA',
+      runId: 'run1',
+      memoryVersion: 3,
+      model: 'nvidia:test',
+      promptHash: 'abc123',
+    })
+    assert.deepEqual(hit, { productName: 'Cached Plan' })
+    const miss = await svc.getLlmCached({
+      userId: 'userA',
+      runId: 'run1',
+      memoryVersion: 4,
+      model: 'nvidia:test',
+      promptHash: 'abc123',
+    })
+    assert.equal(miss, null)
   })
 })

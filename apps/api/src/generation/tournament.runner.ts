@@ -14,12 +14,7 @@ import {
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
 import { buildEvolutionPrompt, buildGenerationPrompt } from '@/lib/prompt'
 import { formatBaselineFilesForPrompt, buildSingleIterationVerdict } from '@/lib/evolution'
-import {
-  canDeployIntegrity,
-  formatIntegrityUserSummary,
-  formatNonBlockingIntegrityWarnings,
-  integrityToFailedVerification,
-} from '@/lib/fragment-integrity'
+import { formatNonBlockingIntegrityWarnings } from '@/lib/fragment-integrity'
 import { runGeneratedProjectPreflight } from '@/lib/prepare-fragment-integrity'
 import { withGenerationTokenBudget } from '@/lib/generation-budget'
 import ratelimit from '@/lib/ratelimit'
@@ -35,10 +30,7 @@ import {
   selectRepairReason,
   shouldAttemptRepair,
 } from '@/lib/repair'
-import {
-  repairAndReverify,
-  repairFragmentIntegrity,
-} from '@/lib/repair-candidate'
+import { repairAndReverify } from '@/lib/repair-candidate'
 import {
   shouldSmokeTest,
   SmokeSuiteResult,
@@ -53,7 +45,30 @@ import {
   withProviderRetry,
 } from '@/lib/provider-retry'
 import { classifyProviderQuotaError } from '@/lib/provider-quota'
-import { buildCandidateGenerationQueue } from '@/lib/tournament-generation'
+import {
+  applyAssignedTemplate,
+  assignDiverseTemplates,
+  buildCandidateGenerationQueue,
+  catalogLooksLikeAuto,
+  pickTemplateSubset,
+  type AssignedVariantTemplate,
+} from '@/lib/tournament-generation'
+import { stackLabelForTemplate } from '@/lib/templates'
+import { formatMemoryForPrompt } from '@/lib/memory-prompt'
+import type { MemoryPack } from '@evostack/shared'
+import {
+  llmModelCacheId,
+  readLlmCache,
+  stablePromptHash,
+  writeLlmCache,
+  type LlmCacheLookup,
+} from '@/lib/llm-cache'
+import {
+  buildCandidateRecordData,
+  compactRepairNotes,
+  scoresFromVerdict,
+} from '@/lib/tournament-candidate-record'
+import { readProviderUsage } from '@/lib/generation-cost'
 import {
   buildRuntimePreviewDiagnostic,
   logRuntimePreviewDiagnostic,
@@ -66,6 +81,20 @@ import {
 } from 'ai'
 
 export const maxDuration = 300
+
+export type TournamentRuntime = {
+  llmCache?: LlmCacheLookup
+  persistCandidate?: (row: {
+    variantId: string
+    status: string
+    data: unknown
+  }) => Promise<{ id: string } | void>
+  updateCandidate?: (row: {
+    id: string
+    status: string
+    data: unknown
+  }) => Promise<void>
+}
 
 const rateLimitMaxRequests = process.env.RATE_LIMIT_MAX_REQUESTS
   ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS)
@@ -100,8 +129,7 @@ function asFragment(fragment: any): FragmentSchema | null {
   const parsed = schema.safeParse(fragment)
   if (parsed.success) return parsed.data
   // Soft accept near-complete streams that still have files.
-  // Deploy path still gates on canDeployIntegrity — soft-accept must not
-  // invent success when compile-blocking integrity issues remain.
+  // Deploy still runs; E2B compile/runtime evidence is the source of truth.
   if (
     typeof fragment.template === 'string' &&
     typeof fragment.file_path === 'string' &&
@@ -113,7 +141,10 @@ function asFragment(fragment: any): FragmentSchema | null {
   return null
 }
 
-export async function handleTournament(req: Request) {
+export async function handleTournament(
+  req: Request,
+  runtime: TournamentRuntime = {},
+) {
   const {
     messages,
     template,
@@ -122,12 +153,18 @@ export async function handleTournament(req: Request) {
     userID,
     teamID,
     accessToken,
+    runId,
+    memoryVersion,
+    memoryPack,
     evolution,
   }: {
     messages: CoreMessage[]
     userID: string | undefined
     teamID: string | undefined
     accessToken: string | undefined
+    runId?: string
+    memoryVersion?: number
+    memoryPack?: MemoryPack
     template: Templates
     model: LLMModel
     config: LLMModelConfig
@@ -151,6 +188,9 @@ export async function handleTournament(req: Request) {
     userID: string | undefined
     teamID: string | undefined
     accessToken: string | undefined
+    runId?: string
+    memoryVersion?: number
+    memoryPack?: MemoryPack
     template: Templates
     model: LLMModel
     config: LLMModelConfig
@@ -230,6 +270,18 @@ export async function handleTournament(req: Request) {
     ? evolution!.userRequest
     : messagesToBrief(messages)
 
+  // Consumption-only: never writes memory. Empty string when the pack is blank.
+  const memoryContext = formatMemoryForPrompt({
+    memoryItems: memoryPack?.memoryItems,
+    recentMessages: memoryPack?.recentMessages,
+    brain: memoryPack?.brain,
+  })
+  const cacheModelId = llmModelCacheId(model)
+  const planTemperature = 0.2
+  const planningSystem = memoryContext
+    ? `${PLANNING_SYSTEM_PROMPT}\n\n${memoryContext}`
+    : PLANNING_SYSTEM_PROMPT
+
   const baselineFiles = isEvolution
     ? (() => {
         const frag = evolution!.baselineFragment
@@ -279,6 +331,104 @@ export async function handleTournament(req: Request) {
         }
       }
 
+      // Candidates table is the server-side specimen log. Version Vault /
+      // Project Brain stay client-activated snapshots and are not replaced here.
+      const candidateRowIds = new Map<VariantId, string>()
+      const candidateExtras = new Map<
+        VariantId,
+        {
+          previewUrl?: string | null
+          repairNotes?: string | null
+          usage?: { inputTokens: number; outputTokens: number } | null
+          template?: string | null
+          stackLabel?: string | null
+        }
+      >()
+      const persistCandidateRow = async (input: {
+        id: VariantId
+        status: string
+        fragment?: unknown
+        error?: string | null
+        verification?: any
+        smoke?: any
+        architecture?: any
+        scores?: ReturnType<typeof scoresFromVerdict>
+        template?: string | null
+        stackLabel?: string | null
+        previewUrl?: string | null
+        repairNotes?: string | null
+        usage?: { inputTokens: number; outputTokens: number } | null
+      }) => {
+        if (!runtime.persistCandidate && !runtime.updateCandidate) return
+        const prev = candidateExtras.get(input.id) || {}
+        const extras = {
+          previewUrl:
+            input.previewUrl !== undefined ? input.previewUrl : prev.previewUrl,
+          repairNotes:
+            input.repairNotes !== undefined
+              ? input.repairNotes
+              : prev.repairNotes,
+          usage: input.usage !== undefined ? input.usage : prev.usage,
+          template: input.template !== undefined ? input.template : prev.template,
+          stackLabel:
+            input.stackLabel !== undefined ? input.stackLabel : prev.stackLabel,
+        }
+        candidateExtras.set(input.id, extras)
+        const data = buildCandidateRecordData({
+          id: input.id,
+          status: input.status,
+          fragment: input.fragment,
+          error: input.error,
+          verification: input.verification,
+          smoke: input.smoke,
+          architecture: input.architecture,
+          scores: input.scores,
+          template: extras.template,
+          stackLabel: extras.stackLabel,
+          previewUrl: extras.previewUrl,
+          repairNotes: extras.repairNotes,
+          usage: extras.usage,
+        })
+        const jsonSafe = JSON.parse(JSON.stringify(data)) as typeof data
+        try {
+          const existing = candidateRowIds.get(input.id)
+          if (existing && runtime.updateCandidate) {
+            await runtime.updateCandidate({
+              id: existing,
+              status: input.status,
+              data: jsonSafe,
+            })
+            return
+          }
+          if (!runtime.persistCandidate) return
+          const created = await runtime.persistCandidate({
+            variantId: input.id,
+            status: input.status,
+            data: jsonSafe,
+          })
+          if (created?.id) candidateRowIds.set(input.id, created.id)
+        } catch (err) {
+          console.warn(
+            '[evostack:candidates] persist failed',
+            input.id,
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
+
+      const persistSkipped = async (
+        variants: ReadonlyArray<{ id: VariantId }>,
+        message: string,
+      ) => {
+        for (const v of variants) {
+          await persistCandidateRow({
+            id: v.id,
+            status: 'not_attempted',
+            error: message,
+          })
+        }
+      }
+
       // ---- Phase 0: shared product plan (once for all 3 candidates) ----
       // Evolution reuses the existing plan — no planning LLM call.
       let plan: ApplicationPlan | null = null
@@ -287,21 +437,47 @@ export async function handleTournament(req: Request) {
         send({ type: 'plan', plan })
       } else {
         const planPrompt = `User request / conversation brief:\n\n${brief}\n\nProduce the shared ApplicationPlan that all three implementation candidates must satisfy.`
+        const planHash = stablePromptHash({
+          kind: 'application_plan',
+          model: cacheModelId,
+          temperature: planTemperature,
+          brief: planPrompt,
+          memoryVersion: memoryVersion ?? memoryPack?.memoryVersion ?? 0,
+        })
         const runPlanOnce = () =>
           withProviderRetry(async () =>
             generateObject({
               model: modelClient as LanguageModel,
               schema: applicationPlanSchema,
-              system: PLANNING_SYSTEM_PROMPT,
+              system: planningSystem,
               prompt: planPrompt,
               maxRetries: 0,
-              temperature: 0.2,
+              temperature: planTemperature,
             }),
           )
 
-        try {
+        const cachedPlanRaw = await readLlmCache(runtime.llmCache, planHash)
+        const cachedPlan = cachedPlanRaw
+          ? applicationPlanSchema.safeParse(cachedPlanRaw)
+          : null
+        if (cachedPlan?.success) {
+          console.log('[evostack:llm-cache] plan hit', {
+            model: cacheModelId,
+            promptHash: planHash,
+            runId: runId || null,
+          })
+          plan = normalizeApplicationPlan(cachedPlan.data)
+          send({ type: 'plan', plan })
+        } else {
+          try {
           const planned = await runPlanOnce()
           plan = normalizeApplicationPlan(planned.object)
+          await writeLlmCache(runtime.llmCache, planHash, planned.object)
+          console.log('[evostack:llm-cache] plan store', {
+            model: cacheModelId,
+            promptHash: planHash,
+            runId: runId || null,
+          })
           send({ type: 'plan', plan })
         } catch (planErr) {
           const quota = classifyProviderQuotaError(planErr)
@@ -323,6 +499,7 @@ export async function handleTournament(req: Request) {
                 message: quota.message,
               })
             }
+            await persistSkipped(skipVariants, quota.message)
             send({ type: 'tournament_done' })
             closed = true
             controller.close()
@@ -335,6 +512,7 @@ export async function handleTournament(req: Request) {
           try {
             const retryPlanned = await runPlanOnce()
             plan = normalizeApplicationPlan(retryPlanned.object)
+            await writeLlmCache(runtime.llmCache, planHash, retryPlanned.object)
             send({ type: 'plan', plan })
           } catch (retryErr) {
             const retryQuota = classifyProviderQuotaError(retryErr)
@@ -356,6 +534,7 @@ export async function handleTournament(req: Request) {
                   message: retryQuota.message,
                 })
               }
+              await persistSkipped(skipVariants, retryQuota.message)
               send({ type: 'tournament_done' })
               closed = true
               controller.close()
@@ -368,6 +547,7 @@ export async function handleTournament(req: Request) {
             plan = buildFallbackApplicationPlan(brief)
             send({ type: 'plan', plan })
           }
+        }
         }
       }
 
@@ -389,6 +569,55 @@ export async function handleTournament(req: Request) {
         variantsToGenerate.map((v) => v.id),
       )
 
+      // Auto (full catalog) → prefer a different template per variant.
+      // Evolution / Improve keeps the baseline stack so we don't rewrite the app.
+      const baselineTemplateId =
+        typeof evolution?.baselineFragment?.template === 'string'
+          ? evolution.baselineFragment.template
+          : undefined
+      const templateAssignments: Record<VariantId, AssignedVariantTemplate> =
+        isEvolution
+          ? Object.fromEntries(
+              variantsToGenerate.map((v) => {
+                const subset =
+                  (baselineTemplateId &&
+                    pickTemplateSubset(template, baselineTemplateId)) ||
+                  (catalogLooksLikeAuto(template)
+                    ? pickTemplateSubset(
+                        template,
+                        Object.keys(template)[0] || '',
+                      )
+                    : template)
+                const catalog = (subset || template) as Templates
+                const id = Object.keys(catalog)[0] || baselineTemplateId || ''
+                return [
+                  v.id,
+                  { id, catalog, stackLabel: stackLabelForTemplate(id) },
+                ]
+              }),
+            ) as Record<VariantId, AssignedVariantTemplate>
+          : assignDiverseTemplates({
+              catalog: template,
+              variantIds: variantsToGenerate.map((v) => v.id),
+              plan,
+              prompt: brief,
+            })
+
+      if (!isEvolution && catalogLooksLikeAuto(template)) {
+        console.log(
+          '[evostack:stack-advisor]',
+          Object.fromEntries(
+            variantsToGenerate.map((v) => [
+              v.id,
+              {
+                template: templateAssignments[v.id]?.id || null,
+                stack: templateAssignments[v.id]?.stackLabel || null,
+              },
+            ]),
+          ),
+        )
+      }
+
       type GenResult = {
         id: VariantId
         fragment: any
@@ -398,21 +627,32 @@ export async function handleTournament(req: Request) {
 
       for (const item of generationQueue) {
         const variant = VARIANTS.find((v) => v.id === item.id)!
+        const assigned = templateAssignments[variant.id]
         send({
           type: 'candidate_start',
           id: variant.id,
           label: variant.label,
           sigil: variant.sigil,
+          template: assigned?.id || undefined,
+          stackLabel: assigned?.stackLabel || undefined,
+        })
+        await persistCandidateRow({
+          id: variant.id,
+          status: 'generating',
+          template: assigned?.id || null,
+          stackLabel: assigned?.stackLabel || null,
         })
       }
 
       const genResults: GenResult[] = await Promise.all(
         generationQueue.map(async (item): Promise<GenResult> => {
           const variant = VARIANTS.find((v) => v.id === item.id)!
+          const assigned = templateAssignments[variant.id]
+          const candidateTemplate = assigned?.catalog || template
           try {
             const system = isEvolution
               ? buildEvolutionPrompt({
-                  template,
+                  template: candidateTemplate,
                   plan,
                   variantDirection: variant.systemSuffix,
                   userRequest: evolution!.userRequest,
@@ -424,11 +664,13 @@ export async function handleTournament(req: Request) {
                   fileTree:
                     evolution?.iterationContext?.fileTree ||
                     baselineFiles.map((f) => f.file_path),
+                  memoryContext,
                 })
               : buildGenerationPrompt({
-                  template,
+                  template: candidateTemplate,
                   plan,
                   variantDirection: variant.systemSuffix,
+                  memoryContext,
                 })
 
             const genParams = withGenerationTokenBudget(
@@ -443,8 +685,13 @@ export async function handleTournament(req: Request) {
               planComplexity: plan?.complexity ?? null,
               concurrentJobs: generationQueue.length,
               maxTokens: genParams.maxTokens ?? null,
+              templateId: assigned?.id || null,
             })
 
+            let capturedUsage: {
+              inputTokens: number
+              outputTokens: number
+            } | null = null
             const final = await withProviderRetry(async () => {
               const result = await streamObject({
                 model: modelClient as LanguageModel,
@@ -466,6 +713,17 @@ export async function handleTournament(req: Request) {
                   fragment: partial,
                 })
               }
+              try {
+                const raw = await Promise.resolve(
+                  (result as { usage?: Promise<unknown> | unknown }).usage,
+                )
+                const parsed = readProviderUsage(raw)
+                if (parsed.inputTokens > 0 || parsed.outputTokens > 0) {
+                  capturedUsage = parsed
+                }
+              } catch {
+                /* display-only; never fail generation */
+              }
               return (await object) ?? last
             })
 
@@ -476,6 +734,13 @@ export async function handleTournament(req: Request) {
                 id: variant.id,
                 error: err,
               })
+              await persistCandidateRow({
+                id: variant.id,
+                status: 'error',
+                error: err,
+                template: assigned?.id || null,
+                stackLabel: assigned?.stackLabel || null,
+              })
               return {
                 id: variant.id as VariantId,
                 fragment: null,
@@ -483,14 +748,23 @@ export async function handleTournament(req: Request) {
               }
             }
 
+            const stamped = applyAssignedTemplate(final, assigned)
             send({
               type: 'candidate_done',
               id: variant.id,
-              fragment: final,
+              fragment: stamped,
+            })
+            await persistCandidateRow({
+              id: variant.id,
+              status: 'done',
+              fragment: stamped,
+              template: assigned?.id || stamped?.template || null,
+              stackLabel: assigned?.stackLabel || null,
+              usage: capturedUsage,
             })
             return {
               id: variant.id as VariantId,
-              fragment: final,
+              fragment: stamped,
               error: null,
             }
           } catch (e: any) {
@@ -513,6 +787,13 @@ export async function handleTournament(req: Request) {
               type: 'candidate_error',
               id: variant.id,
               error: err,
+            })
+            await persistCandidateRow({
+              id: variant.id,
+              status: 'error',
+              error: err,
+              template: assigned?.id || null,
+              stackLabel: assigned?.stackLabel || null,
             })
             return {
               id: variant.id as VariantId,
@@ -558,8 +839,9 @@ export async function handleTournament(req: Request) {
         }
       })
 
-      // ---- Phase 2: local integrity → optional repair → runtime verify ----
-      // Each candidate is isolated: failure never aborts the tournament.
+      // ---- Phase 2: deterministic preflight → E2B deploy → verify ----
+      // Integrity/hydration heuristics are diagnostic only. Each candidate is
+      // isolated: failure never aborts the tournament or sibling deploys.
       type Verified = {
         id: VariantId
         fragment: any
@@ -593,7 +875,7 @@ export async function handleTournament(req: Request) {
             processStarted: false,
             previewReachable: false,
             errors: [
-              `${variantLabel} encountered a build issue. Generated fragment failed schema validation.`,
+              `${variantLabel} generated fragment failed validation.`,
             ],
             warnings: [],
             durationMs: 0,
@@ -616,168 +898,14 @@ export async function handleTournament(req: Request) {
           } as Verified
         }
 
-        const schemaAccepted = schema.safeParse(r.fragment).success
         const preflighted = runGeneratedProjectPreflight(frag)
         let workingFrag = preflighted.fragment
         let repairAttempts = 0
         let repairAttempt: RepairAttemptRecord | null = null
         const architectureCompliance = r.architectureCompliance
+        const integrity = preflighted.integrity
 
         try {
-          let integrity = preflighted.integrity
-          if (!canDeployIntegrity(integrity) && repairAttempts === 0) {
-            const initialIntegrity = integrity
-            send({
-              type: 'candidate_repairing',
-              id: r.id,
-              reason: 'integrity',
-            })
-            try {
-              const repaired = await repairFragmentIntegrity({
-                fragment: workingFrag,
-                integrity,
-                repairAttempts: 0,
-                plan,
-                model,
-                config,
-                productContext: productContextEarly,
-              })
-              repairAttempts = repaired.repairAttempts
-              repairAttempt = repaired.repairAttempt
-              const again = runGeneratedProjectPreflight(repaired.fragment)
-              workingFrag = again.fragment
-              integrity = again.integrity
-
-              if (repaired.repairAttempt.success && integrity.ok) {
-                // Integrity recovered — fragment fixed. Do NOT claim runtime/preview
-                // passed and do NOT omit a later deploy. Emit repair metadata only;
-                // candidate_verified after deployAndVerify is the URL source of truth.
-                send({
-                  type: 'candidate_repaired',
-                  id: r.id,
-                  fragment: workingFrag,
-                  repairAttempt: repaired.repairAttempt,
-                  initialVerification: integrityToFailedVerification(
-                    initialIntegrity,
-                    { candidateLabel: variantLabel },
-                  ),
-                  finalVerification: {
-                    status: 'partial',
-                    filesWritten: false,
-                    dependenciesInstalled: 'not_required',
-                    processStarted: false,
-                    previewReachable: false,
-                    errors: [],
-                    warnings: [
-                      formatIntegrityUserSummary(integrity, {
-                        candidateLabel: variantLabel,
-                        recovered: true,
-                      }) + ' Deploying for Preview…',
-                    ],
-                    durationMs: 0,
-                  },
-                  architectureCompliance,
-                  // Explicitly omit execution — deploy has not run yet.
-                })
-              } else if (!canDeployIntegrity(integrity)) {
-                send({
-                  type: 'candidate_repair_failed',
-                  id: r.id,
-                  repairAttempt: repaired.repairAttempt,
-                  initialVerification: integrityToFailedVerification(
-                    initialIntegrity,
-                    { candidateLabel: variantLabel },
-                  ),
-                  finalVerification: integrityToFailedVerification(integrity, {
-                    candidateLabel: variantLabel,
-                  }),
-                  architectureCompliance,
-                })
-              }
-            } catch (e: any) {
-              repairAttempts = 1
-              repairAttempt = {
-                attempted: true,
-                reason: 'integrity',
-                repairAttempts: 1,
-                success: false,
-                error: e?.message || 'Integrity repair crashed',
-              }
-              send({
-                type: 'candidate_repair_failed',
-                id: r.id,
-                repairAttempt,
-                initialVerification: integrityToFailedVerification(
-                  initialIntegrity,
-                  { candidateLabel: variantLabel },
-                ),
-                finalVerification: integrityToFailedVerification(integrity, {
-                  candidateLabel: variantLabel,
-                }),
-                architectureCompliance,
-              })
-            }
-          }
-
-          const gated = runGeneratedProjectPreflight(workingFrag)
-          workingFrag = gated.fragment
-          integrity = gated.integrity
-          if (!canDeployIntegrity(integrity)) {
-            const verification = integrityToFailedVerification(integrity, {
-              candidateLabel: variantLabel,
-            })
-            if (!schemaAccepted) {
-              verification.errors = [
-                `${variantLabel}: refusing deploy — soft-accepted fragment still has compile-blocking integrity issues.`,
-                ...verification.errors,
-              ]
-            }
-            if (repairAttempt && !repairAttempt.success) {
-              const details = verification.errors.slice(1)
-              verification.errors = [
-                formatIntegrityUserSummary(integrity, {
-                  candidateLabel: variantLabel,
-                  repaired: true,
-                }),
-                ...details,
-              ].filter(Boolean)
-            }
-            // Shared failure mode diagnostic: compile-blocking integrity (no E2B).
-            logRuntimePreviewDiagnostic(
-              'candidate_integrity_blocked',
-              buildRuntimePreviewDiagnostic({
-                candidateId: r.id,
-                candidateLabel: variantLabel,
-                verification,
-                execution: null,
-                port:
-                  typeof workingFrag.port === 'number'
-                    ? workingFrag.port
-                    : null,
-                deployError: verification.errors[0],
-                integrityIssueCodes: integrity.issues
-                  .filter((i) => i.severity === 'error')
-                  .map((i) => i.code),
-              }),
-            )
-            send({
-              type: 'candidate_verified',
-              id: r.id,
-              verification,
-            })
-            return {
-              id: r.id,
-              fragment: workingFrag,
-              originalFragment: frag,
-              initialVerification: verification,
-              finalVerification: verification,
-              repairAttempt,
-              repairAttempts,
-              initialArchitectureCompliance: r.architectureCompliance,
-              architectureCompliance,
-            } as Verified
-          }
-
           const { verification, execution } = await deployAndVerify(
             workingFrag,
             {
@@ -792,26 +920,6 @@ export async function handleTournament(req: Request) {
               ...(verification.warnings || []),
               ...qualityWarnings,
             ]
-          }
-          if (verification.status === 'failed' && verification.errors[0]) {
-            const first = verification.errors[0]
-            if (
-              /Module not found|Can't resolve|Cannot find module/i.test(first)
-            ) {
-              const missing =
-                first.match(/['"]([^'"]+)['"]/)?.[1] ||
-                first.match(/resolve ['"]?([^'"\s]+)/)?.[1]
-              verification.errors = [
-                `${variantLabel} encountered a build issue.${
-                  missing ? ` Missing module: ${missing}.` : ''
-                }${
-                  repairAttempts === 0
-                    ? ' Attempted automatic repair when eligible.'
-                    : ' Could not recover this candidate.'
-                }`,
-                ...verification.errors,
-              ]
-            }
           }
           logRuntimePreviewDiagnostic(
             'candidate_deploy',
@@ -843,16 +951,20 @@ export async function handleTournament(req: Request) {
             execution,
           } as Verified
         } catch (e: any) {
+          const details = [
+            e?.message,
+            e?.cause?.message,
+            e?.code ? `code=${e.code}` : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')
           const verification: VerificationResult = {
             status: 'failed',
             filesWritten: false,
             dependenciesInstalled: 'not_required',
             processStarted: false,
             previewReachable: false,
-            errors: [
-              `${variantLabel} encountered a build issue.`,
-              e?.message || 'Verification crashed',
-            ],
+            errors: [details || `${variantLabel} verification crashed`],
             warnings: [],
             durationMs: 0,
           }
@@ -877,7 +989,8 @@ export async function handleTournament(req: Request) {
 
       const verified = await Promise.all(verifyTasks)
 
-      // ---- Phase 2b: unified ONE-SHOT repair (architecture and/or runtime) ----
+      // ---- Phase 2b: ONE-SHOT repair after genuine compile/runtime failure ----
+      // Never repair healthy previews, architecture-only gaps, or E2B/infra failures.
       const productContext = productContextEarly
 
       const afterRepair = await Promise.all(
@@ -913,6 +1026,7 @@ export async function handleTournament(req: Request) {
               config,
               deployOpts: { userID, teamID, accessToken },
               productContext,
+              llmCache: runtime.llmCache,
             })
 
             // Emit final architecture after the single repair (no second repair).
@@ -1046,23 +1160,25 @@ export async function handleTournament(req: Request) {
 
       // ---- Phase 3: recommendation / validate (NO extra LLM judge) ----
       // User inspects all candidates and chooses. Recommendation is local-only.
+      let verdictOut: ReturnType<typeof buildDeterministicTournamentVerdict> | undefined
       if (isSingleIteration) {
         const only = afterSmoke[0]
         if (only) {
+          verdictOut = buildSingleIterationVerdict({
+            id: only.id,
+            verification: only.finalVerification,
+            architecture: only.architectureCompliance,
+            smoke: only.smoke,
+            previousScore: evolution?.previousScore,
+            userRequest: evolution?.userRequest,
+          })
           send({
             type: 'verdict',
-            verdict: buildSingleIterationVerdict({
-              id: only.id,
-              verification: only.finalVerification,
-              architecture: only.architectureCompliance,
-              smoke: only.smoke,
-              previousScore: evolution?.previousScore,
-              userRequest: evolution?.userRequest,
-            }),
+            verdict: verdictOut,
           })
         }
       } else {
-        const verdict = buildDeterministicTournamentVerdict(
+        verdictOut = buildDeterministicTournamentVerdict(
           afterSmoke.map((r) => ({
             id: r.id,
             fragment: r.fragment,
@@ -1071,7 +1187,59 @@ export async function handleTournament(req: Request) {
             smoke: r.smoke,
           })),
         )
-        send({ type: 'verdict', verdict })
+        send({ type: 'verdict', verdict: verdictOut })
+      }
+
+      const finished = new Set(afterSmoke.map((r) => r.id))
+      for (const r of afterSmoke) {
+        const runtimeStatus = r.finalVerification?.status
+        const status =
+          runtimeStatus === 'failed'
+            ? 'verify_failed'
+            : r.smoke?.status === 'failed' || r.smoke?.status === 'timeout'
+              ? 'smoke_failed'
+              : r.smoke
+                ? 'tested'
+                : runtimeStatus === 'passed' || runtimeStatus === 'partial'
+                  ? 'verified'
+                  : 'done'
+        await persistCandidateRow({
+          id: r.id,
+          status,
+          fragment: r.fragment,
+          verification: r.finalVerification,
+          smoke: r.smoke,
+          architecture: r.architectureCompliance,
+          scores: scoresFromVerdict(verdictOut, r.id),
+          error: r.finalVerification?.errors?.[0] || null,
+          template:
+            templateAssignments[r.id]?.id ||
+            (typeof r.fragment?.template === 'string'
+              ? r.fragment.template
+              : null),
+          stackLabel: templateAssignments[r.id]?.stackLabel || null,
+          previewUrl:
+            r.execution &&
+            'url' in r.execution &&
+            typeof r.execution.url === 'string'
+              ? r.execution.url
+              : typeof r.finalVerification?.url === 'string'
+                ? r.finalVerification.url
+                : null,
+          repairNotes: compactRepairNotes(r.repairAttempt),
+        })
+      }
+      for (const r of genResults) {
+        if (finished.has(r.id)) continue
+        await persistCandidateRow({
+          id: r.id,
+          status: r.error ? 'error' : 'done',
+          fragment: r.fragment,
+          error: r.error,
+          scores: scoresFromVerdict(verdictOut, r.id),
+          template: templateAssignments[r.id]?.id || null,
+          stackLabel: templateAssignments[r.id]?.stackLabel || null,
+        })
       }
 
       send({ type: 'tournament_done' })

@@ -21,6 +21,10 @@ import {
   type WorkspaceMode,
 } from '@/lib/arena-workspace'
 import { getFragmentFiles, hasFragmentCode } from '@/lib/fragment'
+import {
+  enrichProjectExportFiles,
+  type ProjectExportMeta,
+} from '@/lib/project-export'
 import { downloadProjectZip, zipFilename } from '@/lib/project-zip'
 import { FragmentSchema } from '@/lib/schema'
 import { getTemplateId } from '@/lib/templates'
@@ -51,6 +55,7 @@ export function ArenaWorkspace({
   onAskKindChange,
   onSeedText,
   designPanel,
+  exportMeta,
 }: {
   mode: WorkspaceMode
   onModeChange: (mode: WorkspaceMode) => void
@@ -73,6 +78,7 @@ export function ArenaWorkspace({
   onAskKindChange: (kind: AskRequestKind | null) => void
   onSeedText: (text: string) => void
   designPanel?: ReactNode
+  exportMeta?: ProjectExportMeta | null
 }) {
   const isLinkAvailable =
     result?.template &&
@@ -85,9 +91,18 @@ export function ArenaWorkspace({
 
   function handleDownloadZip() {
     if (!canZip) return
+    const packed = files.map((f) => ({
+      path: f.file_path,
+      content: f.file_content,
+    }))
     downloadProjectZip(
-      zipFilename(projectName),
-      files.map((f) => ({ path: f.file_path, content: f.file_content })),
+      zipFilename(exportMeta?.plan?.productName || projectName),
+      enrichProjectExportFiles(packed, {
+        ...exportMeta,
+        templateId:
+          exportMeta?.templateId ||
+          (typeof fragment?.template === 'string' ? fragment.template : null),
+      }),
     )
   }
 

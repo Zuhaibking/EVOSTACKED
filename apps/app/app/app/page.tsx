@@ -53,8 +53,21 @@ import {
 import { formatCandidateBuildDiagnostics } from '@/lib/build-failure-diagnostics'
 import { buildCandidatePreviewAction } from '@/lib/candidate-preview'
 import {
+  estimateTournamentCost,
+  type GenerationCostSummary,
+} from '@/lib/generation-cost'
+import { shouldPreferMorph } from '@/lib/morph-preference'
+import type { ProjectExportMeta } from '@/lib/project-export'
+import {
+  compactArchitectureSummary,
+  compactRepairNotes,
+  compactSmokeSummary,
+  compactVerificationSummary,
+} from '@/lib/tournament-candidate-record'
+import {
   buildBrainFromTournament,
   ProjectBrain,
+  recordImprovement,
   selectActiveProjectVersion,
 } from '@/lib/project-brain'
 import { FragmentSchema } from '@/lib/schema'
@@ -446,6 +459,39 @@ export default function Home() {
     [specimenArchive, tournament.candidates],
   )
 
+  const generationCost = useMemo((): GenerationCostSummary | null => {
+    if (projectBrain?.generationUsage) {
+      const u = projectBrain.generationUsage
+      return {
+        modelId: u.modelId,
+        modelName: u.modelName || u.modelId,
+        inputTokens: u.inputTokens,
+        outputTokens: u.outputTokens,
+        totalTokens: u.totalTokens,
+        estimatedUsd: u.estimatedUsd,
+        calls: u.calls ?? 0,
+        source: u.source || 'estimate',
+      }
+    }
+    if (tournament.phase !== 'done') return null
+    return estimateTournamentCost({
+      model: currentModel,
+      plan: tournament.plan || projectBrain?.plan,
+      messages,
+      candidates: retainedCandidates,
+      isEvolution: evolutionRound?.candidateMode === 'single',
+    })
+  }, [
+    projectBrain?.generationUsage,
+    tournament.phase,
+    tournament.plan,
+    projectBrain?.plan,
+    messages,
+    retainedCandidates,
+    currentModel,
+    evolutionRound?.candidateMode,
+  ])
+
   // Inspect the first finished specimen in Preview. Never promotes activeVersion.
   useEffect(() => {
     if (selectedCandidate) return
@@ -585,6 +631,71 @@ export default function Home() {
     }
   }
 
+  /** Small Design/Mobile/UX/Feature chips try Morph first, then full Improve. */
+  async function applySmallChipViaMorph(opts: {
+    userRequest: string
+    displayText: string
+  }): Promise<boolean> {
+    const runId = vaultRunIdRef.current
+    const token = (await getAccessToken()) || accessTokenRef.current
+    if (!runId || !token || !fragment || !hasFragmentCode(fragment)) return false
+    const ctrl = new AbortController()
+    chatAbortRef.current = ctrl
+    setChatLoading(true)
+    setErrorMessage('')
+    try {
+      const res = await apiFetch('/v1/morph', {
+        method: 'POST',
+        token,
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          userID: session?.user?.id,
+          teamID: userTeam?.id,
+          messages: toAISDKMessages([
+            { role: 'user', content: [{ type: 'text', text: opts.userRequest }] },
+          ]),
+          template: currentTemplate,
+          model: currentModel,
+          config: languageModel,
+          currentFragment: fragment,
+          runId,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      const nextFragment = data?.fragment
+      if (!res.ok || !(nextFragment?.file_path || nextFragment?.code)) {
+        return false
+      }
+      if (typeof data?.memoryRevision === 'number') {
+        setMemoryRevision(data.memoryRevision)
+      }
+      await deployFragment(nextFragment)
+      setProjectBrain((prev) =>
+        prev
+          ? recordImprovement(prev, {
+              request: opts.displayText || opts.userRequest,
+              note: 'Applied via Morph (small Design/UX/Feature change)',
+            })
+          : prev,
+      )
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'user',
+          content: [{ type: 'text', text: opts.displayText || opts.userRequest }],
+        },
+      ])
+      posthog.capture('morph_chip_apply', { model: languageModel.model })
+      return true
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return true
+      return false
+    } finally {
+      setChatLoading(false)
+      chatAbortRef.current = null
+    }
+  }
+
   // Do not auto-activate a specimen — user must click "Use this version".
   // Preview selection remains manual via CandidateSwitcher.
 
@@ -609,8 +720,8 @@ export default function Home() {
         .join('\n')
         .trim() || undefined
 
-    setProjectBrain((prev) =>
-      buildBrainFromTournament({
+    setProjectBrain((prev) => {
+      const next = buildBrainFromTournament({
         previous: prev,
         plan: tournament.plan,
         fragment: winner.fragment,
@@ -621,8 +732,16 @@ export default function Home() {
         verdict: tournament.verdict,
         repairAttempt: winner.repairAttempt ?? null,
         userRequest,
-      }),
-    )
+      })
+      const usage = estimateTournamentCost({
+        model: currentModel,
+        plan: tournament.plan,
+        messages,
+        candidates: tournament.candidates,
+        isEvolution: false,
+      })
+      return { ...next, generationUsage: usage }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     tournament.phase,
@@ -744,7 +863,19 @@ export default function Home() {
           }),
         )
       }
-      return next
+      const usage = estimateTournamentCost({
+        model: currentModel,
+        plan: next.plan || tournament.plan,
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: completed.userRequest }],
+          },
+        ],
+        candidates: tournament.candidates,
+        isEvolution: true,
+      })
+      return { ...next, generationUsage: usage }
     })
     if (winner) {
       setSpecimenArchive((prev) => {
@@ -1032,6 +1163,24 @@ export default function Home() {
       })
       if (!prepared.ok || !prepared.composed) {
         if (prepared.reason) setErrorMessage(prepared.reason)
+        return
+      }
+      const morphPref = shouldPreferMorph({
+        morphEnabled: useMorphApply,
+        hasActiveFragment: hasFragmentCode(fragment),
+        kind,
+        text: prepared.composed.rawText || chatInput,
+      })
+      if (morphPref.prefer) {
+        const composed = prepared.composed
+        void applySmallChipViaMorph({
+          userRequest: composed.userRequest,
+          displayText: composed.rawText || chatInput,
+        }).then((ok) => {
+          if (!ok) handleEvolve(composed.userRequest)
+        })
+        setChatInput('')
+        setFiles([])
         return
       }
       handleEvolve(prepared.composed.userRequest)
@@ -1352,6 +1501,48 @@ export default function Home() {
     projectBrain?.plan?.productName ||
     (typeof fragment?.title === 'string' ? fragment.title : '') ||
     undefined
+  const selectedForExport = selectedCandidate
+    ? retainedCandidates[selectedCandidate]
+    : undefined
+  const firstUserPrompt =
+    messages
+      .find((m) => m.role === 'user')
+      ?.content?.filter((p) => p.type === 'text')
+      .map((p) => ('text' in p ? String(p.text) : ''))
+      .join('\n')
+      .trim() ||
+    projectBrain?.userRequests?.[0] ||
+    ''
+  const exportMeta: ProjectExportMeta = {
+    prompt: firstUserPrompt,
+    plan: projectBrain?.plan || tournament.plan,
+    variantId: selectedCandidate,
+    variantLabel: selectedForExport?.label,
+    scores: selectedForExport
+      ? {
+          clarity: selectedForExport.scoreClarity,
+          fit: selectedForExport.scoreFit,
+          polish: selectedForExport.scorePolish,
+          composite: selectedForExport.scoreComposite,
+        }
+      : null,
+    health: appHealth
+      ? { score: appHealth.score, statusLabel: appHealth.statusLabel }
+      : null,
+    architectureSummary: compactArchitectureSummary(
+      selectedForExport?.architectureCompliance,
+    ),
+    verificationSummary: compactVerificationSummary(
+      selectedForExport?.finalVerification || selectedForExport?.verification,
+    ),
+    smokeSummary: compactSmokeSummary(selectedForExport?.smoke),
+    repairNotes: compactRepairNotes(selectedForExport?.repairAttempt),
+    templateId:
+      (typeof selectedForExport?.fragment?.template === 'string'
+        ? selectedForExport.fragment.template
+        : null) ||
+      (typeof fragment?.template === 'string' ? fragment.template : null),
+  }
   const chipsEnabled =
     !!projectBrain?.plan &&
     !!projectBrain.activeCandidateId &&
@@ -1425,6 +1616,7 @@ export default function Home() {
         formatCandidateBuildDiagnostics(retainedCandidates[id])
       }
       appHealth={appHealth}
+      generationCost={generationCost}
       providerBudgetLabel={budgetNotice}
     />
   )
@@ -1488,6 +1680,7 @@ export default function Home() {
             askKind={askKind}
             onAskKindChange={setAskKind}
             onSeedText={setChatInput}
+            exportMeta={exportMeta}
             designPanel={
               evolutionRound ? (
                 <ImproveAppPanel

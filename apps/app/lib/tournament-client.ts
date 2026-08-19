@@ -60,6 +60,9 @@ export type Candidate = {
   scoreComposite?: number
   scoreComment?: string
   isWinner?: boolean
+  /** Assigned E2B template id (known even if generation fails). */
+  template?: string
+  stackLabel?: string
 }
 
 const initialCandidates = (): Record<VariantId, Candidate> =>
@@ -259,7 +262,12 @@ export function useTournament() {
     if (evt.type === 'candidate_start') {
       setCandidates((c) => ({
         ...c,
-        [evt.id]: { ...c[evt.id], status: 'generating' },
+        [evt.id]: {
+          ...c[evt.id],
+          status: 'generating',
+          template: evt.template || c[evt.id]?.template,
+          stackLabel: evt.stackLabel || c[evt.id]?.stackLabel,
+        },
       }))
     } else if (evt.type === 'candidate_chunk') {
       setCandidates((c) => ({

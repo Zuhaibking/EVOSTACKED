@@ -60,6 +60,7 @@ export class TournamentController {
     }
     await this.runs.patchMeta(user.userId, runId, { hasTournament: true })
     const pack = await this.memory.getLatest(user.userId, runId)
+    const modelId = `${body?.model?.providerId || 'unknown'}:${body?.model?.id || 'unknown'}`
 
     const web = await handleTournament(
       toFetchRequest(req.headers, {
@@ -67,8 +68,48 @@ export class TournamentController {
         runId,
         userID: user.userId,
         memoryVersion: pack.memoryVersion,
-        memoryItems: pack.memoryItems,
+        memoryPack: pack,
       }),
+      {
+        llmCache: {
+          get: (args) =>
+            this.memory.getLlmCached({
+              userId: user.userId,
+              runId,
+              memoryVersion: pack.memoryVersion,
+              model: modelId,
+              promptHash: args.promptHash,
+            }),
+          set: (args) =>
+            this.memory.setLlmCached({
+              userId: user.userId,
+              runId,
+              memoryVersion: pack.memoryVersion,
+              model: modelId,
+              promptHash: args.promptHash,
+              payload: args.payload,
+            }),
+        },
+        persistCandidate: async (row) => {
+          const created = await this.runs.createCandidate(
+            user.userId,
+            runId,
+            row.variantId,
+            row.status,
+            row.data,
+          )
+          return { id: created.id }
+        },
+        updateCandidate: async (row) => {
+          await this.runs.updateCandidate(
+            user.userId,
+            runId,
+            row.id,
+            row.status,
+            row.data,
+          )
+        },
+      },
     )
 
     res.status(web.status)

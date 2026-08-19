@@ -5,6 +5,7 @@ import {
 import { normalizeFragmentStylesheets } from '@/lib/css-integrity'
 import { normalizeFragmentSourceFiles } from '@/lib/source-syntax'
 import {
+  canDeployIntegrity,
   validateFragmentIntegrity,
   type FragmentIntegrityResult,
 } from '@/lib/fragment-integrity'
@@ -32,6 +33,13 @@ import {
   VerificationResult,
 } from '@/lib/verification'
 import { ExecutionResult } from '@/lib/types'
+import {
+  llmModelCacheId,
+  readLlmCache,
+  stablePromptHash,
+  writeLlmCache,
+  type LlmCacheLookup,
+} from '@/lib/llm-cache'
 import { generateObject, LanguageModel } from 'ai'
 
 export type RepairAndReverifyInput = {
@@ -48,6 +56,8 @@ export type RepairAndReverifyInput = {
   productContext?: string
   /** When true, skip E2B after apply (integrity-only pre-deploy repair). */
   skipRedeploy?: boolean
+  /** Optional LLM response cache for the repair generateObject call. */
+  llmCache?: LlmCacheLookup
 }
 
 export type RepairAndReverifyResult = {
@@ -127,27 +137,55 @@ export async function repairAndReverify(
 
   const { model: _m, apiKey: _k, ...modelParams } = input.config
   const modelClient = getModelClient(input.model, input.config)
+  const repairPrompt = buildUnifiedRepairPrompt({
+    reason,
+    fragment: originalFragment,
+    plan: input.plan,
+    architectureCompliance: initialArchitectureCompliance,
+    verification: initialVerification,
+    integrity: initialIntegrity,
+    productContext: input.productContext,
+  })
+  const repairTemperature = 0.2
+  const promptHash = stablePromptHash({
+    kind: 'repair',
+    model: llmModelCacheId(input.model),
+    temperature: repairTemperature,
+    prompt: repairPrompt,
+  })
 
-  let repairRaw: unknown
+  let repairRaw: unknown = await readLlmCache(input.llmCache, promptHash)
+  if (repairRaw != null) {
+    const cached = repairResultSchema.safeParse(repairRaw)
+    if (cached.success) {
+      console.log('[evostack:llm-cache] repair hit', {
+        model: llmModelCacheId(input.model),
+        promptHash,
+      })
+      repairRaw = cached.data
+    } else {
+      repairRaw = null
+    }
+  }
+
   try {
-    const result = await generateObject({
-      model: modelClient as LanguageModel,
-      schema: repairResultSchema,
-      system: REPAIR_SYSTEM_PROMPT,
-      prompt: buildUnifiedRepairPrompt({
-        reason,
-        fragment: originalFragment,
-        plan: input.plan,
-        architectureCompliance: initialArchitectureCompliance,
-        verification: initialVerification,
-        integrity: initialIntegrity,
-        productContext: input.productContext,
-      }),
-      maxRetries: 0,
-      temperature: 0.2,
-      ...modelParams,
-    })
-    repairRaw = result.object
+    if (repairRaw == null) {
+      const result = await generateObject({
+        model: modelClient as LanguageModel,
+        schema: repairResultSchema,
+        system: REPAIR_SYSTEM_PROMPT,
+        prompt: repairPrompt,
+        maxRetries: 0,
+        temperature: repairTemperature,
+        ...modelParams,
+      })
+      repairRaw = result.object
+      await writeLlmCache(input.llmCache, promptHash, repairRaw)
+      console.log('[evostack:llm-cache] repair store', {
+        model: llmModelCacheId(input.model),
+        promptHash,
+      })
+    }
   } catch (e: any) {
     return base({
       attempted: true,
@@ -181,9 +219,9 @@ export async function repairAndReverify(
   const finalIntegrity = validateFragmentIntegrity(repairedFragment)
 
   if (input.skipRedeploy) {
-    const integrityOk = finalIntegrity.ok
+    const deployable = canDeployIntegrity(finalIntegrity)
     return {
-      fragment: repairedFragment,
+      fragment: deployable ? repairedFragment : originalFragment,
       originalFragment,
       initialVerification,
       finalVerification: initialVerification,
@@ -194,10 +232,10 @@ export async function repairAndReverify(
         attempted: true,
         reason,
         repairAttempts,
-        success: integrityOk,
+        success: deployable,
         explanation: applied.explanation,
         changedFiles: applied.changedFiles,
-        error: integrityOk
+        error: deployable
           ? undefined
           : finalIntegrity.issues
               .filter((i) => i.severity === 'error')
@@ -224,6 +262,33 @@ export async function repairAndReverify(
       (verification.status === 'partial' ||
         verification.previewReachable ||
         Boolean(execution && 'url' in execution && execution.url))
+    if (!deployOk) {
+      // Keep the original fragment and original diagnostic. Do not replace a
+      // generated candidate with a worse repaired copy, and do not hide the
+      // first real E2B error behind a generic repair failure.
+      return {
+        fragment: originalFragment,
+        originalFragment,
+        initialVerification,
+        finalVerification: initialVerification,
+        initialArchitectureCompliance,
+        finalArchitectureCompliance,
+        integrity: finalIntegrity,
+        execution: undefined,
+        repairAttempt: {
+          attempted: true,
+          reason,
+          repairAttempts,
+          success: false,
+          explanation: applied.explanation,
+          changedFiles: applied.changedFiles,
+          error:
+            verification.errors[0] ||
+            'Repair applied but runtime verification still failed',
+        },
+        repairAttempts,
+      }
+    }
     return {
       fragment: repairedFragment,
       originalFragment,
@@ -237,19 +302,15 @@ export async function repairAndReverify(
         attempted: true,
         reason,
         repairAttempts,
-        success: deployOk,
+        success: true,
         explanation: applied.explanation,
         changedFiles: applied.changedFiles,
-        error: deployOk
-          ? undefined
-          : verification.errors[0] ||
-            'Repair applied but runtime verification still failed',
       },
       repairAttempts,
     }
   } catch (e: any) {
     return {
-      fragment: repairedFragment,
+      fragment: originalFragment,
       originalFragment,
       initialVerification,
       finalVerification: initialVerification,

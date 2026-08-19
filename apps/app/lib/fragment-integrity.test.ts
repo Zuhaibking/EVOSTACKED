@@ -199,7 +199,8 @@ function aquaClubFixed(): FragmentSchema {
   assert.ok(imports.includes('./lib/util'))
 }
 
-// 8. Integrity repair eligibility — triggers once, not endlessly
+// 8. Integrity-only (no runtime evidence) must not spend repair budget.
+// Integrity + genuine runtime failure is still eligible once.
 {
   const integrity = validateFragmentIntegrity(aquaClubBroken())
   assert.equal(
@@ -207,13 +208,36 @@ function aquaClubFixed(): FragmentSchema {
       repairAttempts: 0,
       integrity,
     }),
+    false,
+  )
+  assert.equal(selectRepairReason({ integrity }), null)
+  const runtime = {
+    status: 'failed' as const,
+    filesWritten: true,
+    dependenciesInstalled: true,
+    processStarted: true,
+    previewReachable: false,
+    errors: ["Module not found: Can't resolve '../components/Classes'"],
+    warnings: [],
+    durationMs: 800,
+  }
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      integrity,
+      verification: runtime,
+    }),
     true,
   )
-  assert.equal(selectRepairReason({ integrity }), 'integrity')
+  assert.equal(
+    selectRepairReason({ integrity, verification: runtime }),
+    'integrity',
+  )
   assert.equal(
     shouldAttemptRepair({
       repairAttempts: 1,
       integrity,
+      verification: runtime,
     }),
     false,
   )
@@ -482,6 +506,7 @@ export default function H(){ return <Missing /> }`,
   const result = validateFragmentIntegrity(frag)
   assert.ok(result.issues.some((i) => i.code === 'missing_npm_dependency'))
   assert.equal(result.ok, false)
+  assert.equal(canDeployIntegrity(result), true)
 }
 
 // 17. Generic missing component (not product-specific names)
@@ -535,13 +560,13 @@ export default function H(){ return <Missing /> }`,
     'utf8',
   )
   assert.match(route, /runGeneratedProjectPreflight/)
-  assert.match(route, /canDeployIntegrity/)
   assert.match(route, /formatNonBlockingIntegrityWarnings/)
-  assert.match(route, /repairFragmentIntegrity/)
-  assert.doesNotMatch(
-    route,
-    /if \(!integrity\.ok\) \{\s*const verification = integrityToFailedVerification/,
-  )
+  assert.match(route, /deployAndVerify/)
+  assert.match(route, /repairAndReverify/)
+  assert.doesNotMatch(route, /repairFragmentIntegrity/)
+  assert.doesNotMatch(route, /canDeployIntegrity/)
+  assert.doesNotMatch(route, /Could not recover this candidate/)
+  assert.doesNotMatch(route, /refusing deploy/)
   // Evolution uses the same route + Phase 2 verifyTasks map (not a separate deploy path)
   assert.match(route, /isEvolution|handleTournament/)
   assert.match(route, /buildEvolutionPrompt/)

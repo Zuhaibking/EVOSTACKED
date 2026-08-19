@@ -12,6 +12,7 @@ import { PrismaModule } from './prisma/prisma.module'
 import { RunsModule } from './runs/runs.module'
 import { SandboxModule } from './sandbox/sandbox.module'
 import { TournamentModule } from './tournament/tournament.module'
+import { ShareModule } from './share/share.module'
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { TournamentModule } from './tournament/tournament.module'
     TournamentModule,
     MorphModule,
     SandboxModule,
+    ShareModule,
   ],
   controllers: [HealthController],
   providers: [

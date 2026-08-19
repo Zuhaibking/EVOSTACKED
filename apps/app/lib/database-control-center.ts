@@ -224,6 +224,7 @@ export const EVOSTACK_PLATFORM_ENDPOINTS: PlatformEndpoint[] = [
   { method: 'POST', route: '/v1/sandbox', description: 'Sandbox / preview' },
   { method: 'POST', route: '/v1/tournament', description: 'Product / Premium / Innovate' },
   { method: 'POST', route: '/v1/morph', description: 'Morph edit' },
+  { method: 'GET', route: '/v1/public/runs/:id', description: 'Public tournament share' },
 ]
 
 export type SafeClientEnv = {

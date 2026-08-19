@@ -1,3 +1,5 @@
+import type { PublicSharePayload } from '@/lib/public-share'
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333'
 
 export function apiUrl(path: string) {
@@ -179,4 +181,13 @@ export async function getApiHealth() {
   const res = await apiFetch('/health')
   if (!res.ok) throw new Error(await res.text())
   return res.json() as Promise<{ ok: boolean; service?: string }>
+}
+
+export async function getPublicRunShare(runId: string) {
+  const res = await apiFetch(`/v1/public/runs/${encodeURIComponent(runId)}`, {
+    cache: 'no-store',
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(await res.text())
+  return res.json() as Promise<PublicSharePayload>
 }

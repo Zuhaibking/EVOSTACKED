@@ -156,7 +156,7 @@ function test(name: string, fn: () => void) {
   }
 }
 
-test('1. Architecture failure triggers one repair', () => {
+test('1. Architecture failure with a healthy preview does not trigger repair', () => {
   const arch = mockGymArchFail()
   assert.equal(arch.status, 'failed')
   assert.equal(
@@ -165,14 +165,14 @@ test('1. Architecture failure triggers one repair', () => {
       architectureCompliance: arch,
       verification: passedVerification(),
     }),
-    true,
+    false,
   )
   assert.equal(
     selectRepairReason({
       architectureCompliance: arch,
       verification: passedVerification(),
     }),
-    'architecture',
+    null,
   )
 })
 
@@ -252,7 +252,7 @@ test('6. Multiple failed candidates repair independently (eligibility)', () => {
     architectureCompliance: gymArchPass(),
     verification: passedVerification(),
   })
-  assert.equal(a, true)
+  assert.equal(a, false)
   assert.equal(b, true)
   assert.equal(c, false)
 })
@@ -465,6 +465,16 @@ test('E2B transport fetch failed does not trigger LLM source repair', () => {
       verification: failedVerification(['Module not found: recharts']),
     }),
     true,
+  )
+  assert.equal(
+    shouldAttemptRepair({
+      repairAttempts: 0,
+      architectureCompliance: mockGymArchFail(),
+      verification: failedVerification([
+        'E2B_API_KEY is missing from the API process. Sandbox create skipped.',
+      ]),
+    }),
+    false,
   )
 })
 

@@ -3,6 +3,7 @@
 import { LoadingState } from '@/components/ui/loading-state'
 import { candidateLoadingLabel } from '@/lib/arena-loading'
 import { hasFragmentCode } from '@/lib/fragment'
+import { stackLabelForTemplate } from '@/lib/templates'
 import type { Candidate, CandidateStatus } from '@/lib/tournament-client'
 import { VARIANTS, type VariantId } from '@/lib/tournament'
 import {
@@ -100,6 +101,13 @@ export function CandidateSwitcher({
         const isSelected = selectedId === c.id
         const activation = canActivateCandidate(c)
         const hasSource = hasFragmentCode(c.fragment)
+        const stack =
+          c.stackLabel ||
+          (c.template ? stackLabelForTemplate(c.template) : '') ||
+          (typeof c.fragment?.template === 'string'
+            ? stackLabelForTemplate(c.fragment.template)
+            : '')
+        const showStack = !!stack && stack !== 'Unknown'
         const loading = candidateLoadingLabel(c.status)
         const tone =
           display.tone === 'ready'
@@ -138,6 +146,11 @@ export function CandidateSwitcher({
                   {formatPct(c.scoreComposite)}
                 </span>
               </div>
+              {showStack ? (
+                <span className="mt-0.5 inline-flex h-4 items-center px-1 border border-border/70 font-mono text-[8px] tracking-[0.14em] uppercase text-muted-foreground">
+                  {stack}
+                </span>
+              ) : null}
               <div
                 className={`mt-0.5 flex items-center gap-1.5 font-mono text-[9px] tracking-[0.16em] uppercase ${tone}`}
               >

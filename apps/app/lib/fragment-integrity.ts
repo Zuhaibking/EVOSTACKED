@@ -548,9 +548,10 @@ export function validateFragmentIntegrity(
 }
 
 /**
- * Issues that prevent Next/E2B from compiling or starting.
- * Hydration mismatches and unused extra stylesheets are not compile failures —
- * they must not skip sandbox deploy.
+ * Issues that make source uncompilable (malformed / impossible imports).
+ * Hydration heuristics, missing-npm heuristics, and missing-provider heuristics
+ * are not compile failures — preflight already closes deps/providers, and E2B
+ * is the source of truth if something still fails at runtime.
  */
 export const COMPILE_BLOCKING_INTEGRITY_CODES: ReadonlySet<IntegrityIssueCode> =
   new Set([
@@ -565,8 +566,6 @@ export const COMPILE_BLOCKING_INTEGRITY_CODES: ReadonlySet<IntegrityIssueCode> =
     'invalid_source',
     'truncated_source',
     'jsx_in_ts',
-    'missing_npm_dependency',
-    'missing_provider',
   ])
 
 export function isCompileBlockingIntegrityIssue(

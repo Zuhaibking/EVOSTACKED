@@ -106,6 +106,17 @@ export type ProjectBrain = {
   /** Short recent user briefs / change requests (scrubbed). */
   userRequests: string[]
   currentVersion: number
+  /** Display-only token/cost snapshot from the last tournament. */
+  generationUsage?: {
+    modelId: string
+    modelName?: string
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    estimatedUsd: number
+    calls?: number
+    source?: 'provider' | 'estimate'
+  }
 }
 
 export type CreateProjectBrainInput = {
@@ -506,6 +517,7 @@ export function buildBrainFromTournament(opts: {
       activeCandidateId: previous.activeCandidateId,
       activeCandidateLabel: previous.activeCandidateLabel,
       activeVersion: previous.activeVersion,
+      generationUsage: previous.generationUsage,
       // Keep prior repair history and append current attempt if new.
       repairHistory: [
         ...(previous.repairHistory || []),

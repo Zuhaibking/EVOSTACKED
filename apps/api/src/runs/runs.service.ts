@@ -119,6 +119,40 @@ export class RunsService {
     })
   }
 
+  async createCandidate(
+    userId: string,
+    runId: string,
+    variantId: string,
+    status: string,
+    data: unknown,
+  ) {
+    await this.get(userId, runId)
+    return this.prisma.candidate.create({
+      data: {
+        userId,
+        runId,
+        variantId,
+        status,
+        data: (data ?? {}) as object,
+      },
+    })
+  }
+
+  async updateCandidate(
+    userId: string,
+    runId: string,
+    id: string,
+    status: string,
+    data: unknown,
+  ) {
+    const updated = await this.prisma.candidate.updateMany({
+      where: { id, userId, runId },
+      data: { status, data: (data ?? {}) as object },
+    })
+    if (updated.count === 0) throw new NotFoundException('Candidate not found')
+    return { id, status }
+  }
+
   async saveFragment(userId: string, runId: string, data: unknown, candidateId?: string) {
     await this.get(userId, runId)
     return this.prisma.fragment.create({
@@ -143,6 +177,38 @@ export class RunsService {
   async getBrain(userId: string, runId: string) {
     await this.get(userId, runId)
     return this.prisma.projectBrain.findFirst({ where: { userId, runId } })
+  }
+
+  async listCandidates(runId: string) {
+    return this.prisma.candidate.findMany({
+      where: { runId },
+      orderBy: { updatedAt: 'desc' },
+    })
+  }
+
+  /** Unlisted public share — run id is the capability. */
+  async getPublicShare(runId: string) {
+    const run = await this.prisma.run.findFirst({ where: { id: runId } })
+    if (!run) return null
+    const [messages, brain, candidates] = await Promise.all([
+      this.prisma.message.findMany({
+        where: { runId },
+        orderBy: { createdAt: 'asc' },
+        take: 40,
+      }),
+      this.prisma.projectBrain.findFirst({ where: { runId } }),
+      this.listCandidates(runId),
+    ])
+    return {
+      run,
+      messages: messages.map((m) => m.content),
+      brain: brain?.data ?? null,
+      candidates: candidates.map((c) => ({
+        variantId: c.variantId,
+        status: c.status,
+        data: c.data,
+      })),
+    }
   }
 
   async listVersions(userId: string, runId: string) {

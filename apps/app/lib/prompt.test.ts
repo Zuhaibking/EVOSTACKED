@@ -3,13 +3,15 @@
  * Run: npm run test:prompt
  */
 import assert from 'node:assert/strict'
-import { implementationChecklistPrompt, systemRulesPrompt } from './prompt'
+import { implementationChecklistPrompt, systemRulesPrompt, buildGenerationPrompt, buildEvolutionPrompt } from './prompt'
 import {
   PLANNING_SYSTEM_PROMPT,
   buildFallbackApplicationPlan,
 } from './plan'
+import { formatMemoryForPrompt } from './memory-prompt'
 import { REPAIR_SYSTEM_PROMPT } from './repair'
 import { VARIANTS } from './tournament'
+import templates from './templates'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -63,6 +65,74 @@ import path from 'node:path'
   assert.ok(fallback.coreFeatures.length >= 3)
   assert.match(fallback.sampleDataNotes, /empty|loading|error/i)
   assert.ok(fallback.interactionContracts.length >= 1)
+}
+
+{
+  const memory = formatMemoryForPrompt({
+    memoryItems: [
+      {
+        id: '1',
+        kind: 'user_request',
+        text: 'Build a gym membership dashboard',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: '2',
+        kind: 'file_summary',
+        text: 'pages/index.tsx: membership list + add member form',
+        createdAt: '2026-01-02T00:00:00.000Z',
+      },
+    ],
+    brain: {
+      improvements: [
+        { request: 'Make the add-member form validate email', note: 'Keep existing list' },
+      ],
+      fileTree: ['pages/index.tsx', 'components/MemberForm.tsx'],
+    },
+  })
+  assert.match(memory, /Project memory/)
+  assert.match(memory, /gym membership dashboard/)
+  assert.match(memory, /add-member form/)
+  assert.match(memory, /pages\/index\.tsx/)
+  const gen = buildGenerationPrompt({
+    template: templates,
+    memoryContext: memory,
+  })
+  assert.match(gen, /Project memory/)
+  assert.match(gen, /gym membership dashboard/)
+  const evo = buildEvolutionPrompt({
+    template: templates,
+    memoryContext: memory,
+    userRequest: 'Tighten spacing',
+    parentVersion: 1,
+  })
+  assert.match(evo, /Project memory/)
+  assert.match(evo, /EVOLUTION MODE/)
+}
+
+{
+  const nextKey = Object.keys(templates).find((k) => k.includes('nextjs'))!
+  const one = { [nextKey]: templates[nextKey as keyof typeof templates] } as typeof templates
+  const gen = buildGenerationPrompt({
+    template: one,
+    variantDirection: 'VARIANT_STYLE_MARKER',
+  })
+  const guardAt = gen.indexOf('Stack guardrails')
+  const styleAt = gen.indexOf('VARIANT_STYLE_MARKER')
+  assert.ok(guardAt >= 0, 'expected stack guardrails')
+  assert.ok(styleAt > guardAt, 'guardrails must precede variant style')
+  assert.match(gen, /npx next --turbo/)
+  assert.match(gen, /Pages Router/)
+  assert.match(gen, /MUST generate this candidate using ONLY this template/)
+  const evo = buildEvolutionPrompt({
+    template: one,
+    variantDirection: 'VARIANT_STYLE_MARKER',
+    userRequest: 'Polish spacing',
+    parentVersion: 1,
+  })
+  assert.ok(
+    evo.indexOf('Stack guardrails') < evo.indexOf('VARIANT_STYLE_MARKER'),
+  )
 }
 
 console.log('prompt.test.ts: all tests passed')

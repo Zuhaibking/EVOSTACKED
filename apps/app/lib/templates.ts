@@ -7,6 +7,17 @@ export function getTemplateId(id: string) {
   return id.replace(/-dev$/, '')
 }
 
+/** Short Arena label for an E2B template id (strips `-dev`). */
+export function stackLabelForTemplate(id?: string | null): string {
+  const base = getTemplateId(id || '')
+  if (base.includes('nextjs')) return 'Next.js'
+  if (base.includes('vue')) return 'Vue/Nuxt'
+  if (base.includes('streamlit')) return 'Streamlit'
+  if (base.includes('gradio')) return 'Gradio'
+  if (base.includes('code-interpreter') || base.includes('python')) return 'Python'
+  return base || 'Unknown'
+}
+
 const templates = {
   'code-interpreter-v1': {
     name: 'Python data analyst',

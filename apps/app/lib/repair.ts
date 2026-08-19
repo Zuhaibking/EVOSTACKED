@@ -105,34 +105,47 @@ export type RepairEligibilityInput = {
 }
 
 /**
+ * True only for a real compile/runtime failure that E2B already observed.
+ * Architecture gaps, hydration heuristics, and integrity warnings are not enough.
+ * Infrastructure (missing E2B key, DNS, transport) must never consume repair budget.
+ */
+export function hasGenuineRuntimeFailure(
+  verification?: VerificationResult | null,
+): boolean {
+  if (!verification) return false
+  if (isInfrastructureRuntimeFailure(verification.errors)) return false
+  return (
+    verification.status === 'failed' ||
+    verificationHasPreviewOverlayFailure(verification)
+  )
+}
+
+/**
  * Choose primary repair reason.
- * Integrity (local import graph) takes priority so we fix file mismatches before
- * spending another sandbox cycle when possible.
- * Architecture critical failures take priority over runtime when both exist.
+ * Repair is fallback-only: a genuine non-infrastructure compile/runtime failure
+ * must exist. Architecture/integrity evidence may annotate that repair, but
+ * cannot trigger an LLM call on their own.
  */
 export function selectRepairReason(
   input: Omit<RepairEligibilityInput, 'repairAttempts'>,
 ): RepairReason | null {
+  const runtimeFail = hasGenuineRuntimeFailure(input.verification)
+  if (!runtimeFail) return null
+
   const integrityFail = Boolean(input.integrity && !input.integrity.ok)
   const archFail = hasCriticalArchitectureFailure(
     input.architectureCompliance ?? null,
   )
-  const runtimeFail =
-    !isInfrastructureRuntimeFailure(input.verification?.errors) &&
-    (input.verification?.status === 'failed' ||
-      verificationHasPreviewOverlayFailure(input.verification))
-  if (!integrityFail && !archFail && !runtimeFail) return null
-  if (integrityFail && !archFail && !runtimeFail) return 'integrity'
-  if (integrityFail && (archFail || runtimeFail)) return 'combined'
-  if (archFail && runtimeFail) return 'combined'
-  if (archFail) return 'architecture'
+  if (integrityFail && !archFail) return 'integrity'
+  if (integrityFail && archFail) return 'combined'
+  if (archFail) return 'combined'
   return 'runtime'
 }
 
 /**
- * Unified eligibility: unused repair budget AND critical architecture failure
- * OR failed runtime verification OR local integrity failure.
- * Medium/low warnings alone do not qualify.
+ * Unified eligibility: unused repair budget AND a genuine compile/runtime
+ * failure. Architecture-only, integrity-only, hydration heuristics, and
+ * infrastructure failures do not qualify.
  */
 export function shouldAttemptRepair(input: RepairEligibilityInput): boolean {
   if (
