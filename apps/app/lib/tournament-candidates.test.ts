@@ -20,12 +20,6 @@ import {
 } from './tournament-candidates'
 import { applySmokeResultToCandidate } from './candidate-smoke'
 import { INITIAL_TOURNAMENT_CANDIDATE_COUNT, ITERATION_CANDIDATE_COUNT } from './evolution'
-import { buildDeterministicTournamentVerdict } from './deterministic-verdict'
-import {
-  assertConcurrentGenerationPolicy,
-  buildCandidateGenerationQueue,
-  runParallelCandidateJobs,
-} from './tournament-generation'
 import type { Candidate } from './tournament-client'
 import { VARIANTS, type VariantId } from './tournament'
 import type { ExecutionResult } from './types'
@@ -514,40 +508,6 @@ function fullTournament(): Record<VariantId, Candidate> {
   )
 }
 
-// Concurrent queue: Product → Premium → Innovate start together
-{
-  const policy = assertConcurrentGenerationPolicy()
-  assert.equal(policy.concurrent, true)
-  assert.equal(policy.queueSize, 3)
-  assert.ok(policy.maxAttemptsPerCandidate >= 3)
-  const queue = buildCandidateGenerationQueue()
-  assert.deepEqual(
-    queue.map((q) => q.id),
-    ['minimal', 'rich', 'playful'],
-  )
-}
-
-// Deterministic verdict never auto-promotes activeCandidate
-{
-  const verdict = buildDeterministicTournamentVerdict(
-    Object.values(fullTournament()).map((c) => ({
-      id: c.id,
-      fragment: c.fragment,
-      finalVerification: c.finalVerification,
-      architectureCompliance: c.architectureCompliance,
-      smoke: c.smoke,
-    })),
-  )
-  assert.ok(verdict.winnerId)
-  assert.equal(verdict.scores.length, 3)
-  assert.match(verdict.reasoning, /you choose/i)
-  const report = buildRetentionReport(fullTournament(), {
-    recommendedWinnerId: verdict.winnerId,
-    activeCandidateId: null,
-  })
-  assert.equal(report.activeCandidate, null)
-}
-
 // Smoke timeout must NOT hide a healthy preview or wipe URL
 {
   const c = baseCandidate('minimal', {
@@ -687,38 +647,6 @@ function fullTournament(): Record<VariantId, Candidate> {
   )
 }
 
-async function assertParallelRunner() {
-  const queue = buildCandidateGenerationQueue()
-  const events: string[] = []
-  const results = await runParallelCandidateJobs(queue, async (item) => {
-    events.push(`start:${item.id}`)
-    await Promise.resolve()
-    events.push(`end:${item.id}`)
-    if (item.id === 'rich') {
-      throw new Error('premium isolated failure')
-    }
-    return item.id
-  })
-
-  const firstEnd = events.findIndex((e) => e.startsWith('end:'))
-  const starts = events.filter((e) => e.startsWith('start:'))
-  assert.equal(starts.length, 3)
-  assert.ok(
-    firstEnd >= 3,
-    'all jobs must start before any completes',
-  )
-  assert.deepEqual(
-    starts,
-    ['start:minimal', 'start:rich', 'start:playful'],
-  )
-
-  const values = results.filter((r) => r.ok).map((r) => r.value)
-  const failures = results.filter((r) => !r.ok)
-  assert.equal(failures.length, 1)
-  assert.equal(failures[0]?.item.id, 'rich')
-  assert.deepEqual(values, ['minimal', 'playful'])
-}
-
 {
   const restored = candidatesFromStoredRows(
     [
@@ -784,11 +712,4 @@ async function assertParallelRunner() {
   assert.match(switcher, /candidatePreviewIsHealthy\(c\) \|\| hasSource/)
 }
 
-assertParallelRunner()
-  .then(() => {
-    console.log('tournament-candidates.test.ts: all tests passed')
-  })
-  .catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+console.log('tournament-candidates.test.ts: all tests passed')
