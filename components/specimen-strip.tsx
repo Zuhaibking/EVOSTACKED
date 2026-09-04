@@ -35,14 +35,18 @@ function statusDot(status: Candidate['status']) {
 export function SpecimenStrip({
   candidates,
   selectedId,
+  activeId,
   onSelect,
+  onUse,
   verdictReasoning,
   phase,
   layout = 'dock',
 }: {
   candidates: Record<VariantId, Candidate>
   selectedId?: VariantId
+  activeId?: VariantId
   onSelect: (id: VariantId) => void
+  onUse?: (id: VariantId) => void
   verdictReasoning?: string
   phase: 'idle' | 'generating' | 'judging' | 'done'
   layout?: 'dock' | 'rail'
@@ -64,7 +68,10 @@ export function SpecimenStrip({
       c={c}
       idx={idx}
       isSelected={selectedId === c.id}
+      isActive={activeId === c.id}
+      showLifecycle={phase === 'done' && Boolean(onUse)}
       onSelect={() => onSelect(c.id)}
+      onUse={onUse ? () => onUse(c.id) : undefined}
     />
   ))
 
@@ -164,7 +171,10 @@ export function SpecimenStrip({
                   c={c}
                   idx={idx}
                   isSelected={selectedId === c.id}
+                  isActive={activeId === c.id}
+                  showLifecycle={phase === 'done' && Boolean(onUse)}
                   onSelect={() => onSelect(c.id)}
+                  onUse={onUse ? () => onUse(c.id) : undefined}
                 />
               ))}
             </div>
@@ -192,12 +202,18 @@ function CandidateTab({
   c,
   idx,
   isSelected,
+  isActive,
+  showLifecycle,
   onSelect,
+  onUse,
 }: {
   c: Candidate
   idx: number
   isSelected: boolean
+  isActive?: boolean
+  showLifecycle?: boolean
   onSelect: () => void
+  onUse?: () => void
 }) {
   const isWin = !!c.isWinner
   const isGen = c.status === 'generating'
@@ -218,23 +234,30 @@ function CandidateTab({
     (isGen ? 'streaming…' : isPending ? 'standby' : isError ? 'failed' : '—')
 
   return (
+    <div
+      className={`
+        group relative flex items-stretch h-12 sm:h-[52px] min-w-0
+        border overflow-hidden
+        ${
+          isActive
+            ? 'border-foreground bg-foreground/[0.05] text-foreground'
+            : isSelected || isWin
+              ? isWin
+                ? 'border-brand-accent bg-brand-accent/[0.06] text-foreground shadow-[2px_2px_0_0_hsl(var(--brand)/0.18)]'
+                : 'border-foreground/50 bg-foreground/[0.03] text-foreground'
+              : 'border-border hover:border-foreground/60 hover:bg-foreground/[0.02] text-foreground/85'
+        }
+        ${isPending || isError ? 'opacity-55' : ''}
+      `}
+    >
     <button
       type="button"
       onClick={onSelect}
       disabled={isPending || isError}
       title={`${c.label}${c.fragment?.title ? ' — ' + c.fragment.title : ''}`}
-      className={`
-        group relative flex items-stretch h-12 sm:h-[52px] text-left min-w-0
-        border transition-colors overflow-hidden
-        ${
-          isSelected || isWin
-            ? isWin
-              ? 'border-brand-accent bg-brand-accent/[0.06] text-foreground shadow-[2px_2px_0_0_hsl(var(--brand)/0.18)]'
-              : 'border-foreground bg-foreground/[0.05] text-foreground'
-            : 'border-border hover:border-foreground/60 hover:bg-foreground/[0.02] text-foreground/85'
-        }
-        ${isPending || isError ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer'}
-      `}
+      className={`flex items-stretch flex-1 min-w-0 text-left ${
+        isPending || isError ? 'cursor-not-allowed' : 'cursor-pointer'
+      }`}
     >
       {/* Live shimmer rail */}
       {isGen && (
@@ -295,6 +318,20 @@ function CandidateTab({
         </span>
       </span>
     </button>
+    {showLifecycle && !isPending && !isError && onUse ? (
+      <button
+        type="button"
+        onClick={onUse}
+        className={`shrink-0 px-1.5 sm:px-2 border-l font-mono text-[8px] sm:text-[9px] tracking-[0.16em] uppercase ${
+          isActive
+            ? 'border-foreground/30 text-foreground'
+            : 'border-border text-muted-foreground hover:text-foreground'
+        }`}
+      >
+        {isActive ? '✓ Active' : 'Use'}
+      </button>
+    ) : null}
+    </div>
   )
 }
 
@@ -306,12 +343,18 @@ function CandidateCard({
   c,
   idx,
   isSelected,
+  isActive,
+  showLifecycle,
   onSelect,
+  onUse,
 }: {
   c: Candidate
   idx: number
   isSelected: boolean
+  isActive?: boolean
+  showLifecycle?: boolean
   onSelect: () => void
+  onUse?: () => void
 }) {
   const isWin = !!c.isWinner
   const isGen = c.status === 'generating'
@@ -383,7 +426,13 @@ function CandidateCard({
             }`}
           >
             {isGen && <Loader2 className="h-3 w-3 animate-spin" />}
-            {isWin ? '★ Survived' : STATUS_COPY[c.status]}
+            {isActive
+              ? '✓ Active'
+              : showLifecycle && !isPending && !isError
+                ? 'Resting'
+                : isWin
+                  ? '★ Survived'
+                  : STATUS_COPY[c.status]}
           </span>
         </div>
 
@@ -505,6 +554,28 @@ function CandidateCard({
           “{c.scoreComment}”
         </p>
       )}
+      {showLifecycle && !isPending && !isError && onUse ? (
+        <div className="border-t border-border/70 px-2.5 py-1.5">
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation()
+              onUse()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                e.stopPropagation()
+                onUse()
+              }
+            }}
+            className="font-mono text-[9px] tracking-[0.2em] uppercase text-foreground"
+          >
+            {isActive ? '✓ Active' : 'Use'}
+          </span>
+        </div>
+      ) : null}
     </button>
   )
 }

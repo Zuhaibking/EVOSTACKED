@@ -61,6 +61,17 @@ export function useTournament() {
   const [error, setError] = useState<string | undefined>()
   const abortRef = useRef<AbortController | null>(null)
 
+  const patchCandidate = useCallback(
+    (id: VariantId, patch: Partial<Candidate>) => {
+      setCandidates((prev) => {
+        const cur = prev[id]
+        if (!cur) return prev
+        return { ...prev, [id]: { ...cur, ...patch } }
+      })
+    },
+    [],
+  )
+
   const reset = useCallback(() => {
     setCandidates(initialCandidates())
     setVerdict(undefined)
@@ -217,5 +228,6 @@ export function useTournament() {
     stop,
     reset,
     hydrate,
+    patchCandidate,
   }
 }

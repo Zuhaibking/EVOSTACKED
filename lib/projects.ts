@@ -14,8 +14,9 @@ export type ProjectWorkspace = {
   fragment?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
   selectedCandidate?: VariantId
+  activeCandidateId?: VariantId
   hasTournament: boolean
-  currentTab: 'code' | 'fragment'
+  currentTab: 'code' | 'fragment' | 'database'
   chatInput: string
   tournament: {
     candidates?: Record<VariantId, Candidate>
@@ -53,6 +54,7 @@ export function blankWorkspace(): ProjectWorkspace {
     fragment: undefined,
     result: undefined,
     selectedCandidate: undefined,
+    activeCandidateId: undefined,
     hasTournament: false,
     currentTab: 'code',
     chatInput: '',
@@ -109,7 +111,10 @@ function sanitizeProject(raw: unknown): ProjectRecord | null {
   const ws = blankWorkspace()
   const messages = Array.isArray(raw.messages) ? (raw.messages as Message[]) : []
   const meta = deriveProjectMeta(messages)
-  const tab = raw.currentTab === 'fragment' ? 'fragment' : 'code'
+  const tab =
+    raw.currentTab === 'fragment' || raw.currentTab === 'database'
+      ? raw.currentTab
+      : 'code'
   const phase =
     raw.tournament && isRecord(raw.tournament) && typeof raw.tournament.phase === 'string'
       ? (raw.tournament.phase as ProjectWorkspace['tournament']['phase'])
@@ -124,6 +129,7 @@ function sanitizeProject(raw: unknown): ProjectRecord | null {
     fragment: (raw.fragment as ProjectRecord['fragment']) ?? ws.fragment,
     result: (raw.result as ProjectRecord['result']) ?? ws.result,
     selectedCandidate: raw.selectedCandidate as VariantId | undefined,
+    activeCandidateId: raw.activeCandidateId as VariantId | undefined,
     hasTournament: Boolean(raw.hasTournament),
     currentTab: tab,
     chatInput: typeof raw.chatInput === 'string' ? raw.chatInput : '',

@@ -51,6 +51,7 @@ export function FragmentWeb({
   const [iframeBox, setIframeBox] = useState<DOMRect | null>(null)
   const selectionRef = useRef(selection)
   selectionRef.current = selection
+  const injectedSbxRef = useRef('')
 
   function refreshIframe() {
     setIframeKey((prevKey) => prevKey + 1)
@@ -65,19 +66,34 @@ export function FragmentWeb({
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      if (!isInspectMessage(event.data)) return
-      if (event.data.type === 'ready' && inspectEnabled) {
+      const data = event.data
+      if (
+        data &&
+        typeof data === 'object' &&
+        data.source === 'evostack-capture' &&
+        data.type === 'submit' &&
+        data.payload
+      ) {
+        fetch('/api/evostack/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data.payload),
+        }).catch(() => {})
+        return
+      }
+      if (!isInspectMessage(data)) return
+      if (data.type === 'ready' && inspectEnabled) {
         postToPreview({ type: 'enable' })
         postToPreview({ type: 'guides', on: guides })
       }
-      if (event.data.type === 'select') {
-        onSelection?.(event.data.payload)
+      if (data.type === 'select') {
+        onSelection?.(data.payload)
       }
-      if (event.data.type === 'text' && typeof event.data.payload === 'string') {
-        onText?.(event.data.payload)
+      if (data.type === 'text' && typeof data.payload === 'string') {
+        onText?.(data.payload)
       }
-      if (event.data.type === 'rect' && selectionRef.current) {
-        onSelection?.({ ...selectionRef.current, rect: event.data.payload })
+      if (data.type === 'rect' && selectionRef.current) {
+        onSelection?.({ ...selectionRef.current, rect: data.payload })
       }
     }
     window.addEventListener('message', onMessage)
@@ -99,6 +115,10 @@ export function FragmentWeb({
 
   useEffect(() => {
     if (!inspectEnabled || !result.sbxId) return
+    if (injectedSbxRef.current === result.sbxId) {
+      postToPreview({ type: 'enable' })
+      return
+    }
     let cancelled = false
     fetch('/api/inspect/inject', {
       method: 'POST',
@@ -109,15 +129,23 @@ export function FragmentWeb({
         accessToken,
       }),
     })
-      .catch(() => {})
-      .then(() => new Promise((r) => setTimeout(r, 800)))
-      .then(() => {
-        if (!cancelled) refreshIframe()
+      .then((r) => (r.ok ? r.json() : { patchedDocument: false }))
+      .then((data) => {
+        if (cancelled) return
+        injectedSbxRef.current = result.sbxId
+        // Remount only when the live document just gained the bridge script.
+        // The sandbox already injects on create; remounting every Inspect
+        // open blanks the preview and drops the click listeners.
+        if (data?.patchedDocument) refreshIframe()
+        else postToPreview({ type: 'enable' })
+      })
+      .catch(() => {
+        if (!cancelled) postToPreview({ type: 'enable' })
       })
     return () => {
       cancelled = true
     }
-    // inject once per sandbox when inspect opens
+    // inject at most once per sandbox
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspectEnabled, result.sbxId])
 

@@ -6,7 +6,7 @@ import { ChatInput } from '@/components/chat-input'
 import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
 import { NavBar } from '@/components/navbar'
-import { Preview } from '@/components/preview'
+import { Preview, ArenaTab } from '@/components/preview'
 import { SpecimenStrip } from '@/components/specimen-strip'
 import {
   Dialog,
@@ -66,14 +66,18 @@ export default function Home() {
   const [result, setResult] = useState<ExecutionResult>()
   const [messages, setMessages] = useState<Message[]>([])
   const [fragment, setFragment] = useState<DeepPartial<FragmentSchema>>()
-  const [currentTab, setCurrentTab] = useState<'code' | 'fragment'>('code')
+  const [currentTab, setCurrentTab] = useState<ArenaTab>('code')
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [isAuthDialogOpen, setAuthDialog] = useState(false)
   const [authView, setAuthView] = useState<ViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [selectedCandidate, setSelectedCandidate] = useState<VariantId | undefined>()
+  const [activeCandidateId, setActiveCandidateId] = useState<VariantId | undefined>()
   const [hasTournament, setHasTournament] = useState(false)
+  const [serverVersions, setServerVersions] = useState<
+    { id: string; label: string; createdAt: number }[]
+  >([])
   const tournament = useTournament()
   const { session, userTeam, signOut } = useAuth(setAuthDialog, setAuthView)
   const [useMorphApply, setUseMorphApply] = useLocalStorage(
@@ -122,6 +126,10 @@ export default function Home() {
   const skipSaveRef = useRef(true)
   const skipCandidatePromoteRef = useRef(false)
   const storeRef = useRef<ProjectStore | null>(null)
+  const lastGoodFragmentRef = useRef<DeepPartial<FragmentSchema> | undefined>()
+  const persistedRunRef = useRef('')
+  const lastSandboxedCandidateRef = useRef<string>()
+  const resultRef = useRef<ExecutionResult | undefined>()
   const workspaceRef = useRef<ProjectWorkspace>(blankWorkspace())
   const [inspectOpen, setInspectOpen] = useState(false)
   const [inspectSelection, setInspectSelection] = useState<InspectSelection | null>(null)
@@ -129,11 +137,13 @@ export default function Home() {
   const [inspectError, setInspectError] = useState('')
   const [versionCursor, setVersionCursor] = useState(0)
 
+  resultRef.current = result
   workspaceRef.current = {
     messages,
     fragment,
     result,
     selectedCandidate,
+    activeCandidateId,
     hasTournament,
     currentTab,
     chatInput,
@@ -155,8 +165,17 @@ export default function Home() {
     setFragment(project.fragment)
     setResult(project.result)
     setSelectedCandidate(project.selectedCandidate)
+    setActiveCandidateId(project.activeCandidateId)
+    lastGoodFragmentRef.current = project.fragment
+    lastSandboxedCandidateRef.current = undefined
+    persistedRunRef.current = ''
+    setServerVersions([])
     setHasTournament(Boolean(project.hasTournament))
-    setCurrentTab(project.currentTab === 'fragment' ? 'fragment' : 'code')
+    setCurrentTab(
+      project.currentTab === 'fragment' || project.currentTab === 'database'
+        ? project.currentTab
+        : 'code',
+    )
     setChatInput(project.chatInput ?? '')
     setFiles([])
     setIsPreviewLoading(false)
@@ -210,6 +229,7 @@ export default function Home() {
     fragment,
     result,
     selectedCandidate,
+    activeCandidateId,
     hasTournament,
     currentTab,
     chatInput,
@@ -286,6 +306,7 @@ export default function Home() {
           template: fragment?.template,
         })
 
+        const editId = activeCandidateId ?? selectedCandidate ?? 'solo'
         const response = await fetch('/api/sandbox', {
           method: 'POST',
           body: JSON.stringify({
@@ -293,16 +314,38 @@ export default function Home() {
             userID: session?.user?.id,
             teamID: userTeam?.id,
             accessToken: session?.access_token,
+            projectId: storeRef.current?.activeId,
+            candidateId: editId,
+            runId: storeRef.current?.activeId,
+            sbxId:
+              lastSandboxedCandidateRef.current === editId &&
+              resultRef.current &&
+              'sbxId' in resultRef.current
+                ? resultRef.current.sbxId
+                : undefined,
           }),
         })
 
-        const result = await response.json()
-        console.log('result', result)
-        posthog.capture('sandbox_created', { url: result.url })
+        const sandboxResult = await response.json()
+        console.log('result', sandboxResult)
+        if (!response.ok || (!sandboxResult?.url && !sandboxResult?.sbxId)) {
+          setErrorMessage(
+            sandboxResult?.error || 'Preview failed. Previous version kept.',
+          )
+          if (lastGoodFragmentRef.current) setFragment(lastGoodFragmentRef.current)
+          setIsPreviewLoading(false)
+          return
+        }
+        posthog.capture('sandbox_created', { url: sandboxResult.url })
+        lastGoodFragmentRef.current = fragment
+        lastSandboxedCandidateRef.current = editId
+        if (activeCandidateId) {
+          tournament.patchCandidate(activeCandidateId, { fragment })
+        }
 
-        setResult(result)
-        setCurrentPreview({ fragment, result })
-        setMessage({ result })
+        setResult(sandboxResult)
+        setCurrentPreview({ fragment, result: sandboxResult })
+        setMessage({ result: sandboxResult })
         setCurrentTab('fragment')
         setIsPreviewLoading(false)
       }
@@ -338,7 +381,7 @@ export default function Home() {
     if (error) stop()
   }, [error])
 
-  // Auto-select the winning candidate when verdict arrives.
+  // Highlight the winner; do not sandbox until USE.
   useEffect(() => {
     const winner = Object.values(tournament.candidates).find((c) => c.isWinner)
     if (winner && !selectedCandidate) {
@@ -346,57 +389,124 @@ export default function Home() {
     }
   }, [tournament.candidates, selectedCandidate])
 
-  // Whenever the user picks a candidate (or one is auto-selected), promote
-  // its fragment to the main view and spawn the sandbox for it. Skip the
-  // sandbox call entirely on a hydrate-driven re-run when we already have
-  // a result for the same code (otherwise refresh = duplicate sandbox).
+  // Persist all three candidates after generation — no sandbox required.
   useEffect(() => {
-    if (!selectedCandidate) return
-    if (skipCandidatePromoteRef.current) {
-      skipCandidatePromoteRef.current = false
+    if (tournament.phase !== 'done') return
+    const projectId = storeRef.current?.activeId
+    if (!projectId) return
+    const ready = Object.values(tournament.candidates).filter(
+      (c) => c.fragment && (c.fragment.code || c.fragment.file_path),
+    )
+    if (!ready.length) return
+    const key = `${projectId}:done:${ready.map((c) => c.id).join(',')}`
+    if (persistedRunRef.current === key) return
+    persistedRunRef.current = key
+    for (const c of ready) {
+      void fetch('/api/project-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          candidateId: c.id,
+          runId: projectId,
+          fragment: c.fragment,
+          label: c.fragment?.title || c.label,
+          score: c.scoreComposite,
+          isWinner: c.isWinner,
+        }),
+      })
+    }
+  }, [tournament.phase, tournament.candidates])
+
+  // Server project record is authoritative for ACTIVE.
+  useEffect(() => {
+    if (!hydrated || !projectStore?.activeId) return
+    const id = projectStore.activeId
+    let cancelled = false
+    fetch(`/api/project?projectId=${encodeURIComponent(id)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data?.activeCandidateId) return
+        setActiveCandidateId(data.activeCandidateId as VariantId)
+        setSelectedCandidate((cur) => cur || (data.activeCandidateId as VariantId))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated, projectStore?.activeId])
+
+  useEffect(() => {
+    if (!activeCandidateId || !projectStore?.activeId) {
+      setServerVersions([])
       return
     }
-    const c = tournament.candidates[selectedCandidate]
-    if (!c?.fragment || c.status === 'generating') return
+    let cancelled = false
+    fetch(
+      `/api/project-files?projectId=${encodeURIComponent(projectStore.activeId)}&candidateId=${encodeURIComponent(activeCandidateId)}`,
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        setServerVersions(
+          Array.isArray(data?.versions)
+            ? data.versions.map((v: { id: string; label?: string; createdAt?: number }) => ({
+                id: v.id,
+                label: v.label || 'Version',
+                createdAt: v.createdAt || 0,
+              }))
+            : [],
+        )
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [activeCandidateId, projectStore?.activeId, result?.sbxId])
 
-    const next = c.fragment as DeepPartial<FragmentSchema>
-    const sameCodeAlreadyRunning =
-      !!result && !!fragment && fragment.code === next.code
-    setFragment(next)
-    if (sameCodeAlreadyRunning) return
-
-    // Append a synthetic assistant message capturing the selected candidate.
-    const content: Message['content'] = [
-      { type: 'text', text: next.commentary || '' },
-      { type: 'code', text: fragmentCodeText(next.code) },
-    ]
-    setMessages((prev) => {
-      const last = prev[prev.length - 1]
-      if (last && last.role === 'assistant') {
-        const copy = [...prev]
-        copy[copy.length - 1] = { ...last, content, object: next }
-        return copy
-      }
-      return [...prev, { role: 'assistant', content, object: next }]
-    })
-
-    // Sandbox the selected candidate (skip if the same fragment already lives in result)
-    if (!session) return
+  // Sandbox only the ACTIVE candidate, from persisted files.
+  useEffect(() => {
+    if (!hydrated || !activeCandidateId || !session) return
+    const c = tournament.candidates[activeCandidateId]
+    const next =
+      (c?.fragment as DeepPartial<FragmentSchema> | undefined) ||
+      lastGoodFragmentRef.current ||
+      fragment
+    if (!next && !c) return
     let cancelled = false
     setIsPreviewLoading(true)
-    setCurrentTab('code')
+    const reuse =
+      lastSandboxedCandidateRef.current === activeCandidateId &&
+      resultRef.current &&
+      'sbxId' in resultRef.current
+        ? resultRef.current.sbxId
+        : undefined
     fetch('/api/sandbox', {
       method: 'POST',
       body: JSON.stringify({
-        fragment: next,
-        userID: session?.user?.id,
+        fragment: next || {
+          template: 'nextjs-developer',
+          file_path: 'pages/index.tsx',
+          code: '',
+        },
+        userID: session.user?.id,
         teamID: userTeam?.id,
-        accessToken: session?.access_token,
+        accessToken: session.access_token,
+        projectId: storeRef.current?.activeId,
+        candidateId: activeCandidateId,
+        runId: storeRef.current?.activeId,
+        sbxId: reuse,
+        rehydrateOnly: !Boolean(next && (next.code || next.file_path)),
       }),
     })
-      .then((r) => r.json())
-      .then((sandboxResult) => {
+      .then(async (r) => {
+        const sandboxResult = await r.json()
         if (cancelled) return
+        if (!r.ok) {
+          setErrorMessage(sandboxResult?.error || 'Could not resume preview.')
+          return
+        }
+        lastSandboxedCandidateRef.current = activeCandidateId
         setResult(sandboxResult)
         setCurrentTab('fragment')
       })
@@ -408,7 +518,7 @@ export default function Home() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCandidate, tournament.candidates[selectedCandidate ?? 'minimal']?.status])
+  }, [hydrated, activeCandidateId, session?.user?.id, projectStore?.activeId])
 
   function setMessage(message: Partial<Message>, index?: number) {
     setMessages((previousMessages) => {
@@ -420,6 +530,29 @@ export default function Home() {
 
       return updatedMessages
     })
+  }
+
+  async function handleUse(id: VariantId) {
+    const projectId = storeRef.current?.activeId
+    const c = tournament.candidates[id]
+    if (c?.fragment) {
+      setFragment(c.fragment)
+      lastGoodFragmentRef.current = c.fragment
+    }
+    setSelectedCandidate(id)
+    setActiveCandidateId(id)
+    setHasTournament(true)
+    if (projectId) {
+      void fetch('/api/project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          activeCandidateId: id,
+          ownerId: session?.user?.id,
+        }),
+      })
+    }
   }
 
   async function handleSubmitAuth(e: React.FormEvent<HTMLFormElement>) {
@@ -450,7 +583,12 @@ export default function Home() {
       content,
     })
 
-    const isFirstGeneration = !fragment && !shouldUseMorph
+    const readyCandidates = Object.values(tournament.candidates).filter(
+      (c) => c.fragment && (c.status === 'done' || c.isWinner),
+    )
+    const arenaReady = tournament.phase === 'done' && readyCandidates.length > 0
+    const isFirstGeneration =
+      !activeCandidateId && !arenaReady && !fragment && !shouldUseMorph
 
     if (isFirstGeneration) {
       // Tournament: 3 specimens generated in parallel, judged by editor.
@@ -472,6 +610,15 @@ export default function Home() {
         model: languageModel.model,
       })
     } else {
+      if (!activeCandidateId && arenaReady) {
+        const pick =
+          (selectedCandidate &&
+            tournament.candidates[selectedCandidate]?.fragment &&
+            selectedCandidate) ||
+          readyCandidates.find((c) => c.isWinner)?.id ||
+          readyCandidates[0].id
+        await handleUse(pick)
+      }
       submit({
         userID: session?.user?.id,
         teamID: userTeam?.id,
@@ -536,21 +683,15 @@ export default function Home() {
 
   function handleClearChat() {
     stop()
-    tournament.stop()
-    tournament.reset()
-    setHasTournament(false)
-    setSelectedCandidate(undefined)
+    if (tournament.phase === 'generating' || tournament.phase === 'judging') {
+      tournament.stop()
+    }
     setChatInput('')
     setFiles([])
     setMessages([])
-    setFragment(undefined)
-    setResult(undefined)
-    setCurrentTab('code')
-    setIsPreviewLoading(false)
     setInspectOpen(false)
     setInspectSelection(null)
     setInspectError('')
-    setVersionCursor(0)
   }
 
   function setCurrentPreview(preview: {
@@ -563,7 +704,11 @@ export default function Home() {
 
   function handleUndo() {
     setMessages((previousMessages) => [...previousMessages.slice(0, -2)])
-    setCurrentPreview({ fragment: undefined, result: undefined })
+    if (activeCandidateId && lastGoodFragmentRef.current) {
+      setFragment(lastGoodFragmentRef.current)
+    } else {
+      setCurrentPreview({ fragment: undefined, result: undefined })
+    }
   }
 
   const activeVersions = projectStore ? getActive(projectStore).versions : []
@@ -620,6 +765,10 @@ export default function Home() {
           userID: session.user?.id,
           teamID: userTeam?.id,
           accessToken: session.access_token,
+          projectId: storeRef.current?.activeId,
+          candidateId: activeCandidateId ?? selectedCandidate ?? 'solo',
+          runId: storeRef.current?.activeId,
+          sbxId: result && 'sbxId' in result ? result.sbxId : undefined,
         }),
       })
       const sandboxResult = await sandboxRes.json()
@@ -772,7 +921,7 @@ export default function Home() {
           canUndo={messages.length > 1 && !isLoading}
           onUndo={handleUndo}
           isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
-          hasFragment={!!fragment}
+          hasFragment={!!fragment && !!result && !isPreviewLoading}
           projects={projectStore ? listProjects(projectStore).map((p) => ({ id: p.id, name: p.name })) : []}
           activeProjectId={projectStore?.activeId}
           activeProjectName={
@@ -808,42 +957,32 @@ export default function Home() {
           </RailSection>
           <RailSection label="Versions">
             <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
-              + {activeVersions.length} versions +
+              + {(serverVersions.length || activeVersions.length)} versions +
             </p>
-            {activeVersions.length > 0 && (
-              <ul className="mt-1.5 space-y-1">
-                {activeVersions.slice(0, 8).map((v, i) => (
-                  <li key={v.id}>
-                    <button
-                      type="button"
-                      onClick={() => restoreVersionAt(i)}
-                      className={`block w-full text-left truncate text-[11px] ${
-                        i === versionCursor
-                          ? 'text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {v.label || 'Version'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {(serverVersions.length ? serverVersions : activeVersions).slice(0, 8).map((v, i) => (
+              <p key={v.id} className="mt-1 text-[11px] text-muted-foreground truncate">
+                {v.label || 'Version'}
+              </p>
+            ))}
           </RailSection>
           <RailSection label="Run">
             <p className="text-[12px]">
-              {selectedSpec
-                ? `${selectedSpec.sigil} · ${selectedSpec.label}`
-                : 'No selected candidate.'}
+              {activeCandidateId
+                ? `${tournament.candidates[activeCandidateId]?.sigil || ''} · ${tournament.candidates[activeCandidateId]?.label || activeCandidateId} · Active`
+                : selectedSpec
+                  ? `${selectedSpec.sigil} · ${selectedSpec.label}`
+                  : 'No active candidate. Use one to continue.'}
             </p>
           </RailSection>
           <RailSection label="Candidates">
-            {hasTournament ? (
+            {hasTournament || activeCandidateId ? (
               <SpecimenStrip
                 layout="rail"
                 candidates={tournament.candidates}
                 selectedId={selectedCandidate}
+                activeId={activeCandidateId}
                 onSelect={setSelectedCandidate}
+                onUse={handleUse}
                 verdictReasoning={tournament.verdict?.reasoning}
                 phase={tournament.phase}
               />
@@ -887,7 +1026,12 @@ export default function Home() {
                 isPreviewLoading={isPreviewLoading}
                 fragment={fragment}
                 result={result as ExecutionResult}
-                onClose={() => setFragment(undefined)}
+                projectId={projectStore?.activeId}
+                candidateId={activeCandidateId ?? selectedCandidate ?? 'solo'}
+                onClose={() => {
+                  if (activeCandidateId) return
+                  setFragment(undefined)
+                }}
                 inspect={{
                   open: inspectOpen,
                   setOpen: setInspectOpen,
@@ -924,7 +1068,9 @@ export default function Home() {
                 Live preview
               </p>
               <h2 className="mt-3 font-display font-black tracking-tight text-center text-[clamp(1.75rem,5vw,3.25rem)] leading-[1.05]">
-                Describe what you want to build
+                {hasTournament
+                  ? 'Use a candidate to start the workspace'
+                  : 'Describe what you want to build'}
               </h2>
               {!dockCommand && (
                 <div className="mt-8 w-full max-w-2xl">{chatInputSlot}</div>

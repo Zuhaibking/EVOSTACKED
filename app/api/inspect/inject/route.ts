@@ -29,8 +29,12 @@ export async function POST(req: Request) {
           }
         : {}),
     })
-    await injectInspectBridge(sbx)
-    return Response.json({ ok: true, sbxId })
+    const injected = await injectInspectBridge(sbx)
+    return Response.json({
+      ok: true,
+      sbxId,
+      patchedDocument: Boolean(injected?.patchedDocument),
+    })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Inject failed'
     return new Response(message, { status: 410 })

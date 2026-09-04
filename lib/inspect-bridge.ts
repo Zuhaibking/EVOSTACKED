@@ -68,8 +68,12 @@ async function ensureScriptTag(sbx: SandboxFiles, path: string) {
 }
 
 export async function injectInspectBridge(sbx: SandboxFiles) {
+  let patchedDocument = false
   const js = inspectBridgeSource()
-  await sbx.files.write(`public/${INSPECT_BRIDGE_FILENAME}`, js)
+  const existingJs = await tryRead(sbx, `public/${INSPECT_BRIDGE_FILENAME}`)
+  if (existingJs !== js) {
+    await sbx.files.write(`public/${INSPECT_BRIDGE_FILENAME}`, js)
+  }
 
   const nextDoc =
     (await tryRead(sbx, 'pages/_document.tsx')) ??
@@ -77,12 +81,14 @@ export async function injectInspectBridge(sbx: SandboxFiles) {
   if (nextDoc == null) {
     try {
       await sbx.files.write('pages/_document.tsx', NEXT_DOCUMENT)
+      patchedDocument = true
     } catch {
       // not a Next pages app
     }
   } else if (!nextDoc.includes(INSPECT_BRIDGE_FILENAME)) {
     await ensureScriptTag(sbx, 'pages/_document.tsx')
     await ensureScriptTag(sbx, 'pages/_document.jsx')
+    patchedDocument = true
   }
 
   const plugin = await tryRead(sbx, 'plugins/evo-inspect.client.ts')
@@ -93,4 +99,5 @@ export async function injectInspectBridge(sbx: SandboxFiles) {
       // not Nuxt
     }
   }
+  return { patchedDocument }
 }
