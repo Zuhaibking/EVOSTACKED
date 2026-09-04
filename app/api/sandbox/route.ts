@@ -1,5 +1,14 @@
+import { injectInspectBridge } from '@/lib/inspect-bridge'
+import {
+  fragmentFiles,
+  withMissingLocalModules,
+} from '@/lib/fragment-files'
 import { FragmentSchema } from '@/lib/schema'
-import { getTemplateId } from '@/lib/templates'
+import {
+  isStaticHtml,
+  resolveSandboxPort,
+  resolveSandboxTemplate,
+} from '@/lib/templates'
 import { ExecutionResultInterpreter, ExecutionResultWeb } from '@/lib/types'
 import { Sandbox } from '@e2b/code-interpreter'
 
@@ -26,7 +35,10 @@ export async function POST(req: Request) {
   // Strip any "-dev" suffix the prompt-side template ids carry in development.
   // E2B's hosted templates don't have the suffix; the -dev convention only
   // applies if a user has published a *-dev custom template to their account.
-  const sandboxTemplate = getTemplateId(fragment.template)
+  const sandboxTemplate = resolveSandboxTemplate(
+    fragment.template,
+    fragment.file_path,
+  )
 
   // Create an interpreter or a sandbox
   const sbx = await Sandbox.create(sandboxTemplate, {
@@ -54,15 +66,43 @@ export async function POST(req: Request) {
     )
   }
 
-  // Copy code to fs
-  if (fragment.code && Array.isArray(fragment.code)) {
-    fragment.code.forEach(async (file) => {
-      await sbx.files.write(file.file_path, file.file_content)
-      console.log(`Copied file to ${file.file_path} in ${sbx.sandboxId}`)
-    })
-  } else {
-    await sbx.files.write(fragment.file_path, fragment.code)
-    console.log(`Copied file to ${fragment.file_path} in ${sbx.sandboxId}`)
+  // Copy code to fs (plus any local modules the entry file imported but omitted)
+  const files = withMissingLocalModules(fragmentFiles(fragment))
+  for (const file of files) {
+    await sbx.files.write(file.file_path, file.file_content)
+    console.log(`Copied file to ${file.file_path} in ${sbx.sandboxId}`)
+  }
+
+  // Static HTML has no Next/Vue server. Mount it inside the running template
+  // so preview uses the template port instead of a closed port 80.
+  if (sandboxTemplate !== 'code-interpreter-v1' && isStaticHtml(fragment)) {
+    const html =
+      files.find((f) => /\.html?$/i.test(f.file_path))?.file_content ||
+      files[0]?.file_content ||
+      ''
+    await sbx.files.write('public/generated.html', html)
+    await sbx.files.write(
+      'pages/index.tsx',
+      `export default function Page() {
+  return (
+    <iframe
+      src="/generated.html"
+      title="preview"
+      style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', border: 'none' }}
+    />
+  )
+}
+`,
+    )
+    console.log(`Mounted static HTML in ${sbx.sandboxId}`)
+  }
+
+  if (sandboxTemplate !== 'code-interpreter-v1') {
+    try {
+      await injectInspectBridge(sbx)
+    } catch (e) {
+      console.warn('inspect bridge inject failed', e)
+    }
   }
 
   // Execute code or return a URL to the running sandbox
@@ -85,7 +125,7 @@ export async function POST(req: Request) {
     JSON.stringify({
       sbxId: sbx?.sandboxId,
       template: sandboxTemplate,
-      url: `https://${sbx?.getHost(fragment.port || 80)}`,
+      url: `https://${sbx?.getHost(resolveSandboxPort(sandboxTemplate))}`,
     } as ExecutionResultWeb),
   )
 }

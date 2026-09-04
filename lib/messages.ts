@@ -1,6 +1,6 @@
-import { FragmentSchema } from './schema'
+import { FragmentSchema, fragmentCodeText } from './schema'
 import { ExecutionResult } from './types'
-import { DeepPartial } from 'ai'
+import { CoreMessage, DeepPartial } from 'ai'
 
 export type MessageText = {
   type: 'text'
@@ -24,20 +24,33 @@ export type Message = {
   result?: ExecutionResult
 }
 
-export function toAISDKMessages(messages: Message[]) {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content.map((content) => {
-      if (content.type === 'code') {
-        return {
-          type: 'text',
-          text: content.text,
-        }
+export function toAISDKMessages(messages: Message[]): CoreMessage[] {
+  return messages.map((message) => {
+    const parts = message.content.flatMap((content) => {
+      if (content.type === 'image') {
+        return [{ type: 'image' as const, image: content.image }]
       }
+      const text = fragmentCodeText(content.text)
+      return text ? [{ type: 'text' as const, text }] : []
+    })
 
-      return content
-    }),
-  }))
+    // Assistant array parts must be text | tool-call. Non-string `code`
+    // (stream partials / multi-file) used to blow up streamObject's Zod check.
+    if (message.role === 'assistant') {
+      return {
+        role: 'assistant' as const,
+        content: parts
+          .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+          .map((p) => p.text)
+          .join('\n\n'),
+      }
+    }
+
+    return {
+      role: 'user' as const,
+      content: parts.length > 0 ? parts : '',
+    }
+  })
 }
 
 export async function toMessageImage(files: File[]) {

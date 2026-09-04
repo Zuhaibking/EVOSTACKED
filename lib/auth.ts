@@ -5,6 +5,8 @@ import { useAuth as useClerkAuth, useUser } from '@clerk/nextjs'
 import { usePostHog } from 'posthog-js/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+export const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+
 export type AuthSession = {
   user: {
     id: string
@@ -24,7 +26,18 @@ type UserTeam = {
   tier: string
 }
 
-export function useAuth(
+function useStubAuth(
+  _setAuthDialog: (value: boolean) => void,
+  _setAuthView: (value: ViewType) => void,
+) {
+  return {
+    session: null as AuthSession | null,
+    userTeam: undefined as UserTeam | undefined,
+    signOut: async () => {},
+  }
+}
+
+function useClerkBackedAuth(
   setAuthDialog: (value: boolean) => void,
   _setAuthView: (value: ViewType) => void,
 ) {
@@ -94,3 +107,5 @@ export function useAuth(
     signOut: () => clerkSignOut(),
   }
 }
+
+export const useAuth = clerkEnabled ? useClerkBackedAuth : useStubAuth

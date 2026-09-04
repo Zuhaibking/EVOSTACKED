@@ -35,11 +35,43 @@ export const metadata: Metadata = {
     'A tournament engine for software architecture. EvoStack generates competing implementations of your idea, tests them under live load, and ships the survivor as deploy-ready code.',
 }
 
+const clerkReady = Boolean(
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
+)
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const tree = (
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${display.variable} ${body.variable} ${mono.variable}`}
+    >
+      <PostHogProvider>
+        <body className="font-sans antialiased">
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+          </ThemeProvider>
+          <Toaster />
+          <Analytics />
+        </body>
+      </PostHogProvider>
+    </html>
+  )
+
+  // Keyless Clerk (no env keys) mounts a configure widget that POSTs React
+  // children into a server action — Next 14 throws on that. Skip Clerk until
+  // real keys exist.
+  if (!clerkReady) return tree
+
   return (
     <ClerkProvider
       appearance={{
@@ -59,26 +91,7 @@ export default function RootLayout({
         },
       }}
     >
-      <html
-        lang="en"
-        suppressHydrationWarning
-        className={`${display.variable} ${body.variable} ${mono.variable}`}
-      >
-        <PostHogProvider>
-          <body className="font-sans antialiased">
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="dark"
-              enableSystem
-              disableTransitionOnChange
-            >
-              {children}
-            </ThemeProvider>
-            <Toaster />
-            <Analytics />
-          </body>
-        </PostHogProvider>
-      </html>
+      {tree}
     </ClerkProvider>
   )
 }

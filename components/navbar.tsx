@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/tooltip'
 import type { AuthSession } from '@/lib/auth'
 import { GitHubLogoIcon } from '@radix-ui/react-icons'
-import { ArrowRight, Loader2, LogOut, Trash, Undo } from 'lucide-react'
+import { ArrowRight, ChevronDown, Loader2, LogOut, Plus, Trash, Undo } from 'lucide-react'
 import Link from 'next/link'
 
 /**
@@ -43,6 +43,12 @@ export function NavBar({
   runId = '0044',
   isLoading = false,
   hasFragment = false,
+  projects = [],
+  activeProjectId,
+  activeProjectName = 'Untitled',
+  onNewProject,
+  onSwitchProject,
+  onDeleteProject,
 }: {
   session: AuthSession | null
   showLogin: () => void
@@ -55,6 +61,12 @@ export function NavBar({
   runId?: string
   isLoading?: boolean
   hasFragment?: boolean
+  projects?: { id: string; name: string }[]
+  activeProjectId?: string
+  activeProjectName?: string
+  onNewProject?: () => void
+  onSwitchProject?: (id: string) => void
+  onDeleteProject?: (id: string) => void
 }) {
   const phase = isLoading
     ? 'Generating'
@@ -91,6 +103,67 @@ export function NavBar({
         <span className="hidden sm:inline-flex items-center font-mono text-[9px] tracking-[0.26em] uppercase text-muted-foreground/70 border-l border-border pl-2.5 ml-0.5 self-center h-4">
           arena
         </span>
+        <button
+          type="button"
+          onClick={onNewProject}
+          className="hidden sm:inline-flex items-center h-7 px-2 border border-border font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground hover:text-foreground hover:border-foreground/60 hover:bg-foreground/[0.04] transition-colors"
+        >
+          <Plus className="h-3 w-3 mr-1" />
+          New
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 max-w-[10rem] sm:max-w-[14rem] h-7 px-2 border border-border bg-foreground/[0.02] font-mono text-[10px] tracking-[0.08em] text-foreground hover:border-foreground/60 hover:bg-foreground/[0.04] transition-colors"
+              title={activeProjectName}
+            >
+              <span className="truncate">{activeProjectName}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-64 rounded-none border-foreground p-1"
+          >
+            <DropdownMenuItem
+              onSelect={() => onNewProject?.()}
+              className="rounded-none font-mono text-[11px] tracking-[0.12em] uppercase cursor-pointer"
+            >
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              New project
+            </DropdownMenuItem>
+            {projects.length > 0 && <DropdownMenuSeparator />}
+            {projects.map((p) => (
+              <div
+                key={p.id}
+                className={`flex items-center gap-0.5 ${
+                  p.id === activeProjectId ? 'bg-foreground/[0.06]' : ''
+                }`}
+              >
+                <DropdownMenuItem
+                  onSelect={() => onSwitchProject?.(p.id)}
+                  className="rounded-none flex-1 min-w-0 cursor-pointer"
+                >
+                  <span className="truncate text-[13px]">{p.name}</span>
+                </DropdownMenuItem>
+                <button
+                  type="button"
+                  aria-label={`Delete ${p.name}`}
+                  className="h-8 w-8 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-destructive"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onDeleteProject?.(p.id)
+                  }}
+                >
+                  <Trash className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* 2. Run meta — a tabular chip with its own subtle frame */}

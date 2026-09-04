@@ -8,11 +8,36 @@ import { ChatSettings } from '@/components/chat-settings'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
 import { SpecimenStrip } from '@/components/specimen-strip'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
+import { InspectSelection, toCompleteFragment } from '@/lib/inspect'
+import {
+  ProjectRecord,
+  ProjectStore,
+  ProjectWorkspace,
+  blankWorkspace,
+  createDebouncedSaver,
+  createProject,
+  deleteProject,
+  getActive,
+  listProjects,
+  loadStore,
+  pushVersion,
+  saveWorkspace,
+  setActiveId,
+  upsertProject,
+} from '@/lib/projects'
 import { LLMModelConfig } from '@/lib/models'
 import modelsList from '@/lib/models.json'
-import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
+import { FragmentSchema, fragmentCodeText, fragmentSchema as schema } from '@/lib/schema'
 import templates from '@/lib/templates'
 import { VariantId } from '@/lib/tournament'
 import { useTournament } from '@/lib/tournament-client'
@@ -20,11 +45,11 @@ import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from 'ai/react'
 import { usePostHog } from 'posthog-js/react'
-import { SetStateAction, useEffect, useState } from 'react'
+import { ReactNode, SetStateAction, useEffect, useRef, useState } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
 
 export default function Home() {
-  const [chatInput, setChatInput] = useLocalStorage('chat', '')
+  const [chatInput, setChatInput] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<string>(
     'auto',
@@ -90,60 +115,95 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ---- Persistence (localStorage stopgap until a real DB) ----
-  const RUN_KEY = 'evostack:run:v1'
   const [hydrated, setHydrated] = useState(false)
+  const [projectStore, setProjectStore] = useState<ProjectStore | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const skipSaveRef = useRef(true)
+  const skipCandidatePromoteRef = useRef(false)
+  const storeRef = useRef<ProjectStore | null>(null)
+  const workspaceRef = useRef<ProjectWorkspace>(blankWorkspace())
+  const [inspectOpen, setInspectOpen] = useState(false)
+  const [inspectSelection, setInspectSelection] = useState<InspectSelection | null>(null)
+  const [inspectApplying, setInspectApplying] = useState(false)
+  const [inspectError, setInspectError] = useState('')
+  const [versionCursor, setVersionCursor] = useState(0)
 
-  // Hydrate once on mount.
+  workspaceRef.current = {
+    messages,
+    fragment,
+    result,
+    selectedCandidate,
+    hasTournament,
+    currentTab,
+    chatInput,
+    tournament: {
+      candidates: tournament.candidates,
+      verdict: tournament.verdict,
+      phase: tournament.phase,
+    },
+  }
+
+  const applyProject = (project: ProjectRecord) => {
+    skipSaveRef.current = true
+    skipCandidatePromoteRef.current = true
+    setInspectOpen(false)
+    setInspectSelection(null)
+    setInspectError('')
+    setVersionCursor(0)
+    setMessages(project.messages ?? [])
+    setFragment(project.fragment)
+    setResult(project.result)
+    setSelectedCandidate(project.selectedCandidate)
+    setHasTournament(Boolean(project.hasTournament))
+    setCurrentTab(project.currentTab === 'fragment' ? 'fragment' : 'code')
+    setChatInput(project.chatInput ?? '')
+    setFiles([])
+    setIsPreviewLoading(false)
+    if (project.tournament?.candidates) {
+      tournament.hydrate({
+        candidates: project.tournament.candidates,
+        verdict: project.tournament.verdict,
+        phase: project.tournament.phase ?? 'done',
+      })
+    } else {
+      tournament.reset()
+    }
+  }
+
+  const persistCurrent = (force = false) => {
+    const store = storeRef.current
+    if (!store) return
+    if (!force && skipSaveRef.current) return
+    const next = saveWorkspace(store, store.activeId, workspaceRef.current)
+    storeRef.current = next
+    setProjectStore(next)
+  }
+
   useEffect(() => {
     if (typeof window === 'undefined') return
-    try {
-      const raw = localStorage.getItem(RUN_KEY)
-      if (raw) {
-        const snap = JSON.parse(raw)
-        if (snap?.messages) setMessages(snap.messages)
-        if (snap?.fragment) setFragment(snap.fragment)
-        if (snap?.result) setResult(snap.result)
-        if (snap?.selectedCandidate) setSelectedCandidate(snap.selectedCandidate)
-        if (snap?.hasTournament) setHasTournament(snap.hasTournament)
-        if (snap?.tournament) {
-          tournament.hydrate({
-            candidates: snap.tournament.candidates,
-            verdict: snap.tournament.verdict,
-            phase: snap.tournament.phase ?? 'done',
-          })
-        }
-      }
-    } catch {
-      // ignore corrupted snapshots
-    } finally {
-      setHydrated(true)
-    }
+    const store = loadStore()
+    storeRef.current = store
+    setProjectStore(store)
+    applyProject(getActive(store))
+    setHydrated(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Persist whenever the meaningful slice changes — but only after the
-  // initial hydrate is complete so we don't overwrite the saved snapshot
-  // with an empty initial state on first render.
+  const saverRef = useRef(createDebouncedSaver(() => persistCurrent()))
   useEffect(() => {
-    if (!hydrated || typeof window === 'undefined') return
-    try {
-      const snap = {
-        messages,
-        fragment,
-        result,
-        selectedCandidate,
-        hasTournament,
-        tournament: {
-          candidates: tournament.candidates,
-          verdict: tournament.verdict,
-          phase: tournament.phase,
-        },
-      }
-      localStorage.setItem(RUN_KEY, JSON.stringify(snap))
-    } catch {
-      // localStorage full or serialization issue — silently drop.
+    saverRef.current = createDebouncedSaver(() => persistCurrent())
+    return () => saverRef.current.cancel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
     }
+    saverRef.current.schedule()
   }, [
     hydrated,
     messages,
@@ -151,10 +211,50 @@ export default function Home() {
     result,
     selectedCandidate,
     hasTournament,
+    currentTab,
+    chatInput,
     tournament.candidates,
     tournament.verdict,
     tournament.phase,
   ])
+
+  function handleNewProject() {
+    saverRef.current.flush()
+    persistCurrent(true)
+    const store = storeRef.current
+    if (!store) return
+    const created = createProject(blankWorkspace())
+    const next = upsertProject(store, created, true)
+    storeRef.current = next
+    setProjectStore(next)
+    applyProject(created)
+  }
+
+  function handleSwitchProject(id: string) {
+    const store = storeRef.current
+    if (!store || id === store.activeId) return
+    saverRef.current.flush()
+    persistCurrent(true)
+    const latest = storeRef.current
+    if (!latest?.projects[id]) return
+    const next = setActiveId(latest, id)
+    storeRef.current = next
+    setProjectStore(next)
+    applyProject(next.projects[id])
+  }
+
+  function confirmDeleteProject() {
+    const store = storeRef.current
+    const id = pendingDeleteId
+    if (!store || !id) return
+    saverRef.current.flush()
+    if (id === store.activeId) persistCurrent(true)
+    const { store: next, opened } = deleteProject(store, id)
+    storeRef.current = next
+    setProjectStore(next)
+    setPendingDeleteId(null)
+    applyProject(opened)
+  }
   const currentTemplate =
     selectedTemplate === 'auto'
       ? templates
@@ -214,7 +314,7 @@ export default function Home() {
       setFragment(object)
       const content: Message['content'] = [
         { type: 'text', text: object.commentary || '' },
-        { type: 'code', text: object.code || '' },
+        { type: 'code', text: fragmentCodeText(object.code) },
       ]
 
       if (!lastMessage || lastMessage.role !== 'assistant') {
@@ -252,6 +352,10 @@ export default function Home() {
   // a result for the same code (otherwise refresh = duplicate sandbox).
   useEffect(() => {
     if (!selectedCandidate) return
+    if (skipCandidatePromoteRef.current) {
+      skipCandidatePromoteRef.current = false
+      return
+    }
     const c = tournament.candidates[selectedCandidate]
     if (!c?.fragment || c.status === 'generating') return
 
@@ -264,7 +368,7 @@ export default function Home() {
     // Append a synthetic assistant message capturing the selected candidate.
     const content: Message['content'] = [
       { type: 'text', text: next.commentary || '' },
-      { type: 'code', text: next.code || '' },
+      { type: 'code', text: fragmentCodeText(next.code) },
     ]
     setMessages((prev) => {
       const last = prev[prev.length - 1]
@@ -443,6 +547,10 @@ export default function Home() {
     setResult(undefined)
     setCurrentTab('code')
     setIsPreviewLoading(false)
+    setInspectOpen(false)
+    setInspectSelection(null)
+    setInspectError('')
+    setVersionCursor(0)
   }
 
   function setCurrentPreview(preview: {
@@ -458,6 +566,164 @@ export default function Home() {
     setCurrentPreview({ fragment: undefined, result: undefined })
   }
 
+  const activeVersions = projectStore ? getActive(projectStore).versions : []
+
+  function restoreVersionAt(index: number) {
+    const v = activeVersions[index]
+    if (!v?.fragment) return
+    skipCandidatePromoteRef.current = true
+    setVersionCursor(index)
+    setFragment(v.fragment)
+    setResult(v.result)
+    setInspectSelection(null)
+    setCurrentTab('fragment')
+  }
+
+  async function handleInspectApply(instruction: string) {
+    if (!session) {
+      setAuthDialog(true)
+      return
+    }
+    const complete = toCompleteFragment(fragment)
+    if (!complete) {
+      setInspectError('No active project source to patch.')
+      return
+    }
+    setInspectApplying(true)
+    setInspectError('')
+    try {
+      const res = await fetch('/api/inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fragment: complete,
+          selection: inspectSelection,
+          instruction,
+          model: currentModel,
+          config: languageModel,
+        }),
+      })
+      if (!res.ok) {
+        setInspectError((await res.text()) || 'Inspect apply failed.')
+        return
+      }
+      const updated = (await res.json()) as DeepPartial<FragmentSchema>
+      const nextComplete = toCompleteFragment(updated)
+      if (!nextComplete) {
+        setInspectError('Patch failed validation.')
+        return
+      }
+      const sandboxRes = await fetch('/api/sandbox', {
+        method: 'POST',
+        body: JSON.stringify({
+          fragment: nextComplete,
+          userID: session.user?.id,
+          teamID: userTeam?.id,
+          accessToken: session.access_token,
+        }),
+      })
+      const sandboxResult = await sandboxRes.json()
+      if (!sandboxRes.ok || !sandboxResult?.url) {
+        setInspectError('Patch generated but preview failed to start.')
+        return
+      }
+      skipCandidatePromoteRef.current = true
+      setFragment(nextComplete)
+      setResult(sandboxResult)
+      setCurrentTab('fragment')
+      setInspectSelection(null)
+      const store = storeRef.current
+      if (store) {
+        const version = {
+          id:
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `v_${Date.now().toString(36)}`,
+          createdAt: Date.now(),
+          label: instruction.trim().slice(0, 56),
+          fragment: nextComplete,
+          result: sandboxResult,
+        }
+        const next = pushVersion(store, store.activeId, version, {
+          ...workspaceRef.current,
+          fragment: nextComplete,
+          result: sandboxResult,
+          currentTab: 'fragment',
+        })
+        storeRef.current = next
+        setProjectStore(next)
+        setVersionCursor(0)
+      }
+    } catch (e) {
+      setInspectError(e instanceof Error ? e.message : 'Inspect apply failed.')
+    } finally {
+      setInspectApplying(false)
+    }
+  }
+
+  const pendingDeleteName = pendingDeleteId
+    ? projectStore?.projects[pendingDeleteId]?.name ?? 'this project'
+    : ''
+  const firstPrompt = messages
+    .find((m) => m.role === 'user')
+    ?.content.find((c) => c.type === 'text' && 'text' in c)?.text
+  const selectedSpec = selectedCandidate
+    ? tournament.candidates[selectedCandidate]
+    : undefined
+
+  const isBuilding =
+    tournament.phase === 'generating' ||
+    tournament.phase === 'judging' ||
+    isLoading ||
+    isPreviewLoading
+  const dockCommand = isBuilding || hasTournament
+
+  useEffect(() => {
+    if (!isBuilding) {
+      setElapsed(0)
+      return
+    }
+    const started = Date.now()
+    const tick = () => setElapsed(Math.floor((Date.now() - started) / 1000))
+    tick()
+    const id = setInterval(tick, 250)
+    return () => clearInterval(id)
+  }, [isBuilding])
+
+  const chatInputSlot = (
+    <ChatInput
+      retry={retry}
+      isErrored={error !== undefined}
+      errorMessage={errorMessage}
+      isLoading={isLoading}
+      isRateLimited={isRateLimited}
+      stop={stop}
+      input={chatInput}
+      handleInputChange={handleSaveInputChange}
+      handleSubmit={handleSubmitAuth}
+      isMultiModal={currentModel?.multiModal || false}
+      files={files}
+      handleFileChange={handleFileChange}
+    >
+      <ChatPicker
+        templates={templates}
+        selectedTemplate={selectedTemplate}
+        onSelectedTemplateChange={setSelectedTemplate}
+        models={filteredModels}
+        languageModel={languageModel}
+        onLanguageModelChange={handleLanguageModelChange}
+      />
+      <ChatSettings
+        languageModel={languageModel}
+        onLanguageModelChange={handleLanguageModelChange}
+        apiKeyConfigurable={!process.env.NEXT_PUBLIC_NO_API_KEY_INPUT}
+        baseURLConfigurable={!process.env.NEXT_PUBLIC_NO_BASE_URL_INPUT}
+        useMorphApply={useMorphApply}
+        onUseMorphApplyChange={setUseMorphApply}
+      />
+    </ChatInput>
+  )
+
   return (
     <main className="flex flex-col min-h-screen max-h-screen bg-background">
       <AuthDialog
@@ -465,94 +731,243 @@ export default function Home() {
         setOpen={setAuthDialog}
         view={authView}
       />
+      <Dialog open={!!pendingDeleteId} onOpenChange={(o) => !o && setPendingDeleteId(null)}>
+        <DialogContent className="rounded-none border-foreground sm:max-w-sm">
+          <DialogTitle className="font-display text-xl">
+            Delete “{pendingDeleteName}”?
+          </DialogTitle>
+          <DialogDescription>
+            This removes the project from this browser. It cannot be undone.
+          </DialogDescription>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="rounded-none"
+              onClick={() => setPendingDeleteId(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="rounded-none"
+              onClick={confirmDeleteProject}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Editorial app bar — brand + run meta + actions, all in one strip */}
       <div className="shrink-0 border-b border-border bg-background">
-        <div className="max-w-[1400px] mx-auto">
-          <NavBar
-            session={session}
-            showLogin={() => setAuthDialog(true)}
-            signOut={logout}
-            onSocialClick={handleSocialClick}
-            onClear={handleClearChat}
-            canClear={messages.length > 0}
-            canUndo={messages.length > 1 && !isLoading}
-            onUndo={handleUndo}
-            isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
-            hasFragment={!!fragment}
-          />
-        </div>
+        <NavBar
+          session={session}
+          showLogin={() => setAuthDialog(true)}
+          signOut={logout}
+          onSocialClick={handleSocialClick}
+          onClear={handleClearChat}
+          canClear={messages.length > 0}
+          canUndo={messages.length > 1 && !isLoading}
+          onUndo={handleUndo}
+          isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
+          hasFragment={!!fragment}
+          projects={projectStore ? listProjects(projectStore).map((p) => ({ id: p.id, name: p.name })) : []}
+          activeProjectId={projectStore?.activeId}
+          activeProjectName={
+            projectStore ? getActive(projectStore).name : 'Untitled'
+          }
+          onNewProject={handleNewProject}
+          onSwitchProject={handleSwitchProject}
+          onDeleteProject={setPendingDeleteId}
+        />
       </div>
 
-      {/* Specimen strip — visible once a tournament has been dispatched */}
-      {hasTournament && (
-        <SpecimenStrip
-          candidates={tournament.candidates}
-          selectedId={selectedCandidate}
-          onSelect={setSelectedCandidate}
-          verdictReasoning={tournament.verdict?.reasoning}
-          phase={tournament.phase}
-        />
-      )}
-
-      {/* Workspace */}
-      <div className="flex-1 grid w-full md:grid-cols-2 overflow-hidden">
-        <div
-          className={`flex flex-col w-full max-h-full max-w-[900px] mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 overflow-auto ${fragment ? 'col-span-1 md:border-r md:border-border' : 'col-span-2'}`}
-        >
-          <Chat
-            messages={messages}
-            isLoading={isLoading}
-            setCurrentPreview={setCurrentPreview}
-          />
-          <ChatInput
-            retry={retry}
-            isErrored={error !== undefined}
-            errorMessage={errorMessage}
-            isLoading={isLoading}
-            isRateLimited={isRateLimited}
-            stop={stop}
-            input={chatInput}
-            handleInputChange={handleSaveInputChange}
-            handleSubmit={handleSubmitAuth}
-            isMultiModal={currentModel?.multiModal || false}
-            files={files}
-            handleFileChange={handleFileChange}
-          >
-            <ChatPicker
-              templates={templates}
-              selectedTemplate={selectedTemplate}
-              onSelectedTemplateChange={setSelectedTemplate}
-              models={filteredModels}
-              languageModel={languageModel}
-              onLanguageModelChange={handleLanguageModelChange}
-            />
-            <ChatSettings
-              languageModel={languageModel}
-              onLanguageModelChange={handleLanguageModelChange}
-              apiKeyConfigurable={!process.env.NEXT_PUBLIC_NO_API_KEY_INPUT}
-              baseURLConfigurable={!process.env.NEXT_PUBLIC_NO_BASE_URL_INPUT}
-              useMorphApply={useMorphApply}
-              onUseMorphApplyChange={setUseMorphApply}
-            />
-          </ChatInput>
-        </div>
-        {fragment && (
-          <div className="flex flex-col overflow-hidden">
-            <Preview
-              teamID={userTeam?.id}
-              accessToken={session?.access_token}
-              selectedTab={currentTab}
-              onSelectedTabChange={setCurrentTab}
-              isChatLoading={isLoading}
-              isPreviewLoading={isPreviewLoading}
-              fragment={fragment}
-              result={result as ExecutionResult}
-              onClose={() => setFragment(undefined)}
-            />
+      {/* Thin rail | wide preview — command docks left once a run starts */}
+      <div
+        className={`flex-1 grid w-full grid-cols-1 overflow-hidden ${
+          dockCommand
+            ? 'md:grid-cols-[minmax(22rem,28rem)_minmax(0,1fr)]'
+            : 'md:grid-cols-[16rem_minmax(0,1fr)]'
+        }`}
+      >
+        <aside className="flex flex-col min-h-0 min-w-0 border-b md:border-b-0 md:border-r border-border overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto">
+          <RailSection label="Project">
+            <p className="font-display text-[14px] leading-tight">
+              {projectStore ? getActive(projectStore).name : firstPrompt?.slice(0, 48) || 'Untitled'}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {projectStore
+                ? getActive(projectStore).purpose || 'No purpose yet.'
+                : firstPrompt
+                  ? firstPrompt.slice(0, 72)
+                  : 'No purpose yet.'}
+            </p>
+          </RailSection>
+          <RailSection label="Versions">
+            <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+              + {activeVersions.length} versions +
+            </p>
+            {activeVersions.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {activeVersions.slice(0, 8).map((v, i) => (
+                  <li key={v.id}>
+                    <button
+                      type="button"
+                      onClick={() => restoreVersionAt(i)}
+                      className={`block w-full text-left truncate text-[11px] ${
+                        i === versionCursor
+                          ? 'text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {v.label || 'Version'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </RailSection>
+          <RailSection label="Run">
+            <p className="text-[12px]">
+              {selectedSpec
+                ? `${selectedSpec.sigil} · ${selectedSpec.label}`
+                : 'No selected candidate.'}
+            </p>
+          </RailSection>
+          <RailSection label="Candidates">
+            {hasTournament ? (
+              <SpecimenStrip
+                layout="rail"
+                candidates={tournament.candidates}
+                selectedId={selectedCandidate}
+                onSelect={setSelectedCandidate}
+                verdictReasoning={tournament.verdict?.reasoning}
+                phase={tournament.phase}
+              />
+            ) : (
+              <p className="text-[12px] text-muted-foreground">No candidates yet.</p>
+            )}
+          </RailSection>
+          <RailSection label="Brain">
+            <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+              empty +
+            </p>
+          </RailSection>
+          <RailSection label="Activity">
+            {messages.length > 0 ? (
+              <Chat
+                messages={messages}
+                isLoading={isLoading}
+                setCurrentPreview={setCurrentPreview}
+              />
+            ) : (
+              <p className="text-[12px] text-muted-foreground">No activity.</p>
+            )}
+          </RailSection>
           </div>
-        )}
+          {dockCommand && (
+            <div className="shrink-0 border-t border-border px-3 pt-2 pb-3">
+              {chatInputSlot}
+            </div>
+          )}
+        </aside>
+
+        <section className="relative flex flex-col min-h-0 min-w-0 overflow-hidden">
+          {fragment ? (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <Preview
+                teamID={userTeam?.id}
+                accessToken={session?.access_token}
+                selectedTab={currentTab}
+                onSelectedTabChange={setCurrentTab}
+                isChatLoading={isLoading}
+                isPreviewLoading={isPreviewLoading}
+                fragment={fragment}
+                result={result as ExecutionResult}
+                onClose={() => setFragment(undefined)}
+                inspect={{
+                  open: inspectOpen,
+                  setOpen: setInspectOpen,
+                  selection: inspectSelection,
+                  setSelection: setInspectSelection,
+                  onApply: handleInspectApply,
+                  applying: inspectApplying,
+                  error: inspectError,
+                  canUndo: versionCursor < activeVersions.length - 1,
+                  canRedo: versionCursor > 0,
+                  onUndo: () => restoreVersionAt(versionCursor + 1),
+                  onRedo: () => restoreVersionAt(versionCursor - 1),
+                  onReset: () => {
+                    setInspectSelection(null)
+                    if (activeVersions[0]) restoreVersionAt(0)
+                  },
+                }}
+              />
+            </div>
+          ) : isBuilding ? (
+            <ProcessingPane
+              seconds={elapsed}
+              detail={
+                tournament.phase === 'judging'
+                  ? 'editor scoring'
+                  : isPreviewLoading
+                    ? 'sandboxing'
+                    : 'sequencing specimens'
+              }
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center px-6">
+              <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-muted-foreground">
+                Live preview
+              </p>
+              <h2 className="mt-3 font-display font-black tracking-tight text-center text-[clamp(1.75rem,5vw,3.25rem)] leading-[1.05]">
+                Describe what you want to build
+              </h2>
+              {!dockCommand && (
+                <div className="mt-8 w-full max-w-2xl">{chatInputSlot}</div>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </main>
+  )
+}
+
+function ProcessingPane({ seconds, detail }: { seconds: number; detail: string }) {
+  const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
+  const ss = String(seconds % 60).padStart(2, '0')
+  return (
+    <div className="h-full flex flex-col items-center justify-center px-6">
+      <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-muted-foreground">
+        Processing
+      </p>
+      <p className="mt-5 font-display font-black tabular leading-none text-[clamp(3.5rem,12vw,7rem)]">
+        {mm}:{ss}
+      </p>
+      <p className="mt-4 font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+        {detail}
+      </p>
+    </div>
+  )
+}
+
+function RailSection({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="px-3 py-2.5 border-b border-border/70">
+      <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground mb-1.5">
+        {label}
+      </p>
+      {children}
+    </div>
   )
 }

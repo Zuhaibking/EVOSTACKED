@@ -3,7 +3,7 @@ import { Duration } from '@/lib/duration'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
 import { toPrompt } from '@/lib/prompt'
 import ratelimit from '@/lib/ratelimit'
-import { fragmentSchema as schema } from '@/lib/schema'
+import { fragmentCodeText, fragmentSchema as schema } from '@/lib/schema'
 import { Templates } from '@/lib/templates'
 import {
   VARIANTS,
@@ -152,7 +152,7 @@ CANDIDATES:
 ${successful
   .map((r) => {
     const f: any = r.fragment ?? {}
-    const code = typeof f.code === 'string' ? f.code.slice(0, 1800) : ''
+    const code = fragmentCodeText(f.code).slice(0, 1800)
     return `--- ${r.id.toUpperCase()} (${VARIANTS.find((v) => v.id === r.id)?.label}) ---
 title: ${f.title ?? ''}
 description: ${f.description ?? ''}
@@ -180,7 +180,7 @@ ${code}`
         // Heuristic fallback
         const scores = successful.map((r) => {
           const f: any = r.fragment ?? {}
-          const len = (f.code || '').length
+          const len = fragmentCodeText(f.code).length
           const fit = Math.min(1, len / 4000)
           return {
             id: r.id,

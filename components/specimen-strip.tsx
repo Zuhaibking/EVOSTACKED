@@ -1,5 +1,6 @@
 'use client'
 
+import { fragmentCodeText } from '@/lib/schema'
 import { Candidate } from '@/lib/tournament-client'
 import { VariantId } from '@/lib/tournament'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
@@ -37,12 +38,14 @@ export function SpecimenStrip({
   onSelect,
   verdictReasoning,
   phase,
+  layout = 'dock',
 }: {
   candidates: Record<VariantId, Candidate>
   selectedId?: VariantId
   onSelect: (id: VariantId) => void
   verdictReasoning?: string
   phase: 'idle' | 'generating' | 'judging' | 'done'
+  layout?: 'dock' | 'rail'
 }) {
   const list = Object.values(candidates)
   const winner = list.find((c) => c.isWinner)
@@ -54,6 +57,39 @@ export function SpecimenStrip({
   useEffect(() => {
     setOpen(isLive)
   }, [isLive])
+
+  const tabs = list.map((c, idx) => (
+    <CandidateTab
+      key={c.id}
+      c={c}
+      idx={idx}
+      isSelected={selectedId === c.id}
+      onSelect={() => onSelect(c.id)}
+    />
+  ))
+
+  if (layout === 'rail') {
+    return (
+      <section aria-label="Specimens — tournament candidates" className="relative">
+        {isLive && (
+          <span
+            aria-hidden
+            className="absolute bottom-0 left-0 h-[2px] bg-brand/70 transition-[width] duration-700 ease-out"
+            style={{ width: `${(doneCount / Math.max(list.length, 1)) * 100}%` }}
+          />
+        )}
+        <div className="flex flex-col gap-1.5">{tabs}</div>
+        {phase === 'done' && verdictReasoning && (
+          <p className="mt-2.5 font-display italic text-[12px] sm:text-[13px] text-muted-foreground leading-relaxed">
+            <span className="font-mono not-italic text-[9px] sm:text-[10px] tracking-[0.22em] uppercase text-foreground mr-2 whitespace-nowrap">
+              Editor’s note ·
+            </span>
+            {verdictReasoning}
+          </p>
+        )}
+      </section>
+    )
+  }
 
   return (
     <section
@@ -95,15 +131,7 @@ export function SpecimenStrip({
 
           {/* Tab strip — takes the room */}
           <div className="flex-1 grid grid-cols-3 gap-1 sm:gap-1.5 min-w-0">
-            {list.map((c, idx) => (
-              <CandidateTab
-                key={c.id}
-                c={c}
-                idx={idx}
-                isSelected={selectedId === c.id}
-                onSelect={() => onSelect(c.id)}
-              />
-            ))}
+            {tabs}
           </div>
 
           {/* Toggle */}
@@ -291,10 +319,12 @@ function CandidateCard({
   const isError = c.status === 'error'
   const isDone = c.status === 'done' || c.status === 'judging' || isWin
 
-  const code = (c.fragment?.code as string | undefined) ?? ''
+  const code = fragmentCodeText(c.fragment?.code)
   const charCount = code.length
   const lineCount = code ? code.split('\n').length : 0
-  const deps = (c.fragment?.additional_dependencies as string[] | undefined) ?? []
+  const deps = Array.isArray(c.fragment?.additional_dependencies)
+    ? (c.fragment.additional_dependencies.filter(Boolean) as string[])
+    : []
   const tail = code ? code.split('\n').slice(-3).join('\n') : ''
 
   const [tick, setTick] = useState(0)

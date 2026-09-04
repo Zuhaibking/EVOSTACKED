@@ -11,6 +11,8 @@ import { dark } from '@clerk/themes'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { useState } from 'react'
 
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+
 export type ViewType = 'sign_in' | 'sign_up'
 
 const editorialAppearance = {
@@ -154,7 +156,12 @@ export function AuthDialog({
 
         {/* Clerk form — own its own paddings */}
         <div className="px-6 py-5">
-          {mode === 'sign_in' ? (
+          {!clerkEnabled ? (
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              Auth is off until Clerk keys are set in{' '}
+              <span className="font-mono text-[11px]">.env.local</span>.
+            </p>
+          ) : mode === 'sign_in' ? (
             <SignIn
               routing="virtual"
               signUpUrl="#"
