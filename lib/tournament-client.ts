@@ -1,5 +1,6 @@
 'use client'
 
+import { looksUsableCode } from './salvage-fragment'
 import { FragmentSchema } from './schema'
 import { TournamentEvent, VARIANTS, VariantId, Verdict } from './tournament'
 import { DeepPartial } from 'ai'
@@ -19,6 +20,7 @@ export type Candidate = {
   status: CandidateStatus
   fragment?: DeepPartial<FragmentSchema>
   error?: string
+  warning?: string
   // Judge output
   scoreClarity?: number
   scoreFit?: number
@@ -48,6 +50,7 @@ export type TournamentSubmitArgs = {
   config: any
   userID?: string
   teamID?: string
+  projectId?: string
 }
 
 export function useTournament() {
@@ -190,10 +193,19 @@ export function useTournament() {
         [evt.id]: { ...c[evt.id], status: 'done', fragment: evt.fragment },
       }))
     } else if (evt.type === 'candidate_error') {
-      setCandidates((c) => ({
-        ...c,
-        [evt.id]: { ...c[evt.id], status: 'error', error: evt.error },
-      }))
+      setCandidates((c) => {
+        const prev = c[evt.id]
+        const usable = looksUsableCode(prev?.fragment?.code)
+        return {
+          ...c,
+          [evt.id]: {
+            ...prev,
+            status: usable ? 'done' : 'error',
+            error: usable ? undefined : evt.error,
+            warning: usable ? evt.error : prev?.warning,
+          },
+        }
+      })
     } else if (evt.type === 'verdict') {
       setVerdict(evt.verdict)
       setPhase('judging')

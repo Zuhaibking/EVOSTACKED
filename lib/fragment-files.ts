@@ -142,6 +142,25 @@ function alreadyHave(
   })
 }
 
+function stubExport(name: string): string {
+  if (/^use[A-Z]/.test(name)) {
+    return [
+      `export function ${name}(..._args: any[]) {`,
+      '  return new Proxy({}, {',
+      "    get(_t, p) {",
+      "      if (typeof p === 'string' && /^set[A-Z]/.test(p)) return () => {}",
+      '      return undefined',
+      '    },',
+      '  })',
+      '}',
+    ].join('\n')
+  }
+  if (/^[A-Z]/.test(name)) {
+    return `export function ${name}() { return null }`
+  }
+  return `export const ${name}: any = []`
+}
+
 function stubPath(imp: LocalImport): string {
   if (/\.(tsx|ts|jsx|js|css|json)$/.test(imp.resolved)) return imp.resolved
   if (imp.resolved.endsWith('.css') || imp.spec.endsWith('.css')) {
@@ -162,11 +181,7 @@ function stubModule(imp: LocalImport): string {
     '// sandbox: local module was imported but never generated',
   ]
   for (const n of names) {
-    lines.push(
-      /^[A-Z]/.test(n)
-        ? `export function ${n}() { return null }`
-        : `export const ${n}: any = []`,
-    )
+    lines.push(stubExport(n))
   }
   if (imp.defaultName && /^[A-Z]/.test(imp.defaultName)) {
     lines.push(`export default function ${imp.defaultName}() { return null }`)

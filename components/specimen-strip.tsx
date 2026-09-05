@@ -1,5 +1,6 @@
 'use client'
 
+import { looksUsableCode } from '@/lib/salvage-fragment'
 import { fragmentCodeText } from '@/lib/schema'
 import { Candidate } from '@/lib/tournament-client'
 import { VariantId } from '@/lib/tournament'
@@ -12,6 +13,10 @@ const STATUS_COPY: Record<Candidate['status'], string> = {
   done: 'Sequenced',
   error: 'Failed',
   judging: 'Judging',
+}
+
+function isBlocked(c: Candidate) {
+  return c.status === 'pending' || (c.status === 'error' && !looksUsableCode(c.fragment?.code))
 }
 
 function formatPct(n?: number) {
@@ -219,6 +224,7 @@ function CandidateTab({
   const isGen = c.status === 'generating'
   const isPending = c.status === 'pending'
   const isError = c.status === 'error'
+  const blocked = isBlocked(c)
 
   const composite =
     c.scoreComposite != null
@@ -247,16 +253,16 @@ function CandidateTab({
                 : 'border-foreground/50 bg-foreground/[0.03] text-foreground'
               : 'border-border hover:border-foreground/60 hover:bg-foreground/[0.02] text-foreground/85'
         }
-        ${isPending || isError ? 'opacity-55' : ''}
+        ${blocked ? 'opacity-55' : ''}
       `}
     >
     <button
       type="button"
       onClick={onSelect}
-      disabled={isPending || isError}
+      disabled={blocked}
       title={`${c.label}${c.fragment?.title ? ' — ' + c.fragment.title : ''}`}
       className={`flex items-stretch flex-1 min-w-0 text-left ${
-        isPending || isError ? 'cursor-not-allowed' : 'cursor-pointer'
+        blocked ? 'cursor-not-allowed' : 'cursor-pointer'
       }`}
     >
       {/* Live shimmer rail */}
@@ -318,7 +324,7 @@ function CandidateTab({
         </span>
       </span>
     </button>
-    {showLifecycle && !isPending && !isError && onUse ? (
+    {showLifecycle && !blocked && onUse ? (
       <button
         type="button"
         onClick={onUse}
@@ -360,6 +366,7 @@ function CandidateCard({
   const isGen = c.status === 'generating'
   const isPending = c.status === 'pending'
   const isError = c.status === 'error'
+  const blocked = isBlocked(c)
   const isDone = c.status === 'done' || c.status === 'judging' || isWin
 
   const code = fragmentCodeText(c.fragment?.code)
@@ -386,7 +393,7 @@ function CandidateCard({
     <button
       type="button"
       onClick={onSelect}
-      disabled={isPending || isError}
+      disabled={blocked}
       className={`
         group relative w-full text-left bg-card transition-all overflow-hidden flex flex-col
         ${
@@ -396,7 +403,7 @@ function CandidateCard({
               ? 'border-2 border-foreground'
               : 'border border-border hover:border-foreground/60'
         }
-        ${isPending || isError ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
+        ${blocked ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
         rounded-none p-0
       `}
     >
@@ -428,7 +435,7 @@ function CandidateCard({
             {isGen && <Loader2 className="h-3 w-3 animate-spin" />}
             {isActive
               ? '✓ Active'
-              : showLifecycle && !isPending && !isError
+              : showLifecycle && !blocked
                 ? 'Resting'
                 : isWin
                   ? '★ Survived'
@@ -554,7 +561,7 @@ function CandidateCard({
           “{c.scoreComment}”
         </p>
       )}
-      {showLifecycle && !isPending && !isError && onUse ? (
+      {showLifecycle && !blocked && onUse ? (
         <div className="border-t border-border/70 px-2.5 py-1.5">
           <span
             role="button"

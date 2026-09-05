@@ -508,6 +508,11 @@ export default function Home() {
         }
         lastSandboxedCandidateRef.current = activeCandidateId
         setResult(sandboxResult)
+        if (sandboxResult?.installError) {
+          setErrorMessage(`Install did not finish: ${sandboxResult.installError}`)
+        } else if (sandboxResult?.runError) {
+          setErrorMessage(`Preview did not finish: ${sandboxResult.runError}`)
+        }
         setCurrentTab('fragment')
       })
       .catch(() => {})
@@ -603,6 +608,7 @@ export default function Home() {
         template: currentTemplate,
         model: currentModel,
         config: languageModel,
+        projectId: storeRef.current?.activeId,
       })
 
       posthog.capture('tournament_submit', {

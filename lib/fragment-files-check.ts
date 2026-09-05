@@ -59,6 +59,18 @@ const already = withMissingLocalModules([
 assert.equal(already.filter((f) => strip(f.file_path) === 'data/data').length, 1)
 assert.match(already[1].file_content, /ok: true/)
 
+const hooks = withMissingLocalModules([
+  {
+    file_path: 'pages/index.tsx',
+    file_content: 'import { useApp, useFlowState } from "../state/app"\n',
+  },
+])
+const hookFile = hooks.find((f) => f.file_path.includes('state/app'))
+assert.ok(hookFile)
+assert.match(hookFile.file_content, /export function useApp/)
+assert.match(hookFile.file_content, /export function useFlowState/)
+assert.match(hookFile.file_content, /Proxy/)
+
 function strip(p: string) {
   return p.replace(/\.ts$/, '')
 }

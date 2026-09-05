@@ -44,7 +44,7 @@ export const fragmentSchema = z.object({
   code: z
     .string()
     .describe(
-      'Full source of that single file. Must compile as-is. Inline all mock data, components, and helpers in this string. Do not import from relative paths such as ../data/data or ./foo — those files are never written. Allowed imports: react, next/*, and @/components/ui/*.',
+      'Full source of that single file. Must compile as-is. Inline all mock data, components, and helpers in this string. Do not import from relative paths such as ../data/data or ./foo — those files are never written. Allowed imports: react, next/*, and @/components/ui/*. First paint must not call methods on null or undefined (empty selection, empty list). Guard .toFixed, .map, and .reduce.',
     ),
   // code: z.array(z.object({
   //   file_name: z.string().describe('Name of the file.'),

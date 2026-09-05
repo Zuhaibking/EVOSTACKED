@@ -2,6 +2,7 @@ import { withCaptureLayer } from './capture-layer'
 import { saveCandidateSnapshot, CandidateSnapshot } from './candidate-store'
 import { detectDataCollection } from './detect-data-collection'
 import { fragmentFiles, withMissingLocalModules } from './fragment-files'
+import { repairGeneratedFiles } from './repair-fragment'
 import { saveProjectMeta, type ProjectCandidateMeta } from './project-meta'
 import { FragmentSchema } from './schema'
 import { DeepPartial } from 'ai'
@@ -16,7 +17,7 @@ export async function persistCandidateFiles(args: {
   score?: number
   isWinner?: boolean
 }): Promise<CandidateSnapshot> {
-  let files = withMissingLocalModules(fragmentFiles(args.fragment))
+  let files = repairGeneratedFiles(withMissingLocalModules(fragmentFiles(args.fragment)))
   const requiresDataLayer = detectDataCollection(files)
   if (requiresDataLayer) {
     files = withCaptureLayer(files, {

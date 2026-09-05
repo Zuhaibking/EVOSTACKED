@@ -15,6 +15,9 @@ export type ExecutionResultInterpreter = ExecutionResultBase & {
 export type ExecutionResultWeb = ExecutionResultBase & {
   template: string
   url: string
+  rehydrated?: boolean
+  installError?: string
+  runError?: string
 }
 
 export type ExecutionResult = ExecutionResultInterpreter | ExecutionResultWeb

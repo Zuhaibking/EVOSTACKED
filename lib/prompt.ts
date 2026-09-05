@@ -10,6 +10,7 @@ export function toPrompt(template: Templates) {
     Do not wrap code in backticks.
     Always break the lines correctly.
     The sandbox writes exactly one entry file. Put every component, helper, style, and mock dataset in that file. Never import from a relative path (../data, ./utils, ./components) — those files are not created. Existing template modules are fine (react, next, @/components/ui/*, @/lib/utils).
+    First paint must not crash: do not read properties of values that may be null or undefined (empty selection, empty cart, closed dialog).
     You can use one of the following templates:
     ${templatesToPrompt(template)}
   `
