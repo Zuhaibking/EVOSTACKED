@@ -2,6 +2,7 @@ import { withCaptureLayer } from './capture-layer'
 import { saveCandidateSnapshot, CandidateSnapshot } from './candidate-store'
 import { detectDataCollection } from './detect-data-collection'
 import { fragmentFiles, withMissingLocalModules } from './fragment-files'
+import { replaceBrokenRemoteImagesInFiles } from './images-validate'
 import { repairGeneratedFiles } from './repair-fragment'
 import { saveProjectMeta, type ProjectCandidateMeta } from './project-meta'
 import { FragmentSchema } from './schema'
@@ -18,6 +19,11 @@ export async function persistCandidateFiles(args: {
   isWinner?: boolean
 }): Promise<CandidateSnapshot> {
   let files = repairGeneratedFiles(withMissingLocalModules(fragmentFiles(args.fragment)))
+  try {
+    files = await replaceBrokenRemoteImagesInFiles(files)
+  } catch {
+    /* keep generated files if validation cannot run */
+  }
   const requiresDataLayer = detectDataCollection(files)
   if (requiresDataLayer) {
     files = withCaptureLayer(files, {

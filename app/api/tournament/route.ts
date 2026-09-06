@@ -9,6 +9,7 @@ import {
   isTransientProviderError,
   salvageFragment,
 } from '@/lib/salvage-fragment'
+import { applyValidatedImagesToFragment } from '@/lib/images-validate'
 import { fragmentCodeText, fragmentSchema as schema } from '@/lib/schema'
 import { Templates } from '@/lib/templates'
 import {
@@ -302,14 +303,15 @@ async function runCandidate(args: {
         ms,
       })
     }
-    send({ type: 'candidate_done', id: variant.id, fragment })
+    const fragmentOut = await applyValidatedImagesToFragment(fragment)
+    send({ type: 'candidate_done', id: variant.id, fragment: fragmentOut })
     if (args.projectId) {
       try {
         await persistCandidateFiles({
           projectId: args.projectId,
           candidateId: variant.id,
           runId: args.runId,
-          fragment,
+          fragment: fragmentOut,
           label: variant.label,
         })
         await appendGenerationLog(args.runId, {
@@ -326,7 +328,7 @@ async function runCandidate(args: {
         })
       }
     }
-    return { id: variant.id as VariantId, fragment, error: null }
+    return { id: variant.id as VariantId, fragment: fragmentOut, error: null }
   } catch (first: any) {
     const salvaged = salvageFragment(last)
     if (salvaged) {
@@ -338,21 +340,22 @@ async function runCandidate(args: {
         ms,
         error: first?.message,
       })
-      send({ type: 'candidate_done', id: variant.id, fragment: salvaged })
+      const salvagedOut = await applyValidatedImagesToFragment(salvaged)
+      send({ type: 'candidate_done', id: variant.id, fragment: salvagedOut })
       if (args.projectId) {
         try {
           await persistCandidateFiles({
             projectId: args.projectId,
             candidateId: variant.id,
             runId: args.runId,
-            fragment: salvaged,
+            fragment: salvagedOut,
             label: variant.label,
           })
         } catch {
           /* persist is best-effort here */
         }
       }
-      return { id: variant.id as VariantId, fragment: salvaged, error: null }
+      return { id: variant.id as VariantId, fragment: salvagedOut, error: null }
     }
 
     if (!last && isTransientProviderError(first)) {
@@ -368,14 +371,16 @@ async function runCandidate(args: {
             ms,
             error: 'transient retry',
           })
-          send({ type: 'candidate_done', id: variant.id, fragment })
-          return { id: variant.id as VariantId, fragment, error: null }
+          const retryOut = await applyValidatedImagesToFragment(fragment)
+          send({ type: 'candidate_done', id: variant.id, fragment: retryOut })
+          return { id: variant.id as VariantId, fragment: retryOut, error: null }
         }
       } catch (second: any) {
         const again = salvageFragment(last)
         if (again) {
-          send({ type: 'candidate_done', id: variant.id, fragment: again })
-          return { id: variant.id as VariantId, fragment: again, error: null }
+          const againOut = await applyValidatedImagesToFragment(again)
+          send({ type: 'candidate_done', id: variant.id, fragment: againOut })
+          return { id: variant.id as VariantId, fragment: againOut, error: null }
         }
         first = second
       }

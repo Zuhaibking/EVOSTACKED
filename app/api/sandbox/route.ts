@@ -13,6 +13,7 @@ import {
   withMissingLocalModules,
   WrittenFile,
 } from '@/lib/fragment-files'
+import { replaceBrokenRemoteImagesInFiles } from '@/lib/images-validate'
 import { parseNextError, repairGeneratedFiles } from '@/lib/repair-fragment'
 import { safeInstallCommand } from '@/lib/safe-install'
 import { FragmentSchema } from '@/lib/schema'
@@ -137,6 +138,11 @@ export async function POST(req: Request) {
     }
   }
   files = repairGeneratedFiles(files)
+  try {
+    files = await replaceBrokenRemoteImagesInFiles(files)
+  } catch {
+    /* keep generated files if validation cannot run */
+  }
 
   const hadCapture = files.some((f) => f.file_path.includes('evostack-capture'))
   const requiresDataLayer =
