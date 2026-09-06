@@ -1,0 +1,42 @@
+apps/api/src/generation/sandbox.runner.ts
+  s_8f5f32c9ec763f::t_17b0154d0ec0d8 1,3-5
+apps/api/src/generation/chat.runner.ts
+  s_8f5f32c9ec763f::t_3b3e7defdad724 1,3-5
+apps/app/lib/tournament-candidates.test.ts
+  s_8f5f32c9ec763f::t_ebcc4d0ea7a424 715
+apps/app/lib/repair.ts
+  s_8f5f32c9ec763f::t_90068f1d55ac21 1,5
+apps/api/src/generation/disabled.ts
+  s_8f5f32c9ec763f::t_1efa80abca56c2 1-9
+apps/api/src/generation/tournament.runner.ts
+  s_8f5f32c9ec763f::t_d916477ff87ae6 1,3,5-8
+tasks/plan.md
+  s_8f5f32c9ec763f::t_9b7d84b7dc3746 2
+  s_8f5f32c9ec763f::t_0830cef297d925 1,3
+apps/app/lib/architecture-compliance.ts
+  s_8f5f32c9ec763f::t_00547c6a8791ca 3-4,57,65
+tasks/GENERATION.md
+  s_8f5f32c9ec763f::t_5ef09b9e3b008e 1-47
+apps/api/src/generation/morph.runner.ts
+  s_8f5f32c9ec763f::t_5cf447a5931d98 1,3-5
+apps/app/package.json
+  s_8f5f32c9ec763f::t_66144ae46269c9 45
+tasks/todo.md
+  s_8f5f32c9ec763f::t_c6bb46ad5ffa75 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bcfc66bc2a61a68e5087c3d01e060aa1db2f3598",
+  "prompts": {},
+  "sessions": {
+    "s_8f5f32c9ec763f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "43347562-50e2-4f91-8ab7-2dd120835e90",
+        "model": "grok-4.6"
+      },
+      "human_author": "Suhaib <suhaibking310@gmail.com>"
+    }
+  }
+}
