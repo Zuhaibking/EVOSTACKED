@@ -59,5 +59,13 @@ export type TournamentEvent =
   | { type: 'candidate_chunk'; id: VariantId; fragment: any }
   | { type: 'candidate_done'; id: VariantId; fragment: any; warning?: string }
   | { type: 'candidate_error'; id: VariantId; error: string }
+  | {
+      type: 'candidate_verified'
+      id: VariantId
+      ok: boolean
+      error?: string
+      diagnosis?: string
+      sbxId?: string
+    }
   | { type: 'verdict'; verdict: Verdict }
   | { type: 'tournament_done' }

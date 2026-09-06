@@ -253,15 +253,17 @@ export async function POST(req: Request) {
       }
     }
 
+    // `sbx` is a `let`, so TS re-widens it to `Sandbox | null` inside closures.
+    const box = sbx
     if (sandboxTemplate !== 'code-interpreter-v1') {
       try {
-        await injectInspectBridge(sbx)
+        await injectInspectBridge(box)
       } catch (e) {
         console.warn('inspect bridge inject failed', e)
       }
-      runError = await probeAndRepair(sbx, files, async (next) => {
+      runError = await probeAndRepair(box, files, async (next) => {
         files = next
-        await writeTree(sbx, files)
+        await writeTree(box, files)
         if (projectId && candidateId) {
           await saveCandidateSnapshot({
             projectId,

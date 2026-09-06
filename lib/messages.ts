@@ -24,21 +24,25 @@ export type Message = {
   result?: ExecutionResult
 }
 
+type UserPart =
+  | { type: 'image'; image: string }
+  | { type: 'text'; text: string }
+
 export function toAISDKMessages(messages: Message[]): CoreMessage[] {
-  return messages.map((message) => {
-    const parts = message.content.flatMap((content) => {
+  return messages.map((message): CoreMessage => {
+    const parts = message.content.flatMap((content): UserPart[] => {
       if (content.type === 'image') {
-        return [{ type: 'image' as const, image: content.image }]
+        return [{ type: 'image', image: content.image }]
       }
       const text = fragmentCodeText(content.text)
-      return text ? [{ type: 'text' as const, text }] : []
+      return text ? [{ type: 'text', text }] : []
     })
 
     // Assistant array parts must be text | tool-call. Non-string `code`
     // (stream partials / multi-file) used to blow up streamObject's Zod check.
     if (message.role === 'assistant') {
       return {
-        role: 'assistant' as const,
+        role: 'assistant',
         content: parts
           .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
           .map((p) => p.text)
@@ -47,7 +51,7 @@ export function toAISDKMessages(messages: Message[]): CoreMessage[] {
     }
 
     return {
-      role: 'user' as const,
+      role: 'user',
       content: parts.length > 0 ? parts : '',
     }
   })

@@ -23,7 +23,7 @@ export function repairGeneratedSource(code: string): string {
   )
   next = next.replace(
     /useContext\(\s*([A-Za-z_$][\w$]*)\s*\)(?!\s*\?\?)/g,
-    'useContext($1) ?? {}',
+    '(useContext($1) ?? {})',
   )
   next = next.replace(
     /=\s*(use[A-Z][\w$]*\(\s*\))\s*;/g,
@@ -33,10 +33,13 @@ export function repairGeneratedSource(code: string): string {
   return next
 }
 
+const EXPORT_DEFAULT = 'export default '
+
 function wrapMissingProviders(code: string): string {
   if (code.includes('/* evo:providers */')) return code
-  const exported = code.match(/export default function ([A-Za-z_$][\w$]*)/)
-  if (!exported) return code
+  // anchored to a line start so a commented-out or quoted export is never the target
+  const exported = code.match(/^export default function ([A-Za-z_$][\w$]*)/m)
+  if (!exported || exported.index === undefined) return code
   const name = exported[1]
   const providers = [
     ...new Set(
@@ -44,11 +47,17 @@ function wrapMissingProviders(code: string): string {
     ),
   ].filter((p) => p !== name)
   if (!providers.length) return code
+  // the page already mounts its provider tree; wrapping again would double-mount state
+  if (code.includes(`<${providers[0]}>`)) return code
   const inner = providers.reduceRight(
     (acc, p) => `<${p}>${acc}</${p}>`,
     `<${name} {...props} />`,
   )
-  return `${code.replace(/export default function /, 'function ')}\n/* evo:providers */\nexport default function Page(props) {\n  return (${inner})\n}\n`
+  const at = exported.index
+  const demoted = code.slice(0, at) + code.slice(at + EXPORT_DEFAULT.length)
+  // ponytail: EvoRoot is a fixed name, not a collision-avoiding generator — a page that
+  // already declares EvoRoot would still clash. Upgrade path: parse and rename properly.
+  return `${demoted}\n/* evo:providers */\nexport default function EvoRoot(props) {\n  return (${inner})\n}\n`
 }
 
 export function repairGeneratedFiles(files: WrittenFile[]): WrittenFile[] {

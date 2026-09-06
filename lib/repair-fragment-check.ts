@@ -69,14 +69,63 @@ export default function Home() {
 }
 `
 const healed = repairGeneratedSource(vivid)
-assert.match(healed, /useContext\(AppContext\) \?\? \{\}/)
+assert.match(healed, /\(useContext\(AppContext\) \?\? \{\}\)/)
 assert.match(healed, /useFlowState\(\) \?\? \{\}/)
 assert.match(healed, /useApp\(\) \?\? \{\}/)
 assert.match(healed, /\/\* evo:providers \*\//)
 assert.match(healed, /<AppProvider>/)
 assert.match(healed, /function Home\(/)
-assert.match(healed, /export default function Page/)
+assert.match(healed, /export default function EvoRoot/)
 assert.equal(repairGeneratedSource(healed), healed)
 assert.ok(!healed.includes('<AppProvider><AppProvider>'))
+
+// usecontext-repair-precedence: member access binds tighter than ??, so the guard must parenthesize
+assert.equal(
+  repairGeneratedSource('const items = useContext(CartCtx).items;'),
+  'const items = (useContext(CartCtx) ?? {}).items;',
+)
+assert.equal(
+  repairGeneratedSource('<div>{useContext(AppCtx).name}</div>'),
+  '<div>{(useContext(AppCtx) ?? {}).name}</div>'
+)
+assert.equal(
+  repairGeneratedSource('const n = useContext(Ctx)?.name'),
+  'const n = (useContext(Ctx) ?? {})?.name',
+)
+assert.equal(
+  repairGeneratedSource('{(useContext(CartCtx) ?? {}).items.map(i => <li/>)}'),
+  '{(useContext(CartCtx) ?? {}).items.map(i => <li/>)}',
+)
+
+// provider-wrap-duplicate-identifier: a default export already named Page must not collide
+const pageNamed = `
+function ThemeProvider({ children }) { return <Ctx.Provider>{children}</Ctx.Provider> }
+export default function Page() { return <main>hi</main> }
+`
+const wrapped = repairGeneratedSource(pageNamed)
+assert.equal(wrapped.match(/export default function/g)?.length, 1)
+assert.match(wrapped, /export default function EvoRoot\(props\)/)
+assert.match(wrapped, /<ThemeProvider><Page \{\.\.\.props\} \/><\/ThemeProvider>/)
+assert.equal(wrapped.match(/^function Page\(/gm)?.length, 1)
+assert.equal(repairGeneratedSource(wrapped), wrapped)
+
+// already renders its own provider — wrapping again would double-mount state
+const selfWrapped = `
+function ThemeProvider({ children }) { return <Ctx.Provider>{children}</Ctx.Provider> }
+export default function Page() { return <ThemeProvider><main>hi</main></ThemeProvider> }
+`
+assert.equal(repairGeneratedSource(selfWrapped), selfWrapped)
+
+// provider-wrap-matches-comments: a commented-out export is left byte-identical
+const commented = `// export default function Old() {}
+function AppProvider({ children }) { return <Ctx.Provider>{children}</Ctx.Provider> }
+export default function Home() { return <main>hi</main> }
+`
+const fromComment = repairGeneratedSource(commented)
+assert.match(fromComment, /^\/\/ export default function Old\(\) \{\}$/m)
+assert.equal(fromComment.includes('<Old {...props} />'), false)
+assert.equal(fromComment.match(/^export default function/gm)?.length, 1)
+assert.match(fromComment, /<AppProvider><Home \{\.\.\.props\} \/><\/AppProvider>/)
+assert.equal(repairGeneratedSource(fromComment), fromComment)
 
 console.log('repair-fragment-check ok')

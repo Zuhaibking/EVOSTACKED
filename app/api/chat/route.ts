@@ -3,7 +3,7 @@ import { Duration } from '@/lib/duration'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
 import { toPrompt } from '@/lib/prompt'
 import ratelimit from '@/lib/ratelimit'
-import { fragmentSchema as schema } from '@/lib/schema'
+import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import { Templates } from '@/lib/templates'
 import { streamObject, LanguageModel, CoreMessage } from 'ai'
 
@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     template,
     model,
     config,
+    currentFragment,
   }: {
     messages: CoreMessage[]
     userID: string | undefined
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
     template: Templates
     model: LLMModel
     config: LLMModelConfig
+    currentFragment: FragmentSchema | undefined
   } = await req.json()
 
   const limit = !config.apiKey
@@ -58,7 +60,7 @@ export async function POST(req: Request) {
     const stream = await streamObject({
       model: modelClient as LanguageModel,
       schema,
-      system: toPrompt(template),
+      system: toPrompt(template, currentFragment),
       messages,
       maxRetries: 0, // do not retry on errors
       ...modelParams,

@@ -21,6 +21,10 @@ export type Candidate = {
   fragment?: DeepPartial<FragmentSchema>
   error?: string
   warning?: string
+  // Verification signal, independent of status. 'unknown' until a real run says otherwise.
+  health?: 'unknown' | 'ok' | 'broken'
+  verifyError?: string
+  verifySbxId?: string
   // Judge output
   scoreClarity?: number
   scoreFit?: number
@@ -94,9 +98,11 @@ export function useTournament() {
       const next = { ...snap.candidates }
       for (const id of Object.keys(next) as VariantId[]) {
         const c = next[id]
+        // Health is never restored: a reload must not trust a stale green.
+        next[id] = { ...c, health: 'unknown' }
         if (c.status === 'generating' || c.status === 'judging') {
           next[id] = {
-            ...c,
+            ...next[id],
             status: c.fragment?.code ? 'done' : 'error',
             error: c.fragment?.code ? undefined : 'interrupted by reload',
           }
@@ -206,6 +212,16 @@ export function useTournament() {
           },
         }
       })
+    } else if (evt.type === 'candidate_verified') {
+      setCandidates((c) => ({
+        ...c,
+        [evt.id]: {
+          ...c[evt.id],
+          health: evt.ok ? 'ok' : 'broken',
+          verifyError: evt.ok ? undefined : (evt.error ?? evt.diagnosis),
+          verifySbxId: evt.sbxId,
+        },
+      }))
     } else if (evt.type === 'verdict') {
       setVerdict(evt.verdict)
       setPhase('judging')
