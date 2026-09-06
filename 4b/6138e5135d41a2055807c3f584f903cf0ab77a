@@ -1,0 +1,49 @@
+package.json
+  s_832123016925b2::t_274480ccbf5bd3 9-10
+lib/messages.ts
+  s_832123016925b2::t_aaab6ac8ce485c 45,54
+  s_832123016925b2::t_0eb2e965f6cee7 27-30,32-33,35,38
+lib/repair-fragment.ts
+  s_832123016925b2::t_bc4eb774c7d228 57
+  s_832123016925b2::t_c84835baa13596 26,36-37,40-42,50-51,56,58-60
+lib/images-validate.ts
+  s_832123016925b2::t_70003a6cb82db5 5,7-12,15-34,40-47,49-50,52-58,68-72,77-78,80-94,96,99-100,111-114,117,122,126,129,132,134-135,143-144,148-150,152-155,161-163,165-166,187-240,245-246,248-262,264-279,286,291-294,296,315-421
+lib/tournament-client.ts
+  s_832123016925b2::t_0fc608480c712b 101-102,105
+  s_832123016925b2::t_ec023c13c9ae46 24-27
+  s_832123016925b2::t_47c35f7cba5ffe 215-224
+lib/prompt.ts
+  s_832123016925b2::t_21da29a13b5ab3 1,4-7,16-43,45
+app/api/sandbox/route.ts
+  s_832123016925b2::t_e8650df292e7d4 256-257,260,264,266
+lib/types.ts
+  s_832123016925b2::t_29a78b610a71fc 21-24
+tsconfig.json
+  s_832123016925b2::t_dff0e855d5e3a4 3
+lib/tournament.ts
+  s_832123016925b2::t_e874b2868ec7c3 62-69
+lib/repair-fragment-check.ts
+  s_832123016925b2::t_b41caad3ce2af0 72,78,82-108,110-129
+  s_832123016925b2::t_9050877b52e1d0 109
+  s_832123016925b2::t_4d5aef1f250249 130
+.github/workflows/check.yaml
+  s_832123016925b2::t_274480ccbf5bd3 1-30
+app/api/chat/route.ts
+  s_832123016925b2::t_99cd929e2d66bd 6,27,35,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4b6138e5135d41a2055807c3f584f903cf0ab77a",
+  "prompts": {},
+  "sessions": {
+    "s_832123016925b2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7bb962d4-fd7a-43de-930e-a7f5c90d73f0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Suhaib <suhaibking310@gmail.com>"
+    }
+  }
+}
