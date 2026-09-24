@@ -1,8 +1,10 @@
 import { injectInspectBridge } from '@/lib/inspect-bridge'
+import { extraNpmPackages, npmInstallCommand } from '@/lib/fragment-deps'
 import {
   fragmentFiles,
   withMissingLocalModules,
 } from '@/lib/fragment-files'
+import { resolveImages } from '@/lib/images'
 import { FragmentSchema } from '@/lib/schema'
 import {
   isStaticHtml,
@@ -58,19 +60,49 @@ export async function POST(req: Request) {
       : {}),
   })
 
-  // Install packages
-  if (fragment.has_additional_dependencies) {
-    await sbx.commands.run(fragment.install_dependencies_command)
-    console.log(
-      `Installed dependencies: ${fragment.additional_dependencies.join(', ')} in sandbox ${sbx.sandboxId}`,
-    )
-  }
+  const sourceFiles = fragmentFiles(fragment)
+  const npmPkgs = extraNpmPackages(
+    sourceFiles,
+    fragment.additional_dependencies,
+  )
+  const installCmd = npmInstallCommand(npmPkgs)
+  const npmTemplate =
+    sandboxTemplate === 'nextjs-developer' || sandboxTemplate === 'vue-developer'
 
   // Copy code to fs (plus any local modules the entry file imported but omitted)
-  const files = withMissingLocalModules(fragmentFiles(fragment))
+  const imagedP = resolveImages(sourceFiles)
+  const installP =
+    npmTemplate && installCmd
+      ? sbx.commands
+          .run(installCmd, { timeoutMs: 90_000, requestTimeoutMs: 90_000 })
+          .then(() => {
+            console.log(
+              `Installed dependencies: ${npmPkgs.join(', ')} in sandbox ${sbx.sandboxId}`,
+            )
+          })
+          .catch((e) => {
+            console.warn(
+              `[deps] npm install failed (${npmPkgs.join(', ')})`,
+              e instanceof Error ? e.message : e,
+            )
+          })
+      : !npmTemplate && fragment.has_additional_dependencies
+        ? sbx.commands.run(fragment.install_dependencies_command).then(() => {
+            console.log(
+              `Installed dependencies: ${fragment.additional_dependencies.join(', ')} in sandbox ${sbx.sandboxId}`,
+            )
+          })
+        : Promise.resolve()
+
+  const imaged = (await Promise.all([imagedP, installP]))[0]
+  const files = withMissingLocalModules(imaged.files)
   for (const file of files) {
     await sbx.files.write(file.file_path, file.file_content)
     console.log(`Copied file to ${file.file_path} in ${sbx.sandboxId}`)
+  }
+  for (const bin of imaged.binaries) {
+    await sbx.files.write(bin.file_path, bin.data)
+    console.log(`Copied image to ${bin.file_path} in ${sbx.sandboxId}`)
   }
 
   // Static HTML has no Next/Vue server. Mount it inside the running template

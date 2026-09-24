@@ -17,7 +17,7 @@ export const fragmentSchema = z.object({
   additional_dependencies: z
     .array(z.string())
     .describe(
-      'Additional dependencies required by the fragment. Do not include dependencies that are already included in the template.',
+      'Additional npm/pip packages required by the fragment (e.g. framer-motion). Always list every import that is not already in the template. Do not include react, next, or @/ modules.',
     ),
   has_additional_dependencies: z
     .boolean()
@@ -44,7 +44,7 @@ export const fragmentSchema = z.object({
   code: z
     .string()
     .describe(
-      'Full source of that single file. Must compile as-is. Inline all mock data, components, and helpers in this string. Do not import from relative paths such as ../data/data or ./foo — those files are never written. Allowed imports: react, next/*, and @/components/ui/*.',
+      'Full source of that single file. Must compile as-is. Inline all mock data, components, and helpers in this string. Do not import from relative paths such as ../data/data or ./foo — those files are never written. Allowed imports: react, next/*, and @/components/ui/*. If using framer-motion/motion, never combine spring or inertia with 3+ keyframe arrays (scale: [1.13, 0.97, 1]); use a single target or type: "tween". For real photographs use evo-image://<specific query> (never invent remote image URLs or use placeholder services). Next.js SSR + React hydration: never put CSS as <style> children (quotes become &#x27;); use dangerouslySetInnerHTML. Do not render Date.now, toLocale*, Math.random, or window during render.',
     ),
   // code: z.array(z.object({
   //   file_name: z.string().describe('Name of the file.'),

@@ -23,7 +23,7 @@ export const VARIANTS = [
     sigil: 'V',
     temperature: 1.0,
     systemSuffix:
-      'Bias toward vivid personality: bold color, unexpected layout, decorative motion, and friendly micro-copy. Make the page feel alive without becoming chaotic.',
+      'Bias toward vivid personality: bold color, unexpected layout, decorative motion, and friendly micro-copy. Make the page feel alive without becoming chaotic. Decorative motion must stay legal: never pair spring/inertia with 3+ keyframe arrays.',
   },
 ] as const
 

@@ -1,4 +1,6 @@
 import { FragmentSchema, fragmentCodeText } from './schema'
+import { sanitizeStyleHydration } from './hydrate-safe'
+import { sanitizeMotionKeyframes } from './motion-safe'
 import { DeepPartial } from 'ai'
 
 export const INSPECT_SOURCE = 'evostack-inspect'
@@ -97,7 +99,9 @@ export function toCompleteFragment(
   fragment: DeepPartial<FragmentSchema> | undefined,
 ): FragmentSchema | null {
   if (!fragment) return null
-  const code = fragmentCodeText(fragment.code)
+  const code = sanitizeStyleHydration(
+    sanitizeMotionKeyframes(fragmentCodeText(fragment.code)),
+  )
   if (!code.trim() || !fragment.file_path || !fragment.template) return null
   return {
     commentary: fragment.commentary || '',

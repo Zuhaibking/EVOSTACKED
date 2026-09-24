@@ -1,5 +1,8 @@
 /** Files the sandbox should write for a generated fragment. */
 
+import { sanitizeHydrationFile } from './hydrate-safe'
+import { sanitizeMotionFile } from './motion-safe'
+
 export type WrittenFile = { file_path: string; file_content: string }
 
 export type LocalImport = {
@@ -32,14 +35,24 @@ export function fragmentFiles(fragment: {
         ''
       if (path) files.push({ file_path: posix(path), file_content: content })
     }
-    if (files.length) return files
+    if (files.length) return files.map(safeFile)
   }
   return [
     {
       file_path: posix(mainPath),
       file_content: typeof code === 'string' ? code : '',
     },
-  ]
+  ].map(safeFile)
+}
+
+function safeFile(file: WrittenFile): WrittenFile {
+  return {
+    ...file,
+    file_content: sanitizeHydrationFile(
+      file.file_path,
+      sanitizeMotionFile(file.file_path, file.file_content),
+    ),
+  }
 }
 
 export function localImports(code: string, fromFile: string): LocalImport[] {

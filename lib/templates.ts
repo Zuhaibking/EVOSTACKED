@@ -87,7 +87,7 @@ const templates = {
     ],
     file: 'pages/index.tsx',
     instructions:
-      'A Next.js 13+ app that reloads automatically. Using the pages router. Write only pages/index.tsx. Inline all UI and mock data in that file. Do not import local files you did not write.',
+      'A Next.js 13+ app that reloads automatically. Using the pages router. Write only pages/index.tsx. Inline all UI and mock data in that file. Do not import local files you did not write. If you use framer-motion, spring/inertia cannot animate 3+ keyframes — use a single target or type: "tween". Real photos: evo-image://<query> only; never invent image URLs. Next SSR hydrates as React: put CSS in dangerouslySetInnerHTML, never as <style> text children.',
     port: 3000,
   },
   [getTemplateIdSuffix('vue-developer')]: {

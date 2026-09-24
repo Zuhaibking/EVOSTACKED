@@ -5,6 +5,21 @@ import {
   withMissingLocalModules,
 } from './fragment-files'
 
+const springCrash = `<motion.div animate={{ scale: [1.13, 0.97, 1] }} transition={{ type: "spring" }}>`
+const springFixed = fragmentFiles({
+  file_path: 'pages/index.tsx',
+  code: springCrash,
+})[0].file_content
+assert.match(springFixed, /type: "tween"/)
+assert.doesNotMatch(springFixed, /type: "spring"/)
+
+const styled = fragmentFiles({
+  file_path: 'pages/index.tsx',
+  code: `<style>{\`.x { font-family: 'Montserrat'; }\`}</style>`,
+})[0].file_content
+assert.match(styled, /dangerouslySetInnerHTML/)
+assert.doesNotMatch(styled, /<style>\{\`/)
+
 const spotify = `import React, { useState } from 'react'
 import Head from 'next/head'
 import mockData from '../data/data'
