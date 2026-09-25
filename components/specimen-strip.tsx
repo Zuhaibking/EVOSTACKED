@@ -218,22 +218,20 @@ function CandidateTab({
     (isGen ? 'streaming…' : isPending ? 'standby' : isError ? 'failed' : '—')
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={isPending || isError}
+    <div
+      aria-current={isSelected ? 'true' : undefined}
       title={`${c.label}${c.fragment?.title ? ' — ' + c.fragment.title : ''}`}
       className={`
         group relative flex items-stretch h-12 sm:h-[52px] text-left min-w-0
         border transition-colors overflow-hidden
         ${
-          isSelected || isWin
-            ? isWin
-              ? 'border-brand-accent bg-brand-accent/[0.06] text-foreground shadow-[2px_2px_0_0_hsl(var(--brand)/0.18)]'
-              : 'border-foreground bg-foreground/[0.05] text-foreground'
-            : 'border-border hover:border-foreground/60 hover:bg-foreground/[0.02] text-foreground/85'
+          isSelected
+            ? 'border-brand-accent bg-brand-accent/[0.06] text-foreground shadow-[2px_2px_0_0_hsl(var(--brand)/0.18)]'
+            : isWin
+              ? 'border-brand-accent/50 bg-brand-accent/[0.03] text-foreground'
+              : 'border-border text-foreground/85'
         }
-        ${isPending || isError ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer'}
+        ${isPending || isError ? 'opacity-55' : ''}
       `}
     >
       {/* Live shimmer rail */}
@@ -247,11 +245,11 @@ function CandidateTab({
       {/* Sigil column — full-height brutalist square */}
       <span
         className={`flex items-center justify-center w-9 sm:w-11 shrink-0 border-r font-display text-[15px] sm:text-[17px] font-black leading-none ${
-          isWin
+          isSelected
             ? 'border-brand-accent/60 text-brand-accent bg-brand-accent/[0.06]'
-            : isSelected
-              ? 'border-foreground/30 text-foreground bg-foreground/[0.04]'
-              : 'border-border text-foreground/80 group-hover:border-foreground/40 bg-foreground/[0.015]'
+            : isWin
+              ? 'border-brand-accent/60 text-brand-accent bg-brand-accent/[0.06]'
+              : 'border-border text-foreground/80 bg-foreground/[0.015]'
         }`}
       >
         {c.sigil}
@@ -259,7 +257,6 @@ function CandidateTab({
 
       {/* Content column */}
       <span className="flex-1 min-w-0 flex flex-col justify-center px-2 sm:px-2.5 py-1 gap-0.5">
-        {/* Row 1 — label · status · composite · winner mark */}
         <span className="flex items-center gap-1.5 min-w-0">
           <span className="font-mono text-[9px] sm:text-[10px] tracking-[0.2em] uppercase text-muted-foreground shrink-0">
             {c.label}
@@ -267,14 +264,7 @@ function CandidateTab({
           <span className="font-mono text-[8px] tracking-[0.16em] uppercase text-muted-foreground/50 tabular shrink-0 hidden md:inline">
             · {String(idx + 1).padStart(2, '0')}
           </span>
-          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot(c.status)} ml-auto`} />
-          <span
-            className={`font-display text-[12px] sm:text-[13px] tabular leading-none shrink-0 ${
-              isWin ? 'text-brand-accent' : 'text-foreground'
-            }`}
-          >
-            {composite}
-          </span>
+          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot(c.status)}`} />
           {isWin && <span className="text-brand-accent text-[11px] leading-none shrink-0">★</span>}
         </span>
 
@@ -294,7 +284,33 @@ function CandidateTab({
           )}
         </span>
       </span>
-    </button>
+
+      <span
+        className={`flex items-center px-1.5 sm:px-2 font-display text-[12px] sm:text-[13px] tabular leading-none shrink-0 ${
+          isSelected || isWin ? 'text-brand-accent' : 'text-foreground'
+        }`}
+      >
+        {composite}
+      </span>
+
+      {isSelected ? (
+        <span
+          className="flex items-center justify-center min-w-[3.75rem] sm:min-w-[4.25rem] shrink-0 border-l border-brand-accent/50 px-2 font-mono text-[9px] sm:text-[10px] tracking-[0.18em] uppercase text-brand-accent"
+        >
+          ACTIVE
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onSelect}
+          disabled={isPending || isError}
+          aria-label={`Use ${c.label}`}
+          className="flex items-center justify-center min-w-[3.75rem] sm:min-w-[4.25rem] shrink-0 border-l border-border px-2 font-mono text-[9px] sm:text-[10px] tracking-[0.18em] uppercase text-foreground hover:bg-foreground/[0.06] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          USE
+        </button>
+      )}
+    </div>
   )
 }
 

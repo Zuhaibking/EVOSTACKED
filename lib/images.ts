@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { WrittenFile } from './fragment-files'
+import { searchCleveland } from './images-cleveland'
+import { searchMet } from './images-met'
 import { searchOpenverse } from './images-openverse'
 import { searchWikimedia } from './images-wikimedia'
 import {
@@ -238,27 +240,205 @@ async function resolveOne(
     const fromWiki = await pickDownload(query, 'wikimedia', wiki, byUrl)
     if (fromWiki) return fromWiki
   }
+
+  console.log('[images] fallback: met')
+  for (const q of attempts) {
+    const met = rankCandidates(query, await searchMet(q))
+    const fromMet = await pickDownload(query, 'met', met, byUrl)
+    if (fromMet) return fromMet
+  }
+
+  console.log('[images] fallback: cleveland')
+  for (const q of attempts) {
+    const cleveland = rankCandidates(query, await searchCleveland(q))
+    const fromCleveland = await pickDownload(query, 'cleveland', cleveland, byUrl)
+    if (fromCleveland) return fromCleveland
+  }
   return null
 }
 
-function searchQueries(query: string): string[] {
+const MAX_SEARCH_VARIANTS = 8
+
+const PHOTO_WORDS = new Set([
+  'photo',
+  'photograph',
+  'image',
+  'picture',
+  'real',
+])
+const FILLER_WORDS = new Set(['product', 'products'])
+const STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'of',
+  'and',
+  'or',
+  'for',
+  'to',
+  'in',
+  'on',
+])
+const WEAK_WORDS = new Set([
+  'luxury',
+  'modern',
+  'beautiful',
+  'premium',
+  'black',
+  'white',
+  'red',
+  'blue',
+  'green',
+  'gold',
+  'silver',
+  'yellow',
+  'orange',
+  'pink',
+  'purple',
+  'grey',
+  'gray',
+  'brown',
+  'beige',
+  'navy',
+  'dark',
+  'light',
+  'bright',
+  'soft',
+  'clean',
+  'simple',
+  'abstract',
+  'colorful',
+  'colourful',
+  'minimalist',
+  'elegant',
+  'professional',
+  'vintage',
+  'rustic',
+  'sleek',
+  'stylish',
+  'trendy',
+  'cute',
+  'cool',
+  'nice',
+  'new',
+  'old',
+  'best',
+  'top',
+  'empty',
+  'blank',
+  'isolated',
+  'stunning',
+  'gorgeous',
+  'amazing',
+  'high',
+  'quality',
+  'studio',
+  'commercial',
+  'closeup',
+  'shot',
+  'view',
+  'background',
+  'backdrop',
+  'mockup',
+  'template',
+  'aesthetic',
+  'wallpaper',
+  'stock',
+])
+
+export function searchQueries(query: string): string[] {
   const q = query.trim()
   const out: string[] = []
   const add = (s: string) => {
     const n = s.replace(/\s+/g, ' ').trim()
-    if (n && !out.some((x) => x.toLowerCase() === n.toLowerCase())) out.push(n)
+    if (!n || out.length >= MAX_SEARCH_VARIANTS) return
+    if (out.some((x) => x.toLowerCase() === n.toLowerCase())) return
+    out.push(n)
   }
+  const addTokens = (tokens: string[], kind: 'any' | 'bigram' = 'any') => {
+    if (kind === 'bigram' ? !isUsefulBigram(tokens) : !isUsefulVariant(tokens)) {
+      return
+    }
+    add(tokens.join(' '))
+  }
+
   add(q)
-  add(
-    q.replace(
-      /\b(product photograph|photograph|photo|image|picture|real)\b/gi,
-      ' ',
-    ),
-  )
-  const words = queryWords(q)
-  if (words.length >= 2) add(words.slice(0, 3).join(' '))
-  if (words.length >= 2) add(words.slice(0, 2).join(' '))
+
+  const raw = query.split(/[^a-zA-Z0-9]+/).filter(Boolean)
+  const core = raw.filter((t) => !isStopWord(t) && !isPhotoWord(t))
+  addTokens(core)
+
+  const tight = core.filter((t) => !isFillerWord(t))
+  addTokens(tight)
+
+  peelLeading(tight, addTokens)
+  for (let i = 0; i + 2 <= core.length; i++) {
+    addTokens(core.slice(i, i + 2), 'bigram')
+  }
+  peelTrailing(tight, addTokens)
+  peelTrailing(core, addTokens)
+  peelLeading(core, addTokens)
+  for (let n = 3; n >= 2; n--) {
+    for (let i = 0; i + n <= tight.length; i++) {
+      addTokens(tight.slice(i, i + n), n === 2 ? 'bigram' : 'any')
+    }
+  }
+  const anchors = tight.filter(isAnchorWord)
+  if (anchors.length >= 2) {
+    addTokens([anchors[0], anchors[anchors.length - 1]], 'bigram')
+  }
   return out
+}
+
+function peelLeading(
+  tokens: string[],
+  addTokens: (tokens: string[], kind?: 'any' | 'bigram') => void,
+) {
+  let next = tokens.slice()
+  while (next.length > 2 && isWeakWord(next[0])) {
+    next = next.slice(1)
+    addTokens(next)
+  }
+}
+
+function peelTrailing(
+  tokens: string[],
+  addTokens: (tokens: string[], kind?: 'any' | 'bigram') => void,
+) {
+  let next = tokens.slice()
+  while (next.length > 2) {
+    next = next.slice(0, -1)
+    addTokens(next)
+  }
+}
+
+function isPhotoWord(t: string): boolean {
+  return PHOTO_WORDS.has(t.toLowerCase())
+}
+
+function isFillerWord(t: string): boolean {
+  return FILLER_WORDS.has(t.toLowerCase())
+}
+
+function isStopWord(t: string): boolean {
+  return STOP_WORDS.has(t.toLowerCase())
+}
+
+function isWeakWord(t: string): boolean {
+  return WEAK_WORDS.has(t.toLowerCase())
+}
+
+function isAnchorWord(t: string): boolean {
+  if (/\d/.test(t)) return true
+  return !isStopWord(t) && !isPhotoWord(t) && !isFillerWord(t) && !isWeakWord(t)
+}
+
+function isUsefulVariant(tokens: string[]): boolean {
+  return tokens.length >= 2 && tokens.some(isAnchorWord)
+}
+
+function isUsefulBigram(tokens: string[]): boolean {
+  return isUsefulVariant(tokens) && !isFillerWord(tokens[0])
 }
 
 async function pickDownload(
@@ -363,12 +543,62 @@ export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   ) as ArrayBuffer
 }
 
-function scoreCandidate(c: ImageCandidate, words: string[]): number {
-  const title = (c.title || '').toLowerCase()
+export function scoreCandidate(c: ImageCandidate, words: string[]): number {
+  const titleToks = textTokens(c.title || '')
+  const tagToks = (c.tags || []).map((t) => textTokens(t))
+  const descToks = textTokens(c.description || '')
+  const covered = new Set<string>()
+  let titleHit = false
+  let tagHit = false
+  let descHit = false
   let score = 0
-  for (const w of words) {
-    if (title.includes(w)) score += 8
+
+  for (const word of words) {
+    if (exactIn(titleToks, word)) {
+      score += 16
+      titleHit = true
+      covered.add(word)
+    } else if (weakIn(titleToks, word)) {
+      score += 4
+      titleHit = true
+      covered.add(word)
+    }
+
+    let exactTags = 0
+    let weakTags = 0
+    for (const tag of tagToks) {
+      if (exactIn(tag, word)) exactTags += 1
+      else if (weakIn(tag, word)) weakTags += 1
+    }
+    if (exactTags) {
+      score += 14 + Math.min(exactTags - 1, 3) * 5
+      tagHit = true
+      covered.add(word)
+    } else if (weakTags) {
+      score += 4
+      tagHit = true
+      covered.add(word)
+    }
+
+    if (exactIn(descToks, word)) {
+      score += 5
+      descHit = true
+      covered.add(word)
+    } else if (weakIn(descToks, word)) {
+      score += 2
+      descHit = true
+      covered.add(word)
+    }
   }
+
+  score += covered.size * 10
+  if (covered.size >= 2) score += (covered.size - 1) * 6
+
+  const fm = c.fieldsMatched || []
+  if (titleHit && fm.includes('title')) score += 2
+  if (tagHit && fm.includes('tags')) score += 2
+  if (descHit && fm.includes('description')) score += 1
+
   const w = c.width || 0
   const h = c.height || 0
   const min = Math.min(w, h)
@@ -383,6 +613,24 @@ function scoreCandidate(c: ImageCandidate, words: string[]): number {
   if (c.creator) score += 1
   if (c.filesize && c.filesize > 0 && c.filesize < 20_000) score -= 10
   return score
+}
+
+function textTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 1)
+}
+
+function exactIn(tokens: string[], word: string): boolean {
+  return tokens.includes(word)
+}
+
+function weakIn(tokens: string[], word: string): boolean {
+  if (word.length < 5) return false
+  return tokens.some(
+    (t) => t !== word && t.length >= 5 && (t.startsWith(word) || word.startsWith(t)),
+  )
 }
 
 function queryWords(query: string): string[] {

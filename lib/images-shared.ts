@@ -18,6 +18,9 @@ export type ImageCandidate = {
   licenseUrl?: string
   filesize?: number
   provider: string
+  description?: string
+  tags?: string[]
+  fieldsMatched?: string[]
 }
 
 export function isSafeImageUrl(raw: string): boolean {

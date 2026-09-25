@@ -32,7 +32,7 @@ export async function searchOpenverse(query: string): Promise<ImageCandidate[]> 
   }
 }
 
-function parseOpenverse(data: unknown): ImageCandidate[] {
+export function parseOpenverse(data: unknown): ImageCandidate[] {
   if (!data || typeof data !== 'object') return []
   const results = (data as { results?: unknown }).results
   if (!Array.isArray(results)) return []
@@ -43,6 +43,9 @@ function parseOpenverse(data: unknown): ImageCandidate[] {
     if (r.mature === true) continue
     const imageUrl = str(r.url)
     if (!imageUrl || !isSafeImageUrl(imageUrl)) continue
+    const description = str(r.description)
+    const tags = openverseTags(r.tags)
+    const fieldsMatched = openverseFieldsMatched(r.fields_matched)
     out.push({
       title: str(r.title),
       url: imageUrl,
@@ -57,9 +60,34 @@ function parseOpenverse(data: unknown): ImageCandidate[] {
       licenseUrl: str(r.license_url),
       filesize: num(r.filesize),
       provider: 'openverse',
+      ...(description ? { description } : {}),
+      ...(tags ? { tags } : {}),
+      ...(fieldsMatched ? { fieldsMatched } : {}),
     })
   }
   return out
+}
+
+function openverseTags(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const tags: string[] = []
+  for (const t of v) {
+    if (typeof t === 'string') {
+      if (t.trim()) tags.push(t.trim())
+      continue
+    }
+    if (t && typeof t === 'object' && 'name' in t) {
+      const name = str((t as { name?: unknown }).name)
+      if (name) tags.push(name)
+    }
+  }
+  return tags.length ? tags : undefined
+}
+
+function openverseFieldsMatched(v: unknown): string[] | undefined {
+  if (!Array.isArray(v) || !v.length) return undefined
+  const fields = v.filter((x): x is string => typeof x === 'string')
+  return fields.length ? fields : undefined
 }
 
 function str(v: unknown): string {

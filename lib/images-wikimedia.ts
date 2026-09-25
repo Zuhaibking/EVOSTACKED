@@ -40,7 +40,7 @@ export async function searchWikimedia(query: string): Promise<ImageCandidate[]> 
   }
 }
 
-function parseWikimedia(data: unknown): ImageCandidate[] {
+export function parseWikimedia(data: unknown): ImageCandidate[] {
   if (!data || typeof data !== 'object') return []
   const pages = (data as { query?: { pages?: unknown } }).query?.pages
   if (!pages || typeof pages !== 'object') return []
@@ -62,8 +62,11 @@ function parseWikimedia(data: unknown): ImageCandidate[] {
         : original
     if (!url || !isSafeImageUrl(url)) continue
     const ext = asRecord(info.extmetadata)
+    const objectName = stripHtml(meta(ext, 'ObjectName'))
+    const description = stripHtml(meta(ext, 'ImageDescription'))
+    const tags = wikiTags(meta(ext, 'Categories'))
     out.push({
-      title: stripHtml(str(p.title)).replace(/^File:/, ''),
+      title: objectName || stripHtml(str(p.title)).replace(/^File:/, ''),
       url,
       width: num(info.thumbwidth) || num(info.width),
       height: num(info.thumbheight) || num(info.height),
@@ -79,6 +82,8 @@ function parseWikimedia(data: unknown): ImageCandidate[] {
       licenseUrl: meta(ext, 'LicenseUrl'),
       filesize: size,
       provider: 'wikimedia',
+      ...(description ? { description } : {}),
+      ...(tags ? { tags } : {}),
     })
   }
   return out
@@ -100,6 +105,27 @@ function str(v: unknown): string {
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+function wikiTags(raw: string): string[] | undefined {
+  const tags = raw
+    .split('|')
+    .map((t) => t.trim())
+    .filter((t) => t && !isWikiProcessCategory(t))
+  return tags.length ? tags : undefined
+}
+
+function isWikiProcessCategory(t: string): boolean {
+  if (/^CC[- ]/i.test(t) || /^CC0$/i.test(t)) return true
+  if (/^self-published work$/i.test(t)) return true
+  if (/reviewed by/i.test(t)) return true
+  if (/^flickr images reviewed/i.test(t)) return true
+  if (/^uploaded (with|via) /i.test(t)) return true
+  if (/^(files|media) from /i.test(t)) return true
+  if (/^taken with /i.test(t)) return true
+  if (/^photographs? taken on /i.test(t)) return true
+  if (/^pd-/i.test(t) || /^public domain$/i.test(t)) return true
+  return false
 }
 
 function stripHtml(s: string): string {
