@@ -121,9 +121,15 @@ export default function Home() {
   const [elapsed, setElapsed] = useState(0)
   const skipSaveRef = useRef(true)
   const skipCandidatePromoteRef = useRef(false)
+  const fragmentRef = useRef(fragment)
+  const sandboxGen = useRef(0)
+  const promotedIdRef = useRef<VariantId | undefined>(undefined)
+  const inspectOpenRef = useRef(false)
+  fragmentRef.current = fragment
   const storeRef = useRef<ProjectStore | null>(null)
   const workspaceRef = useRef<ProjectWorkspace>(blankWorkspace())
   const [inspectOpen, setInspectOpen] = useState(false)
+  inspectOpenRef.current = inspectOpen
   const [inspectSelection, setInspectSelection] = useState<InspectSelection | null>(null)
   const [inspectApplying, setInspectApplying] = useState(false)
   const [inspectError, setInspectError] = useState('')
@@ -352,6 +358,7 @@ export default function Home() {
   // a result for the same code (otherwise refresh = duplicate sandbox).
   useEffect(() => {
     if (!selectedCandidate) return
+    if (inspectOpenRef.current) return
     if (skipCandidatePromoteRef.current) {
       skipCandidatePromoteRef.current = false
       return
@@ -360,6 +367,18 @@ export default function Home() {
     if (!c?.fragment || c.status === 'generating') return
 
     const next = c.fragment as DeepPartial<FragmentSchema>
+    const liveCode = fragmentCodeText(fragmentRef.current?.code)
+    const nextCode = fragmentCodeText(next.code)
+    // Same candidate re-promoted after Inspect must keep the edited page.
+    if (
+      promotedIdRef.current === selectedCandidate &&
+      liveCode &&
+      nextCode &&
+      liveCode !== nextCode
+    ) {
+      return
+    }
+    promotedIdRef.current = selectedCandidate
     const sameCodeAlreadyRunning =
       !!result && !!fragment && fragment.code === next.code
     setFragment(next)
@@ -383,6 +402,7 @@ export default function Home() {
     // Sandbox the selected candidate (skip if the same fragment already lives in result)
     if (!session) return
     let cancelled = false
+    const gen = sandboxGen.current
     setIsPreviewLoading(true)
     setCurrentTab('code')
     fetch('/api/sandbox', {
@@ -396,7 +416,7 @@ export default function Home() {
     })
       .then((r) => r.json())
       .then((sandboxResult) => {
-        if (cancelled) return
+        if (cancelled || gen !== sandboxGen.current) return
         setResult(sandboxResult)
         setCurrentTab('fragment')
       })
@@ -591,6 +611,7 @@ export default function Home() {
     }
     setInspectApplying(true)
     setInspectError('')
+    const gen = ++sandboxGen.current
     try {
       const res = await fetch('/api/inspect', {
         method: 'POST',
@@ -627,6 +648,7 @@ export default function Home() {
         setInspectError('Patch generated but preview failed to start.')
         return
       }
+      if (gen !== sandboxGen.current) return
       skipCandidatePromoteRef.current = true
       setFragment(nextComplete)
       setResult(sandboxResult)

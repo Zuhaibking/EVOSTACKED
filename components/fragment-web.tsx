@@ -13,6 +13,7 @@ import {
   InspectSelection,
   isInspectMessage,
   livePayload,
+  stableInspectSrc,
 } from '@/lib/inspect'
 import { ExecutionResultWeb } from '@/lib/types'
 import { RotateCw } from 'lucide-react'
@@ -51,6 +52,9 @@ export function FragmentWeb({
   const [iframeBox, setIframeBox] = useState<DOMRect | null>(null)
   const selectionRef = useRef(selection)
   selectionRef.current = selection
+  const srcRef = useRef(result.url)
+  if (!inspectEnabled) srcRef.current = result.url
+  const iframeSrc = stableInspectSrc(srcRef.current, result.url, inspectEnabled)
 
   function refreshIframe() {
     setIframeKey((prevKey) => prevKey + 1)
@@ -93,13 +97,15 @@ export function FragmentWeb({
   }, [guides, iframeKey])
 
   useEffect(() => {
-    if (!inspectEnabled) return
-    postToPreview(livePayload(draft, compare))
+    if (!inspectEnabled || !draft) return
+    postToPreview({
+      ...livePayload(draft, compare),
+      selector: selectionRef.current?.selector || '',
+    })
   }, [inspectEnabled, draft, compare, iframeKey])
 
   useEffect(() => {
     if (!inspectEnabled || !result.sbxId) return
-    let cancelled = false
     fetch('/api/inspect/inject', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -108,16 +114,8 @@ export function FragmentWeb({
         teamID,
         accessToken,
       }),
-    })
-      .catch(() => {})
-      .then(() => new Promise((r) => setTimeout(r, 800)))
-      .then(() => {
-        if (!cancelled) refreshIframe()
-      })
-    return () => {
-      cancelled = true
-    }
-    // inject once per sandbox when inspect opens
+    }).catch(() => {})
+    // Inject the bridge without remounting. A reload here blanks the preview and drops applied edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspectEnabled, result.sbxId])
 
@@ -142,7 +140,7 @@ export function FragmentWeb({
           className="h-full w-full"
           sandbox="allow-forms allow-scripts allow-same-origin"
           loading="lazy"
-          src={result.url}
+          src={iframeSrc}
           onLoad={() => {
             if (inspectEnabled) postToPreview({ type: 'enable' })
           }}

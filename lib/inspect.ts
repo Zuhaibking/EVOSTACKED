@@ -259,6 +259,11 @@ export function toColorInput(value: string): string {
     .join('')}`
 }
 
+/** While Inspect is open the iframe keeps its current URL. A new sandbox must not remount it. */
+export function stableInspectSrc(locked: string, next: string, inspectOn: boolean) {
+  return inspectOn ? locked || next : next
+}
+
 export function livePayload(draft: InspectDraft | null, previewOriginal: boolean) {
   if (!draft) return { type: 'live' as const, reset: true }
   if (previewOriginal) return { type: 'live' as const, reset: true }

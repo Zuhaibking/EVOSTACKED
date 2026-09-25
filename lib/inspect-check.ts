@@ -5,6 +5,7 @@ import {
   locateSourceSnippet,
   pillInstruction,
   serializeInspectApply,
+  stableInspectSrc,
   toColorInput,
   toCompleteFragment,
 } from './inspect'
@@ -109,4 +110,11 @@ const next = { ...base, text: 'Listen now' }
 const prompt = serializeInspectApply(sel, base, next, '')
 assert.ok(prompt.includes('Listen now'))
 assert.ok(!prompt.includes('Additional instructions'))
+const locked = 'https://sandbox.test/page'
+let src = stableInspectSrc(locked, locked, true)
+src = stableInspectSrc(src, 'https://sandbox.test/after-a', true)
+src = stableInspectSrc(src, 'https://sandbox.test/after-b', true)
+src = stableInspectSrc(src, 'https://sandbox.test/after-c', true)
+assert.equal(src, locked)
+assert.equal(stableInspectSrc(locked, 'https://sandbox.test/after-a', false), 'https://sandbox.test/after-a')
 console.log('inspect-check ok')
