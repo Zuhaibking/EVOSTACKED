@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
-import { extraNpmPackages, npmInstallCommand } from './fragment-deps'
+import {
+  detectPackageManager,
+  extraNpmPackages,
+  installCommand,
+  npmInstallCommand,
+} from './fragment-deps'
 
 const goa = `import React from 'react'
 import { motion } from 'framer-motion'
@@ -42,6 +47,25 @@ assert.equal(npmInstallCommand(['framer-motion; rm -rf /']), null)
 assert.equal(
   npmInstallCommand(['framer-motion', 'gsap']),
   'npm install --no-fund --no-audit framer-motion gsap',
+)
+assert.equal(
+  detectPackageManager({ lockfiles: ['package-lock.json'], packageManager: 'pnpm@9.0.0' }),
+  'npm',
+)
+assert.equal(detectPackageManager({ lockfiles: ['pnpm-lock.yaml'] }), 'pnpm')
+assert.equal(detectPackageManager({ lockfiles: ['yarn.lock'] }), 'yarn')
+assert.equal(detectPackageManager({ packageManager: 'pnpm@9.15.0' }), 'pnpm')
+assert.equal(detectPackageManager({}), 'npm')
+assert.equal(
+  detectPackageManager({ lockfiles: ['pnpm-lock.yaml', 'package-lock.json'] }),
+  null,
+)
+assert.equal(installCommand('pnpm', ['framer-motion']), 'pnpm add framer-motion')
+assert.equal(installCommand('yarn', ['gsap']), 'yarn add gsap')
+assert.equal(installCommand('yarn', ['gsap'], true), null)
+assert.equal(
+  installCommand('npm', ['framer-motion'], true),
+  'npm install --no-fund --no-audit --legacy-peer-deps framer-motion',
 )
 assert.equal(
   extraNpmPackages([], ['foo && wget evil']).length,

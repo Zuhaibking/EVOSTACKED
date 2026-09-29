@@ -155,6 +155,11 @@ export function FragmentWeb({
           />
         ) : null}
       </div>
+      {result.health?.state === 'FAILED' ? (
+        <p className="px-3 py-2 text-xs text-destructive border-b border-destructive/30">
+          {result.health.log.slice(-3).join(' · ')}
+        </p>
+      ) : null}
       <div className="p-2 border-t">
         <div className="flex items-center bg-muted dark:bg-white/10 rounded-2xl">
           <TooltipProvider>

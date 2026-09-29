@@ -2,6 +2,7 @@
 
 import { fragmentCodeText } from '@/lib/schema'
 import { Candidate } from '@/lib/tournament-client'
+import { candidateHealthLabel } from '@/lib/candidate-health'
 import { VariantId } from '@/lib/tournament'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -399,7 +400,9 @@ function CandidateCard({
             }`}
           >
             {isGen && <Loader2 className="h-3 w-3 animate-spin" />}
-            {isWin ? '★ Survived' : STATUS_COPY[c.status]}
+            {isWin
+              ? `★ ${candidateHealthLabel(c.status, c.health) || 'Survived'}`
+              : (candidateHealthLabel(c.status, c.health) ?? STATUS_COPY[c.status])}
           </span>
         </div>
 

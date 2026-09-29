@@ -2,6 +2,7 @@
 
 import { FragmentSchema } from './schema'
 import { TournamentEvent, VARIANTS, VariantId, Verdict } from './tournament'
+import type { CandidateHealth } from './candidate-health'
 import { DeepPartial } from 'ai'
 import { useCallback, useRef, useState } from 'react'
 
@@ -26,6 +27,7 @@ export type Candidate = {
   scoreComposite?: number
   scoreComment?: string
   isWinner?: boolean
+  health?: CandidateHealth
 }
 
 const initialCandidates = (): Record<VariantId, Candidate> =>
@@ -208,6 +210,13 @@ export function useTournament() {
     }
   }
 
+  const noteHealth = useCallback((id: VariantId, health: CandidateHealth) => {
+    setCandidates((c) => {
+      if (!c[id]) return c
+      return { ...c, [id]: { ...c[id], health } }
+    })
+  }, [])
+
   return {
     candidates,
     verdict,
@@ -217,5 +226,6 @@ export function useTournament() {
     stop,
     reset,
     hydrate,
+    noteHealth,
   }
 }

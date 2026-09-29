@@ -299,6 +299,8 @@ export default function Home() {
             userID: session?.user?.id,
             teamID: userTeam?.id,
             accessToken: session?.access_token,
+            model: currentModel,
+            config: languageModel,
           }),
         })
 
@@ -307,6 +309,9 @@ export default function Home() {
         posthog.capture('sandbox_created', { url: result.url })
 
         setResult(result)
+        if (selectedCandidate && result.health) {
+          tournament.noteHealth(selectedCandidate, result.health)
+        }
         setCurrentPreview({ fragment, result })
         setMessage({ result })
         setCurrentTab('fragment')
@@ -412,12 +417,17 @@ export default function Home() {
         userID: session?.user?.id,
         teamID: userTeam?.id,
         accessToken: session?.access_token,
+        model: currentModel,
+        config: languageModel,
       }),
     })
       .then((r) => r.json())
       .then((sandboxResult) => {
         if (cancelled || gen !== sandboxGen.current) return
         setResult(sandboxResult)
+        if (sandboxResult.health) {
+          tournament.noteHealth(selectedCandidate, sandboxResult.health)
+        }
         setCurrentTab('fragment')
       })
       .catch(() => {})
@@ -641,9 +651,14 @@ export default function Home() {
           userID: session.user?.id,
           teamID: userTeam?.id,
           accessToken: session.access_token,
+          model: currentModel,
+          config: languageModel,
         }),
       })
       const sandboxResult = await sandboxRes.json()
+      if (selectedCandidate && sandboxResult?.health) {
+        tournament.noteHealth(selectedCandidate, sandboxResult.health)
+      }
       if (!sandboxRes.ok || !sandboxResult?.url) {
         setInspectError('Patch generated but preview failed to start.')
         return

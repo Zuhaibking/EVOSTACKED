@@ -2,6 +2,7 @@
 
 import { sanitizeHydrationFile } from './hydrate-safe'
 import { sanitizeMotionFile } from './motion-safe'
+import { sanitizeSyntaxFile } from './syntax-safe'
 
 export type WrittenFile = { file_path: string; file_content: string }
 
@@ -48,9 +49,12 @@ export function fragmentFiles(fragment: {
 function safeFile(file: WrittenFile): WrittenFile {
   return {
     ...file,
-    file_content: sanitizeHydrationFile(
+    file_content: sanitizeSyntaxFile(
       file.file_path,
-      sanitizeMotionFile(file.file_path, file.file_content),
+      sanitizeHydrationFile(
+        file.file_path,
+        sanitizeMotionFile(file.file_path, file.file_content),
+      ),
     ),
   }
 }

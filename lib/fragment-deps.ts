@@ -4,6 +4,7 @@ const SCRIPT = /\.(tsx|ts|jsx|js|mjs|cjs|vue)$/i
 const FROM_RES = [
   /\bfrom\s+['"]([^'"]+)['"]/g,
   /\bimport\s+['"]([^'"]+)['"]/g,
+  /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
   /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
 ]
 
@@ -62,10 +63,71 @@ export function extraNpmPackages(
     .sort()
 }
 
-export function npmInstallCommand(packages: string[]): string | null {
+/** Packages still missing after `present` (package.json / node_modules names). */
+export function packagesToInstall(
+  files: WrittenFile[],
+  declared: unknown = [],
+  present: readonly string[] = [],
+): string[] {
+  const have = new Set(present)
+  return extraNpmPackages(files, declared).filter((n) => !have.has(n))
+}
+
+export function npmPackageName(spec: string): string | null {
+  return packageName(spec)
+}
+
+export type PackageManager = 'npm' | 'pnpm' | 'yarn'
+
+/**
+ * Lockfile wins over package.json "packageManager", so an install cannot
+ * switch managers and write a second lockfile. No lockfile and no field
+ * means npm, which is how the Next and Vue templates are created.
+ * Two lockfiles returns null: refuse rather than pick one.
+ */
+export function detectPackageManager(signals: {
+  packageManager?: string
+  lockfiles?: readonly string[]
+}): PackageManager | null {
+  const locks = new Set(signals.lockfiles || [])
+  const hasPnpm = locks.has('pnpm-lock.yaml')
+  const hasYarn = locks.has('yarn.lock')
+  const hasNpm = locks.has('package-lock.json')
+  const count = Number(hasPnpm) + Number(hasYarn) + Number(hasNpm)
+  if (count > 1) return null
+  if (hasPnpm) return 'pnpm'
+  if (hasYarn) return 'yarn'
+  if (hasNpm) return 'npm'
+  const field = (signals.packageManager || '').trim().toLowerCase()
+  if (field.startsWith('pnpm@') || field === 'pnpm') return 'pnpm'
+  if (field.startsWith('yarn@') || field === 'yarn') return 'yarn'
+  if (field.startsWith('npm@') || field === 'npm') return 'npm'
+  return 'npm'
+}
+
+export function installCommand(
+  manager: PackageManager,
+  packages: string[],
+  peerFallback = false,
+): string | null {
   const pkgs = packages.filter((n) => SAFE.test(n))
   if (!pkgs.length) return null
-  return `npm install --no-fund --no-audit ${pkgs.join(' ')}`
+  const list = pkgs.join(' ')
+  if (manager === 'pnpm') {
+    return peerFallback
+      ? `pnpm add --no-strict-peer-dependencies ${list}`
+      : `pnpm add ${list}`
+  }
+  if (manager === 'yarn') {
+    return peerFallback ? null : `yarn add ${list}`
+  }
+  return peerFallback
+    ? `npm install --no-fund --no-audit --legacy-peer-deps ${list}`
+    : `npm install --no-fund --no-audit ${list}`
+}
+
+export function npmInstallCommand(packages: string[]): string | null {
+  return installCommand('npm', packages)
 }
 
 function importSpecs(code: string): string[] {
