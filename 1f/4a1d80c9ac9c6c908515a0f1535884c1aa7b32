@@ -1,0 +1,68 @@
+lib/verify-check.ts
+  s_527fbb4bd69eb0::t_2bbef675cc0fdb 51,109-165
+  s_527fbb4bd69eb0::t_a0b7314163f1ec 166
+lib/images-check.ts
+  s_527fbb4bd69eb0::t_e971401e6269bf 6,422-450
+lib/images-met.ts
+  s_527fbb4bd69eb0::t_72d1d4cd153cdd 9,20,26,35-36,90,92,98
+lib/sandbox-recovery-check.ts
+  s_527fbb4bd69eb0::t_d3b448a09875b3 62-65
+  s_527fbb4bd69eb0::t_e971401e6269bf 92
+lib/inspect-bridge.ts
+  s_527fbb4bd69eb0::t_765b71be13edce 79-81
+lib/sandbox-route-check.ts
+  s_527fbb4bd69eb0::t_d3b448a09875b3 21-24
+lib/sandbox-client.ts
+  s_527fbb4bd69eb0::t_568cf92539bc7a 29-43
+  s_527fbb4bd69eb0::t_8293bb37b7a917 60-64
+components/fragment-web.tsx
+  s_527fbb4bd69eb0::t_76318a339beeb2 19,52-54,65-67,78-85,97-98,103-106,171-177,185,188-189,192
+lib/inspect-bridge-script.js
+  s_527fbb4bd69eb0::t_684f809bdc6ef7 60-65,67-104,435-438
+  s_527fbb4bd69eb0::t_c9487dbaf2e493 66
+lib/images-wikimedia.ts
+  s_527fbb4bd69eb0::t_72d1d4cd153cdd 5,21,27
+lib/images-cleveland.ts
+  s_527fbb4bd69eb0::t_72d1d4cd153cdd 6,16,22
+lib/fragment-deps.ts
+  s_527fbb4bd69eb0::t_5f11d6b6005326 62,80-90
+  s_527fbb4bd69eb0::t_c1a338b7107c96 91-92
+lib/sandbox-dedupe-check.ts
+  s_527fbb4bd69eb0::t_c9fab1e6bb521b 10-14,22-29,41-46,54-58,138-221,224,227-230
+lib/images-openverse.ts
+  s_527fbb4bd69eb0::t_72d1d4cd153cdd 5,13,19
+lib/verify.ts
+  s_527fbb4bd69eb0::t_5f11d6b6005326 5,19,105-106,382-398
+app/api/sandbox/route.ts
+  s_527fbb4bd69eb0::t_f8762646442252 52-56,63,108,231-237,239,243-257,269,280,283,289-291,302-303,315,336,338,364,401
+  s_527fbb4bd69eb0::t_765b71be13edce 155
+  s_527fbb4bd69eb0::t_7308a908c06138 281-282,431-445,448-463,469-472,520,610,624,627-628,630,632,647-648,657,659,661-663,665,670-672,675,681
+  s_527fbb4bd69eb0::t_e971401e6269bf 446-447,464-468
+lib/fragment-deps-check.ts
+  s_527fbb4bd69eb0::t_2bbef675cc0fdb 7,75-87
+lib/sandbox-client-check.ts
+  s_527fbb4bd69eb0::t_568cf92539bc7a 6,73-93,96
+  s_527fbb4bd69eb0::t_8293bb37b7a917 28-34
+lib/images.ts
+  s_527fbb4bd69eb0::t_72d1d4cd153cdd 157,168-170,179,240,246-248,254-256,262-264,270-272,467,469,474,481-482,515,519,521,550
+  s_527fbb4bd69eb0::t_7308a908c06138 546
+  s_527fbb4bd69eb0::t_5e61c08c93cd68 171-175,177,181-182,194
+app/app/page.tsx
+  s_527fbb4bd69eb0::t_c94ddd05cda553 609,953-954,974,1072
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1f4a1d80c9ac9c6c908515a0f1535884c1aa7b32",
+  "prompts": {},
+  "sessions": {
+    "s_527fbb4bd69eb0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f8db-aaa9-7e20-a6da-da70db409dc1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Suhaib <suhaibking310@gmail.com>"
+    }
+  }
+}
