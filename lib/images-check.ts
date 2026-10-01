@@ -3,6 +3,7 @@ import {
   extractImageQueries,
   isSafeImageUrl,
   rankCandidates,
+  resolveImages,
   rewriteImageRefs,
   scoreCandidate,
   searchQueries,
@@ -418,3 +419,32 @@ assert.deepEqual(parseCleveland({}), [])
 assert.deepEqual(parseCleveland({ data: [null, 1, { title: 'x' }] }), [])
 
 console.log('images-check ok')
+
+async function checkPhotoBudget() {
+  const originalFetch = globalThis.fetch
+  const originalTimeout = AbortSignal.timeout
+  const calls: string[] = []
+  try {
+    AbortSignal.timeout = ms => originalTimeout(ms === 30_000 ? 5 : ms)
+    // This adapter deliberately ignores cancellation and responds late.
+    globalThis.fetch = async url => {
+      calls.push(String(url))
+      await new Promise(resolve => setTimeout(resolve, 40))
+      return Response.json({ results: [{ title: 'Campus courtyard', url: 'https://fixture.invalid/campus.jpg', mature: false }] })
+    }
+    const result = await resolveImages([{ file_path: 'components/Hero.tsx', file_content: '<main><h1>Welcome</h1><img src="evo-image://campus courtyard" /></main>' }])
+    assert.equal(result.assets.length, 0)
+    assert.doesNotMatch(result.files[0].file_content, /evo-image:/)
+    assert.match(result.files[0].file_content, /<h1>Welcome<\/h1>/)
+    assert.equal(calls.length, 1)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    assert.equal(calls.length, 1, 'A late search response cannot trigger downloads or fallback providers')
+    const canceled = new AbortController()
+    canceled.abort()
+    await resolveImages([{ file_path: 'styles/Hero.module.css', file_content: '.hero { background: url("evo-image://campus courtyard"); }' }], canceled.signal)
+    assert.equal(calls.length, 1, 'Canceled photo batches cannot start requests')
+    console.log('images-check photo budget ok: omission preserves app, ignored-abort response cannot continue searches/downloads')
+  } finally { globalThis.fetch = originalFetch; AbortSignal.timeout = originalTimeout }
+}
+
+void checkPhotoBudget().catch(error => { console.error(error); process.exitCode = 1 })

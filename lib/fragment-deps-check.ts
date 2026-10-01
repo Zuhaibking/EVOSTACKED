@@ -4,6 +4,7 @@ import {
   extraNpmPackages,
   installCommand,
   npmInstallCommand,
+  typePackagesForDiagnostics,
 } from './fragment-deps'
 
 const goa = `import React from 'react'
@@ -71,5 +72,18 @@ assert.equal(
   extraNpmPackages([], ['foo && wget evil']).length,
   0,
 )
+assert.deepEqual(extraNpmPackages([], ['qrcode', '@types/qrcode', '@types/lodash@4.17.0']), ['@types/lodash', '@types/qrcode', 'qrcode'])
+assert.equal(installCommand('npm', ['@types/qrcode']), 'npm install --no-fund --no-audit @types/qrcode')
+assert.deepEqual(typePackagesForDiagnostics([
+  "pages/index.tsx(2,20): error TS7016: Could not find a declaration file for module 'qrcode'. '/node_modules/qrcode/lib/index.js' implicitly has an 'any' type.",
+  "components/Canvas.tsx(1,22): error TS7016: Could not find a declaration file for module '@scope/canvas/render'.",
+  "components/Hero.tsx(1,18): error TS7016: Could not find a declaration file for module 'lodash/debounce'.",
+  "pages/index.tsx(2,20): error TS7016: Could not find a declaration file for module 'qrcode'.",
+].join('\n')), ['@types/lodash', '@types/qrcode', '@types/scope__canvas'])
+assert.deepEqual(typePackagesForDiagnostics("error TS2307: Cannot find module 'qrcode' or its corresponding type declarations."), [], 'Missing runtime imports do not justify guessing declaration packages')
+assert.deepEqual(typePackagesForDiagnostics("Could not find a declaration file for module 'qrcode'."), [], 'A generic model/runtime message is not compiler evidence')
+for (const spec of ['../local', '@/components/Button', 'node:fs', 'https://evil.test/x', 'qrcode; touch /tmp/evil', '@types/qrcode']) {
+  assert.deepEqual(typePackagesForDiagnostics(`error TS7016: Could not find a declaration file for module '${spec}'.`), [])
+}
 
 console.log('fragment-deps-check ok')

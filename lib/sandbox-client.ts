@@ -26,13 +26,21 @@ export async function createSandbox(
     // Preserve saved edits and portable assets while replacing an older preview.
     payload = { ...payload, fragment: portable, cachedResult: changed || payload.runtimeError ? undefined : cached }
   }
-  const response = await fetch('/api/sandbox', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  })
-  const text = await response.text()
+  const deadline = AbortSignal.timeout(330_000)
+  let response: Response
+  let text: string
+  try {
+    response = await fetch('/api/sandbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+    })
+    text = await response.text()
+  } catch (error) {
+    if (deadline.aborted && !signal?.aborted) throw new Error('Preview preparation timed out. Your source is saved; retry the preview.')
+    throw error
+  }
   let result: ExecutionResult
   try {
     result = JSON.parse(text)
@@ -48,6 +56,11 @@ export async function createSandbox(
   }
   if ('health' in result && result.health?.state === 'FAILED') {
     throw new Error(result.health.log.slice(-3).join('\n') || 'The generated app failed its checks.')
+  }
+  if ('url' in result && result.health?.state === 'UNVERIFIED' && !result.health.log.some((line) =>
+    line.includes('[EvoStack][HTTP] PASS') || line.includes('[EvoStack][PREVIEW] Saved sandbox reconnected; HTTP responded.'),
+  )) {
+    throw new Error('The preview server did not respond to its checks. Your source is saved; retry the preview.')
   }
   if ('runtimeError' in result && result.runtimeError) {
     throw new Error(result.runtimeError.value || 'The generated program failed to run.')

@@ -2,7 +2,7 @@
 
 import type { CandidateHealth, HealthState } from './candidate-health'
 import type { WrittenFile } from './fragment-files'
-import { packagesToInstall, npmPackageName } from './fragment-deps'
+import { packagesToInstall, npmPackageName, typePackagesForDiagnostics } from './fragment-deps'
 import { sanitizeHydrationFile } from './hydrate-safe'
 import { repairSyntax } from './syntax-safe'
 import { normalizeProjectPath, validateProjectFiles } from './project-paths'
@@ -16,6 +16,7 @@ export type ErrorCategory =
   | 'MODULE_NOT_FOUND'
   | 'DEPENDENCY_INSTALL_ERROR'
   | 'TYPESCRIPT_ERROR'
+  | 'TYPE_DECLARATION_MISSING'
   | 'NEXT_BUILD_ERROR'
   | 'NEXT_SSR_ERROR'
   | 'NEXT_CLIENT_SERVER_ERROR'
@@ -101,6 +102,8 @@ export function classifyOutput(
   if (missing) {
     return { ...base, category: 'MODULE_NOT_FOUND', package: npmPackageName(missing[1]) || missing[1] }
   }
+  const missingTypes = typePackagesForDiagnostics(text)
+  if (missingTypes.length) return { ...base, category: 'TYPE_DECLARATION_MISSING', package: missingTypes[0] }
   if (/window is not defined|document is not defined|localStorage is not defined/i.test(text)) {
     return { ...base, category: 'NEXT_SSR_ERROR' }
   }
@@ -376,7 +379,23 @@ export async function healCandidate(opts: {
     history.push(`${err.category}: ${err.message}`)
 
     let nextFiles: WrittenFile[] | null = null
-    if (err.category === 'MODULE_NOT_FOUND' && err.package && npmPackageName(err.package) && !reinstalled.has(err.package)) {
+    const missingTypes = lastProbe.phase === 'build'
+      ? typePackagesForDiagnostics(lastProbe.output).filter(pkg => !present.has(pkg) && !reinstalled.has(pkg))
+      : []
+    if (missingTypes.length) {
+      missingTypes.forEach(pkg => reinstalled.add(pkg))
+      note(`[EvoStack][DEPENDENCY] Missing type declarations: ${missingTypes.join(', ')}`)
+      note('[EvoStack][STATE] INSTALLING_DEPENDENCIES')
+      const inst = await opts.install(missingTypes)
+      if (inst.ok) {
+        missingTypes.forEach(pkg => present.add(pkg))
+        repaired = true
+        nextFiles = files
+      } else {
+        note(`[EvoStack][ERROR] DEPENDENCY_INSTALL_ERROR ${classifyOutput(inst.output, 'install').message}`)
+      }
+    }
+    if (!nextFiles && err.category === 'MODULE_NOT_FOUND' && err.package && npmPackageName(err.package) && !reinstalled.has(err.package)) {
       reinstalled.add(err.package)
       note(`[EvoStack][DEPENDENCY] Missing package: ${err.package}`)
       note('[EvoStack][STATE] INSTALLING_DEPENDENCIES')

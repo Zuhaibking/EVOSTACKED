@@ -6,7 +6,7 @@ const CC0_URL = 'https://creativecommons.org/publicdomain/zero/1.0/'
 const SEARCH_LIMIT = 20
 const OBJECT_FETCH_CAP = 6
 
-export async function searchMet(query: string): Promise<ImageCandidate[]> {
+export async function searchMet(query: string, signal?: AbortSignal): Promise<ImageCandidate[]> {
   const q = query.trim()
   if (!q) return []
   const url = `${MET_SEARCH}/search?${new URLSearchParams({
@@ -17,12 +17,13 @@ export async function searchMet(query: string): Promise<ImageCandidate[]> {
     limit: String(SEARCH_LIMIT),
   }).toString()}`
   try {
+    signal?.throwIfAborted()
     const res = await fetch(url, {
       headers: {
         Accept: 'application/json',
         'User-Agent': IMAGE_UA,
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
     })
     if (!res.ok) {
       console.warn(`[images] met http ${res.status}`)
@@ -31,7 +32,8 @@ export async function searchMet(query: string): Promise<ImageCandidate[]> {
     const ids = parseMetSearch(await res.json()).slice(0, OBJECT_FETCH_CAP)
     const out: ImageCandidate[] = []
     for (const id of ids) {
-      const row = await fetchMetObject(id)
+      signal?.throwIfAborted()
+      const row = await fetchMetObject(id, signal)
       const cand = parseMetObject(row)
       if (cand) out.push(cand)
     }
@@ -85,14 +87,15 @@ export function parseMetObject(data: unknown): ImageCandidate | null {
   }
 }
 
-async function fetchMetObject(id: number): Promise<unknown> {
+async function fetchMetObject(id: number, signal?: AbortSignal): Promise<unknown> {
   try {
+    signal?.throwIfAborted()
     const res = await fetch(`${MET_OBJECT}/objects/${id}`, {
       headers: {
         Accept: 'application/json',
         'User-Agent': IMAGE_UA,
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
     })
     if (!res.ok) return null
     return await res.json()

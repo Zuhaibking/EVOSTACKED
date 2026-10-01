@@ -2,7 +2,7 @@ import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
 
 const WIKI = 'https://commons.wikimedia.org/w/api.php'
 
-export async function searchWikimedia(query: string): Promise<ImageCandidate[]> {
+export async function searchWikimedia(query: string, signal?: AbortSignal): Promise<ImageCandidate[]> {
   const q = query.trim()
   if (!q) return []
   const url = `${WIKI}?${new URLSearchParams({
@@ -18,12 +18,13 @@ export async function searchWikimedia(query: string): Promise<ImageCandidate[]> 
     iiurlwidth: '1600',
   }).toString()}`
   try {
+    signal?.throwIfAborted()
     const res = await fetch(url, {
       headers: {
         Accept: 'application/json',
         'User-Agent': IMAGE_UA,
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
     })
     if (!res.ok) {
       console.warn(`[images] wikimedia http ${res.status}`)

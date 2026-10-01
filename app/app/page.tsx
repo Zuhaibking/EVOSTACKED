@@ -606,7 +606,7 @@ export default function Home() {
         : [...prev, { role: 'assistant', content, object: next, result: c.result }]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCandidate, tournament.candidates[selectedCandidate ?? 'minimal']])
+  }, [selectedCandidate, inspectOpen, tournament.candidates[selectedCandidate ?? 'minimal']])
 
   function setMessage(message: Partial<Message>, index?: number) {
     setMessages((previousMessages) => {
@@ -950,7 +950,8 @@ export default function Home() {
     tournament.phase === 'generating' ||
     tournament.phase === 'judging' ||
     isLoading ||
-    isPreviewLoading
+    isPreviewLoading ||
+    Object.values(tournament.candidates).some((candidate) => candidate.sandboxStatus === 'starting')
   const dockCommand = isBuilding || hasTournament || Boolean(fragment)
 
   useEffect(() => {
@@ -970,7 +971,7 @@ export default function Home() {
       retry={retry}
       isErrored={!!errorMessage || !!tournament.error}
       errorMessage={errorMessage || tournament.error || ''}
-      isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
+      isLoading={isBuilding}
       isRateLimited={isRateLimited}
       stop={() => {
         stop()
@@ -1068,7 +1069,7 @@ export default function Home() {
           canClear={messages.length > 0}
           canUndo={messages.length > 1 && !isLoading}
           onUndo={handleUndo}
-          isLoading={isLoading || tournament.phase === 'generating' || tournament.phase === 'judging'}
+          isLoading={isBuilding}
           hasFragment={!!fragment}
           projects={projectStore ? listProjects(projectStore).map((p) => ({ id: p.id, name: p.name })) : []}
           activeProjectId={projectStore?.activeId}

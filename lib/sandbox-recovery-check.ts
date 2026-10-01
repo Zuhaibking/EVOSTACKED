@@ -59,7 +59,10 @@ async function check() {
     getHost: (port: number) => `${port}-${id}.fixture.invalid`,
     getInfo: async () => ({ endAt: new Date(Date.now() + 600_000) }),
     files: {
-      write: async (path: string, data: string | ArrayBuffer) => { files.set(path, data) },
+      write: async (path: string | { path: string; data: string | ArrayBuffer }[], data?: string | ArrayBuffer) => {
+        if (Array.isArray(path)) for (const file of path) files.set(file.path, file.data)
+        else files.set(path, data!)
+      },
       read: async (path: string) => { const value = files.get(path); if (typeof value !== 'string') throw new Error('Missing fixture file'); return value },
     },
     commands: { run: async (command: string) => ({ exitCode: 0, stdout: command.includes('/tsc') ? '' : 'react,next,typescript', stderr: '' }) },
@@ -86,7 +89,7 @@ async function check() {
       return new Response('<html><body>Campus welcome</body></html>', { status: fixture.httpStatus })
     }
     // Retry timing is shortened only inside this mocked process.
-    globalThis.setTimeout = ((callback: (...args: any[]) => void, delay?: number, ...args: any[]) => original.timeout(callback, Math.min(delay || 0, 1), ...args)) as typeof globalThis.setTimeout
+    globalThis.setTimeout = ((callback: (...args: any[]) => void, delay?: number, ...args: any[]) => original.timeout(callback, (delay || 0) >= 60_000 ? delay : Math.min(delay || 0, 1), ...args)) as typeof globalThis.setTimeout
     const request = async (extra: Record<string, unknown> = {}) => POST(new Request('http://fixture.invalid/api/sandbox', { method: 'POST', body: JSON.stringify({ fragment, cachedResult: cached, userID: 'forged-client-user', projectID: 'project-fixture', candidateID: 'minimal', ...extra }) }))
 
     assert.equal((await request({ fragment: { ...fragment, code: {} } })).status, 400)

@@ -3,6 +3,7 @@ import { createSandbox } from './sandbox-client'
 
 async function check() {
   const original = globalThis.fetch
+  const originalTimeout = AbortSignal.timeout
   try {
     let started = 0
     const release: (() => void)[] = []
@@ -24,6 +25,13 @@ async function check() {
     await assert.rejects(createSandbox({}), /Broken/)
     globalThis.fetch = async () => new Response(JSON.stringify({ sbxId: 'x', template: 'nextjs-developer', url: 'https://x.e2b.app', health: { state: 'FAILED', log: ['Hydration failed'] } }))
     await assert.rejects(createSandbox({}), /Hydration failed/)
+    const unconfirmed = { sbxId: 'unconfirmed', template: 'nextjs-developer', url: 'https://fixture.invalid', health: { state: 'UNVERIFIED', log: ['[EvoStack][RESULT] UNVERIFIED'] } }
+    globalThis.fetch = async () => new Response(JSON.stringify(unconfirmed))
+    await assert.rejects(createSandbox({}), /server did not respond/, 'A timed-out HTTP check cannot become a ready preview')
+    globalThis.fetch = async () => new Response(JSON.stringify({ ...unconfirmed, health: { ...unconfirmed.health, log: ['[EvoStack][HTTP] PASS'] } }))
+    assert.equal((await createSandbox({})).sbxId, 'unconfirmed', 'HTTP success may remain unverified until browser interactions are checked')
+    globalThis.fetch = async () => new Response(JSON.stringify({ ...unconfirmed, health: { ...unconfirmed.health, log: ['[EvoStack][PREVIEW] Saved sandbox reconnected; HTTP responded.'] } }))
+    assert.equal((await createSandbox({})).sbxId, 'unconfirmed')
     globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Unexpected shape' }))
     await assert.rejects(createSandbox({}), /could not be created/)
     const source = { code: 'saved source', template: 'nextjs-developer', file_path: 'pages/index.tsx' }
@@ -62,9 +70,30 @@ async function check() {
     assert.equal(sent.fragment.code, source.code, 'Portable asset recovery must preserve the entry source')
     await createSandbox({ fragment: { ...multi, files: [...multi.files].reverse() }, cachedResult: multiCache })
     assert.equal(sent.cachedResult.sbxId, 'saved', 'File order alone does not change a project')
-    console.log('sandbox-client-check ok: parallel requests, isolated failures, invalid responses')
+    AbortSignal.timeout = () => originalTimeout(5)
+    globalThis.fetch = async (_url, options) => {
+      const signal = options!.signal!
+      await new Promise<void>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason)
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+      throw new Error('Unreachable')
+    }
+    const keepAlive = setTimeout(() => {}, 100)
+    try {
+      await assert.rejects(createSandbox({}), /preparation timed out/)
+      const controller = new AbortController()
+      controller.abort(new Error('User canceled preview'))
+      await assert.rejects(createSandbox({}, controller.signal), /User canceled preview/)
+      globalThis.fetch = async (_url, options) => new Response(new ReadableStream({
+        start(controller) { options!.signal!.addEventListener('abort', () => controller.error(options!.signal!.reason), { once: true }) },
+      }))
+      await assert.rejects(createSandbox({}), /preparation timed out/, 'A stalled response body must also stop waiting')
+    } finally { clearTimeout(keepAlive) }
+    console.log('sandbox-client-check ok: parallel requests, isolated failures, invalid responses, fetch/body deadlines, user cancellation')
   } finally {
     globalThis.fetch = original
+    AbortSignal.timeout = originalTimeout
   }
 }
 void check().catch((error) => { console.error(error); process.exitCode = 1 })

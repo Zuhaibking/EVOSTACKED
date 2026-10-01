@@ -48,6 +48,7 @@ assert.equal(classifyOutput('Parsing ecmascript source code failed\nUnexpected e
 assert.equal(classifyOutput("You're importing a component that needs useState. It only works in a Client Component.", 'build').category, 'NEXT_CLIENT_SERVER_ERROR')
 assert.equal(classifyOutput('React Hook "useState" is called conditionally', 'preview').category, 'REACT_RUNTIME_ERROR')
 assert.equal(classifyOutput('The default export is not a React Component', 'build').category, 'EXPORT_ERROR')
+assert.equal(classifyOutput("components/QRCode.tsx(2,20): error TS7016: Could not find a declaration file for module 'qrcode'.", 'build').category, 'TYPE_DECLARATION_MISSING')
 assert.equal(classifyOutput("Attempted import error: 'Foo' is not exported from 'bar'", 'build').category, 'IMPORT_ERROR')
 assert.equal(regressed(
   { install: true, build: true, preview: false, http: true, runtime: false },
@@ -104,6 +105,64 @@ for (const spec of [
   assert.equal(llmCalls, 0)
   assert.ok(healed.health.log.some((l) => l.includes('Installing')))
 }
+
+const declarationFiles = [
+  ...page('import QRCode from "../components/QRCode"; export default function Page(){return <QRCode/>}'),
+  { file_path: 'components/QRCode.tsx', file_content: 'import QRCode from "qrcode"; export default function Code(){return <button onClick={() => QRCode.toDataURL("welcome")}>QR</button>}' },
+  { file_path: 'data/site.ts', file_content: 'export const title = "Freshers party"' },
+]
+const declarationOutput = [
+  "components/QRCode.tsx(1,20): error TS7016: Could not find a declaration file for module 'qrcode'. '/node_modules/qrcode/lib/index.js' implicitly has an 'any' type.",
+  "components/QRCode.tsx(2,20): error TS7016: Could not find a declaration file for module '@scope/canvas/render'.",
+].join('\n')
+let declarationInstalls = 0, declarationModels = 0, declarationProbes = 0
+let declarationsReady = false
+const typed = await healCandidate({
+  files: declarationFiles, present: ['react', 'next', 'qrcode', '@scope/canvas'],
+  install: async packages => {
+    declarationInstalls++
+    assert.deepEqual(packages, ['@types/qrcode', '@types/scope__canvas'])
+    declarationsReady = true
+    return { ok: true, output: 'installed declarations' }
+  },
+  probe: async files => {
+    declarationProbes++
+    assert.deepEqual(files, declarationFiles, 'Type installation must not rewrite project source')
+    return declarationsReady ? okProbe() : { ok: false, output: declarationOutput, phase: 'build' }
+  },
+  llmRepair: async () => { declarationModels++; return null },
+})
+assert.equal(declarationInstalls, 1)
+assert.equal(declarationModels, 0, 'Known missing declaration packages must avoid paid model repair')
+assert.equal(declarationProbes, 2, 'Compiler is retried after declarations are installed')
+assert.deepEqual(typed.files, declarationFiles)
+assert.equal(typed.health.state, 'UNVERIFIED')
+assert.equal(typed.health.verified, false)
+assert.ok(typed.health.log.some(line => line.includes('Missing type declarations')))
+
+let unavailableTypes = 0, fallbackModels = 0
+const unavailableDeclarations = await healCandidate({
+  files: declarationFiles, present: ['react', 'next', 'qrcode', '@scope/canvas'],
+  install: async () => { unavailableTypes++; return { ok: false, output: 'npm ERR! 404 Not Found - no declaration package' } },
+  probe: async () => ({ ok: false, output: declarationOutput, phase: 'build' }),
+  llmRepair: async () => { fallbackModels++; return declarationFiles },
+})
+assert.equal(unavailableTypes, 1, 'Unavailable typings are attempted once per bounded repair run')
+assert.equal(fallbackModels, MAX_REPAIR_ATTEMPTS)
+assert.equal(unavailableDeclarations.health.state, 'FAILED')
+assert.deepEqual(unavailableDeclarations.files, declarationFiles, 'Failure must not suppress strict compiler checks')
+
+let declaredTypeModels = 0
+const declaredTypeInstalls: string[][] = []
+const declaredTypes = await healCandidate({
+  files: declarationFiles, present: ['react', 'next', 'qrcode'], declared: ['@types/qrcode'],
+  install: async packages => { declaredTypeInstalls.push(packages); return { ok: true, output: '' } },
+  probe: async () => okProbe(),
+  llmRepair: async () => { declaredTypeModels++; return null },
+})
+assert.deepEqual(declaredTypeInstalls, [['@types/qrcode']], 'Explicit safe declarations install before the first compiler probe')
+assert.equal(declaredTypeModels, 0)
+assert.equal(declaredTypes.health.dependencyStatus, 'passed')
 
 installed.clear()
 const denied = await healCandidate({

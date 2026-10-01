@@ -18,7 +18,10 @@ async function check() {
       sandboxId: 'local-fixture',
       getHost: () => 'fixture.invalid',
       files: {
-        write: async (path: string, content: string) => { writes.set(path, content) },
+        write: async (path: string | { path: string; data: string }[], content?: string) => {
+          if (Array.isArray(path)) for (const file of path) writes.set(file.path, file.data)
+          else writes.set(path, content!)
+        },
         read: async (path: string) => { if (!writes.has(path)) throw new Error('Missing fixture file'); return writes.get(path)! },
       },
       commands: {

@@ -49,15 +49,18 @@ type Sandbox = {
   sandboxId: string
   getHost: (port: number) => string
   files: {
-    write: (path: string, data: string | ArrayBuffer) => Promise<unknown>
-    read: (path: string) => Promise<string>
+    write: {
+      (path: string, data: string | ArrayBuffer, opts?: { requestTimeoutMs?: number }): Promise<unknown>
+      (files: { path: string; data: string | ArrayBuffer }[], opts?: { requestTimeoutMs?: number }): Promise<unknown>
+    }
+    read: (path: string, opts?: { requestTimeoutMs?: number }) => Promise<string>
   }
   commands: {
     run: (cmd: string, opts?: { timeoutMs?: number; requestTimeoutMs?: number }) => Promise<{ exitCode: number; stdout: string; stderr: string }>
   }
 }
 
-export const maxDuration = 180
+export const maxDuration = 300
 
 export async function POST(req: Request) {
   let body: Record<string, unknown>
@@ -102,6 +105,7 @@ export async function POST(req: Request) {
     runtimeError?: string; cachedResult?: ExecutionResult; projectID?: string; candidateID?: string; runID?: string
   }
   let fragment = parsed.data
+  let provisioningStarted = false
   let sourceFiles: WrittenFile[]
   try { sourceFiles = fragmentFiles(fragment) } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Invalid project source paths.' }, { status: 400 })
@@ -148,6 +152,7 @@ export async function POST(req: Request) {
         return Response.json({ error: 'The saved preview template does not match this project.' }, { status: 409 })
       }
       const resumed = await WebSandbox.connect(cachedWeb.sbxId, { timeoutMs: sandboxTimeout, requestTimeoutMs: 10_000 })
+      try { await injectInspectBridge(resumed) } catch { console.warn('[EvoStack][PREVIEW] Could not update the preview helper.') }
       const url = `https://${resumed.getHost(resolveSandboxPort(sandboxTemplate))}`
       const preview = await probePreview(url)
       if (!preview.ok) return Response.json({ error: 'The saved preview is temporarily unavailable. Please retry.' }, { status: 503 })
@@ -223,13 +228,33 @@ export async function POST(req: Request) {
   previewCreations.set(key, job)
   job.promise = job.promise.then(async (response) => {
     const value = await response.clone().json() as ExecutionResultWeb
-    if (!response.ok || value.health?.state === 'FAILED') previewCreations.delete(key)
-    else { job.expiresAt = Date.now() + sandboxTimeout; prunePreviewCreations() }
+    if (previewCreations.get(key) !== job) return response
+    // A timed-out paid request may finish remotely. Briefly retain its terminal
+    // response, release the active slot, and avoid an overlapping refresh create.
+    if (response.status === 504 && provisioningStarted) job.expiresAt = Date.now() + 30_000
+    else if (!response.ok || value.health?.state === 'FAILED') previewCreations.delete(key)
+    else job.expiresAt = Date.now() + sandboxTimeout
+    prunePreviewCreations()
     return response
-  }).catch((error) => { previewCreations.delete(key); throw error })
+  }).catch((error) => { if (previewCreations.get(key) === job) previewCreations.delete(key); throw error })
   return (await job.promise).clone()
 
   async function createPreview() {
+    const controller = new AbortController()
+    const deadline = Date.now() + maxDuration * 1000
+    const timer = setTimeout(() => controller.abort(previewTimeout('Preview preparation timed out after five minutes. Wait 30 seconds, then retry.')), maxDuration * 1000)
+    try {
+      return await withSignal(preparePreview(controller.signal, deadline), controller.signal)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'PreviewTimeoutError') {
+        return Response.json({ error: error.message, code: 'PREVIEW_TIMEOUT' }, { status: 504 })
+      }
+      throw error
+    } finally { clearTimeout(timer) }
+  }
+
+  async function preparePreview(signal: AbortSignal, deadline: number) {
+  signal.throwIfAborted()
   // Create an interpreter or a sandbox
   const options = {
     metadata: {
@@ -241,6 +266,7 @@ export async function POST(req: Request) {
       ...(typeof runID === 'string' ? { runID: runID.slice(0, 128) } : {}),
     },
     timeoutMs: sandboxTimeout,
+    requestTimeoutMs: 60_000,
     ...(teamID && accessToken
       ? {
           headers: {
@@ -251,15 +277,18 @@ export async function POST(req: Request) {
       : {}),
   }
   const createdAt = Date.now()
-  const sbx: Sandbox = sandboxTemplate === 'code-interpreter-v1'
-    ? await InterpreterSandbox.create(sandboxTemplate, options)
-    : await WebSandbox.create(sandboxTemplate, {
+  provisioningStarted = true
+  const created = await withSignal<Sandbox>(sandboxTemplate === 'code-interpreter-v1'
+    ? InterpreterSandbox.create(sandboxTemplate, options)
+    : WebSandbox.create(sandboxTemplate, {
         ...options,
         // Hosted baseline templates predate secured envd access. Match the
         // interpreter SDK's previous access setting while enabling persistence.
         secure: false,
         lifecycle: { onTimeout: 'pause', autoResume: true },
-      })
+      }), signal)
+  signal.throwIfAborted()
+  const sbx = guardedSandbox(created, signal, deadline)
 
   const npmPkgs = extraNpmPackages(
     sourceFiles,
@@ -270,7 +299,8 @@ export async function POST(req: Request) {
   const healNext =
     sandboxTemplate === 'nextjs-developer' && !isStaticHtml(fragment)
 
-  const imaged = await resolveImages(sourceFiles)
+  const imaged = await withSignal(resolveImages(sourceFiles, signal), signal)
+  signal.throwIfAborted()
   // The image manifest belongs to preview infrastructure, never to editable source.
   const imageManifest = imaged.files.find(file => file.file_path === `${IMAGE_DIR}/manifest.json`)
   if (imageManifest) await sbx.files.write(imageManifest.file_path, imageManifest.file_content)
@@ -282,10 +312,7 @@ export async function POST(req: Request) {
 
   if (healNext) {
     let typecheckPassed = false
-    for (const bin of imaged.binaries) {
-      await sbx.files.write(bin.file_path, bin.data)
-      console.log(`Copied image to ${bin.file_path} in ${sbx.sandboxId}`)
-    }
+    if (imaged.binaries.length) await sbx.files.write(imaged.binaries.map(bin => ({ path: bin.file_path, data: bin.data })))
     const present = await readInstalledPackages(sbx)
     const previewUrl = `https://${sbx.getHost(resolveSandboxPort(sandboxTemplate))}`
     const healed = await healCandidate({
@@ -306,9 +333,9 @@ export async function POST(req: Request) {
           reportedRuntimeError = ''
           return { ok: false, output, phase: 'preview' }
         }
-        return probePreview(previewUrl)
+        return probePreview(previewUrl, signal)
       },
-      llmRepair: (ctx) => repairWithModel(model, config, ctx),
+      llmRepair: (ctx) => repairWithModel(model, config, ctx, signal),
     })
     health = healed.health
     if (typecheckPassed) {
@@ -334,10 +361,7 @@ export async function POST(req: Request) {
       })
     }
     await writeFiles(sbx, files)
-    for (const bin of imaged.binaries) {
-      await sbx.files.write(bin.file_path, bin.data)
-      console.log(`Copied image to ${bin.file_path} in ${sbx.sandboxId}`)
-    }
+    if (imaged.binaries.length) await sbx.files.write(imaged.binaries.map(bin => ({ path: bin.file_path, data: bin.data })))
   }
 
   // Static HTML has no Next/Vue server. Mount it inside the running template
@@ -374,7 +398,7 @@ export async function POST(req: Request) {
 
   // Execute code or return a URL to the running sandbox
   if (sandboxTemplate === 'code-interpreter-v1') {
-    const { logs, error, results } = await (sbx as InterpreterSandbox).runCode(fragment.code || '')
+    const { logs, error, results } = await withSignal((created as InterpreterSandbox).runCode(fragment.code || ''), signal)
 
     return new Response(
       JSON.stringify({
@@ -401,6 +425,48 @@ export async function POST(req: Request) {
       imageQueries: validImageQueries(imaged.manifest),
     } as ExecutionResultWeb),
   )
+  }
+}
+
+function previewTimeout(message: string) {
+  return Object.assign(new Error(message), { name: 'PreviewTimeoutError' })
+}
+
+/** Also bounds adapters that fail to honor cancellation; their late result is ignored. */
+function withSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    if (signal.aborted) { promise.catch(() => {}); reject(signal.reason); return }
+    signal.addEventListener('abort', abort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
+function guardedSandbox(sbx: Sandbox, signal: AbortSignal, deadline: number): Sandbox {
+  const remaining = () => Math.max(1, deadline - Date.now())
+  const requestTimeout = () => Math.min(60_000, remaining())
+  async function step<T>(operation: () => Promise<T>): Promise<T> {
+    signal.throwIfAborted()
+    const value = await withSignal(operation(), signal)
+    signal.throwIfAborted()
+    return value
+  }
+  return {
+    sandboxId: sbx.sandboxId,
+    getHost: (port) => sbx.getHost(port),
+    files: {
+      write: ((pathOrFiles: string | { path: string; data: string | ArrayBuffer }[], dataOrOptions?: string | ArrayBuffer | { requestTimeoutMs?: number }) => step(() => typeof pathOrFiles === 'string'
+        ? sbx.files.write(pathOrFiles, dataOrOptions as string | ArrayBuffer, { requestTimeoutMs: requestTimeout() })
+        : sbx.files.write(pathOrFiles, { requestTimeoutMs: requestTimeout() }))) as Sandbox['files']['write'],
+      read: (path) => step(() => sbx.files.read(path, { requestTimeoutMs: requestTimeout() })),
+    },
+    commands: {
+      run: (command, opts) => step(() => sbx.commands.run(command, {
+        ...opts,
+        timeoutMs: Math.min(opts?.timeoutMs ?? 60_000, remaining()),
+        requestTimeoutMs: Math.min(opts?.requestTimeoutMs ?? 60_000, remaining()),
+      })),
+    },
   }
 }
 
@@ -451,8 +517,8 @@ function validImageQueries(manifest: unknown): NonNullable<ExecutionResultWeb['i
 }
 
 async function writeFiles(sbx: Sandbox, files: WrittenFile[]) {
+  await sbx.files.write(files.map(file => ({ path: file.file_path, data: file.file_content })))
   for (const file of files) {
-    await sbx.files.write(file.file_path, file.file_content)
     console.log(`Copied file to ${file.file_path} in ${sbx.sandboxId}`)
   }
 }
@@ -541,7 +607,7 @@ async function installMissing(sbx: Sandbox, packages: string[]) {
     const retry = peer ? installCommand(manager, packages, true) : null
     if (!result.ok && retry) result = await runCmd(sbx, retry, 90_000)
     if (!result.ok) return result
-    const check = packages.map((p) => `require.resolve(${JSON.stringify(p)})`).join(';')
+    const check = packages.map((p) => `require.resolve(${JSON.stringify(p.startsWith('@types/') ? `${p}/package.json` : p)})`).join(';')
     const resolved = await runCmd(sbx, `node -e ${JSON.stringify(check)}`, 20_000)
     if (!resolved.ok) {
       return { ok: false, output: `${result.output}\n${resolved.output}` }
@@ -555,13 +621,15 @@ async function installMissing(sbx: Sandbox, packages: string[]) {
   }
 }
 
-async function probePreview(url: string): Promise<ProbeResult> {
+async function probePreview(url: string, signal?: AbortSignal): Promise<ProbeResult> {
   let last = ''
   let status = 0
-  await new Promise((r) => setTimeout(r, 1500))
+  if (signal) await withSignal(new Promise((r) => setTimeout(r, 1500)), signal)
+  else await new Promise((r) => setTimeout(r, 1500))
   for (let i = 0; i < 4; i++) {
+    signal?.throwIfAborted()
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(20_000) })
+      const res = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000) })
       status = res.status
       last = (await res.text()).slice(0, 8000)
       const runtime = /Application error|Unhandled Runtime/i.test(last)
@@ -576,7 +644,8 @@ async function probePreview(url: string): Promise<ProbeResult> {
     } catch (e) {
       last = e instanceof Error ? e.message : String(e)
     }
-    await new Promise((r) => setTimeout(r, 2000))
+    if (signal) await withSignal(new Promise((r) => setTimeout(r, 2000)), signal)
+    else await new Promise((r) => setTimeout(r, 2000))
   }
   return { ok: false, output: last || 'timeout', httpStatus: status, phase: 'preview' }
 }
@@ -585,21 +654,29 @@ async function repairWithModel(
   model: LLMModel | undefined,
   config: LLMModelConfig | undefined,
   ctx: RepairContext,
+  parentSignal: AbortSignal,
 ): Promise<WrittenFile[] | null> {
+  parentSignal.throwIfAborted()
   if (!model || !config) return null
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(previewTimeout('Automatic preview repair timed out after 60 seconds. Wait 30 seconds, then retry.')), 60_000)
+  const signal = AbortSignal.any([parentSignal, controller.signal])
   try {
-    const { text } = await generateText({
+    const { text } = await withSignal(generateText({
       model: getModelClient(model, config) as LanguageModel,
       prompt: repairPrompt(ctx),
       maxRetries: 0,
       temperature: 0,
-    })
+      abortSignal: signal,
+    }), signal)
+    signal.throwIfAborted()
     return filesFromModel(ctx.files, ctx.error, text)
   } catch (e) {
+    if (signal.aborted) throw signal.reason
     console.warn(
       '[EvoStack][REPAIR] model unavailable',
       e instanceof Error ? e.message : e,
     )
     return null
-  }
+  } finally { clearTimeout(timer) }
 }

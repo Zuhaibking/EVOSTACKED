@@ -2,7 +2,7 @@ import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
 
 const OPENVERSE = 'https://api.openverse.org/v1/images/'
 
-export async function searchOpenverse(query: string): Promise<ImageCandidate[]> {
+export async function searchOpenverse(query: string, signal?: AbortSignal): Promise<ImageCandidate[]> {
   const q = query.trim()
   if (!q) return []
   const url = `${OPENVERSE}?${new URLSearchParams({
@@ -10,12 +10,13 @@ export async function searchOpenverse(query: string): Promise<ImageCandidate[]> 
     page_size: '20',
   }).toString()}`
   try {
+    signal?.throwIfAborted()
     const res = await fetch(url, {
       headers: {
         Accept: 'application/json',
         'User-Agent': IMAGE_UA,
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
     })
     if (!res.ok) {
       console.warn(`[images] openverse http ${res.status}`)

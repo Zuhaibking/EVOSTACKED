@@ -76,7 +76,9 @@ async function ensureScriptTag(sbx: SandboxFiles, path: string) {
 
 export async function injectInspectBridge(sbx: SandboxFiles) {
   const js = inspectBridgeSource()
-  await sbx.files.write(`public/${INSPECT_BRIDGE_FILENAME}`, js)
+  if (await tryRead(sbx, `public/${INSPECT_BRIDGE_FILENAME}`) !== js) {
+    await sbx.files.write(`public/${INSPECT_BRIDGE_FILENAME}`, js)
+  }
 
   const nextDoc =
     (await tryRead(sbx, 'pages/_document.tsx')) ??

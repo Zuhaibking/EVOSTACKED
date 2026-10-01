@@ -59,7 +59,7 @@ export function extraNpmPackages(
     }
   }
   return Array.from(names)
-    .filter((n) => SAFE.test(n) && !SKIP.has(n) && !n.startsWith('@types/'))
+    .filter((n) => SAFE.test(n) && !SKIP.has(n))
     .sort()
 }
 
@@ -75,6 +75,19 @@ export function packagesToInstall(
 
 export function npmPackageName(spec: string): string | null {
   return packageName(spec)
+}
+
+/** Only compiler TS7016 evidence justifies trying a separate declaration package. */
+export function typePackagesForDiagnostics(output: string): string[] {
+  const names = new Set<string>()
+  for (const match of output.matchAll(/\bTS7016\s*:\s*Could not find a declaration file for module\s+['"]([^'"\r\n]+)['"]/gi)) {
+    const pkg = npmPackageName(match[1])
+    if (!pkg || !SAFE.test(pkg) || pkg.startsWith('@types/')) continue
+    // Match TypeScript's getTypesPackageName / scoped-package mangling.
+    const name = `@types/${pkg.startsWith('@') ? pkg.slice(1).replace('/', '__') : pkg}`
+    if (SAFE.test(name)) names.add(name)
+  }
+  return [...names].sort()
 }
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn'

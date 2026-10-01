@@ -16,7 +16,7 @@ import {
   stableInspectSrc,
 } from '@/lib/inspect'
 import { ExecutionResultWeb } from '@/lib/types'
-import { RotateCw } from 'lucide-react'
+import { ExternalLink, LoaderCircle, RotateCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 export function FragmentWeb({
@@ -49,6 +49,9 @@ export function FragmentWeb({
   onRuntimeError?: (message: string) => void
 }) {
   const [iframeKey, setIframeKey] = useState(0)
+  const [previewState, setPreviewState] = useState<'loading' | 'rendered' | 'unconfirmed' | 'error'>('loading')
+  const [previewError, setPreviewError] = useState('')
+  const documentLoadedRef = useRef(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [iframeBox, setIframeBox] = useState<DOMRect | null>(null)
@@ -59,6 +62,9 @@ export function FragmentWeb({
   const iframeSrc = stableInspectSrc(srcRef.current, result.url, inspectEnabled)
 
   function refreshIframe() {
+    documentLoadedRef.current = false
+    setPreviewState('loading')
+    setPreviewError('')
     setIframeKey((prevKey) => prevKey + 1)
   }
 
@@ -68,6 +74,14 @@ export function FragmentWeb({
       '*',
     )
   }
+
+  useEffect(() => {
+    documentLoadedRef.current = false
+    setPreviewState('loading')
+    setPreviewError('')
+    const timer = window.setTimeout(() => setPreviewState((state) => state === 'loading' ? 'unconfirmed' : state), 45_000)
+    return () => window.clearTimeout(timer)
+  }, [iframeSrc, iframeKey])
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -80,8 +94,14 @@ export function FragmentWeb({
       const data = event.data
       if (data?.source === INSPECT_SOURCE && data.type === 'runtime-error') {
         if (typeof data.payload?.message === 'string' && data.payload.message.trim()) {
+          setPreviewError(data.payload.message.slice(0, 2000))
+          setPreviewState('error')
           onRuntimeError?.(data.payload.message.slice(0, 2000))
         }
+        return
+      }
+      if (data?.source === INSPECT_SOURCE && data.type === 'rendered') {
+        if (documentLoadedRef.current && data.payload?.hasContent === true) setPreviewState((state) => state === 'error' ? state : 'rendered')
         return
       }
       if (!isInspectMessage(event.data)) return
@@ -148,6 +168,13 @@ export function FragmentWeb({
 
   return (
     <div className="flex flex-col w-full h-full">
+      {previewState !== 'rendered' && (
+        <div role={previewState === 'loading' ? 'status' : 'alert'} className={'flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs ' + (previewState === 'error' ? 'border-destructive/20 bg-destructive/5 text-destructive' : 'border-border bg-muted/30 text-muted-foreground')}>
+          {previewState === 'loading' ? <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" /> : null}
+          <p className="min-w-0 flex-1 whitespace-pre-wrap break-words">{previewState === 'loading' ? 'Opening preview…' : previewState === 'error' ? previewError : 'The preview has not confirmed visible content yet. Reload it or open it in a new tab.'}</p>
+          {previewState !== 'loading' && <><Button variant="outline" size="sm" className="h-7 text-xs" onClick={refreshIframe}>Reload</Button><a href={iframeSrc} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground hover:bg-muted">Open preview<ExternalLink className="h-3 w-3" aria-hidden="true" /></a></>}
+        </div>
+      )}
       <div ref={wrapRef} className="relative flex-1 min-h-0">
         <iframe
           ref={iframeRef}
@@ -155,11 +182,14 @@ export function FragmentWeb({
           className="h-full w-full"
           title="Generated app preview"
           sandbox="allow-forms allow-scripts allow-same-origin"
-          loading="lazy"
+          loading="eager"
           src={iframeSrc}
           onLoad={() => {
+            documentLoadedRef.current = true
+            postToPreview({ type: 'preview-status' })
             if (inspectEnabled) postToPreview({ type: 'enable' })
           }}
+          onError={() => { setPreviewState('error'); setPreviewError('The preview could not be loaded in this browser. Reload it or open it in a new tab.') }}
         />
         {inspectEnabled && onDraft ? (
           <InspectToolbar

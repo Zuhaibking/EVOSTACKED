@@ -3,7 +3,7 @@ import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
 const CMA = 'https://openaccess-api.clevelandart.org/api/artworks/'
 const CC0_URL = 'https://creativecommons.org/publicdomain/zero/1.0/'
 
-export async function searchCleveland(query: string): Promise<ImageCandidate[]> {
+export async function searchCleveland(query: string, signal?: AbortSignal): Promise<ImageCandidate[]> {
   const q = query.trim()
   if (!q) return []
   const url = `${CMA}?${new URLSearchParams({
@@ -13,12 +13,13 @@ export async function searchCleveland(query: string): Promise<ImageCandidate[]> 
     limit: '20',
   }).toString()}`
   try {
+    signal?.throwIfAborted()
     const res = await fetch(url, {
       headers: {
         Accept: 'application/json',
         'User-Agent': IMAGE_UA,
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
     })
     if (!res.ok) {
       console.warn(`[images] cleveland http ${res.status}`)

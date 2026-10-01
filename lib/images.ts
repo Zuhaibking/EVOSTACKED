@@ -154,6 +154,7 @@ export function validateImageBytes(
 
 export async function resolveImages(
   files: WrittenFile[],
+  parentSignal?: AbortSignal,
 ): Promise<ResolveImagesResult> {
   const queries = Array.from(
     new Set(files.flatMap((f) => extractImageQueries(f.file_content))),
@@ -164,10 +165,21 @@ export async function resolveImages(
 
   const byQuery = new Map<string, ImageAsset>()
   const byUrl = new Map<string, ImageAsset>()
+  // Photos are optional; their shared budget cannot postpone a working preview.
+  const photoDeadline = AbortSignal.timeout(30_000)
+  const signal = parentSignal ? AbortSignal.any([parentSignal, photoDeadline]) : photoDeadline
+  let onAbort = () => {}
+  const stopped = new Promise<null>(resolve => {
+    onAbort = () => resolve(null)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 
+  try {
   for (const query of queries) {
+    if (signal.aborted) break
     try {
-      const asset = await resolveOne(query, byUrl)
+      const asset = await Promise.race([resolveOne(query, byUrl, signal), stopped])
+      if (signal.aborted) break
       if (asset) {
         byQuery.set(query, asset)
         byUrl.set(asset.source, asset)
@@ -179,6 +191,7 @@ export async function resolveImages(
       console.warn('[images] failed', err instanceof Error ? err.message : err)
     }
   }
+  } finally { signal.removeEventListener('abort', onAbort) }
 
   const publicByQuery = new Map<string, string>()
   Array.from(byQuery.entries()).forEach(([query, asset]) => {
@@ -224,34 +237,39 @@ export async function resolveImages(
 async function resolveOne(
   query: string,
   byUrl: Map<string, ImageAsset>,
+  signal: AbortSignal,
 ): Promise<ImageAsset | null> {
   console.log(`[images] query: ${query}`)
   const attempts = searchQueries(query)
 
   for (const q of attempts) {
-    const openverse = rankCandidates(query, await searchOpenverse(q))
-    const fromOpen = await pickDownload(query, 'openverse', openverse, byUrl)
+    signal.throwIfAborted()
+    const openverse = rankCandidates(query, await searchOpenverse(q, signal))
+    const fromOpen = await pickDownload(query, 'openverse', openverse, byUrl, signal)
     if (fromOpen) return fromOpen
   }
 
   console.log('[images] fallback: wikimedia')
   for (const q of attempts) {
-    const wiki = rankCandidates(query, await searchWikimedia(q))
-    const fromWiki = await pickDownload(query, 'wikimedia', wiki, byUrl)
+    signal.throwIfAborted()
+    const wiki = rankCandidates(query, await searchWikimedia(q, signal))
+    const fromWiki = await pickDownload(query, 'wikimedia', wiki, byUrl, signal)
     if (fromWiki) return fromWiki
   }
 
   console.log('[images] fallback: met')
   for (const q of attempts) {
-    const met = rankCandidates(query, await searchMet(q))
-    const fromMet = await pickDownload(query, 'met', met, byUrl)
+    signal.throwIfAborted()
+    const met = rankCandidates(query, await searchMet(q, signal))
+    const fromMet = await pickDownload(query, 'met', met, byUrl, signal)
     if (fromMet) return fromMet
   }
 
   console.log('[images] fallback: cleveland')
   for (const q of attempts) {
-    const cleveland = rankCandidates(query, await searchCleveland(q))
-    const fromCleveland = await pickDownload(query, 'cleveland', cleveland, byUrl)
+    signal.throwIfAborted()
+    const cleveland = rankCandidates(query, await searchCleveland(q, signal))
+    const fromCleveland = await pickDownload(query, 'cleveland', cleveland, byUrl, signal)
     if (fromCleveland) return fromCleveland
   }
   return null
@@ -446,18 +464,22 @@ async function pickDownload(
   provider: string,
   candidates: ImageCandidate[],
   byUrl: Map<string, ImageAsset>,
+  signal: AbortSignal,
 ): Promise<ImageAsset | null> {
+  signal.throwIfAborted()
   if (!candidates.length) return null
   console.log(`[images] provider: ${provider}`)
 
   for (const cand of candidates.slice(0, DOWNLOAD_TRIES)) {
+    signal.throwIfAborted()
     const reused = byUrl.get(cand.url)
     if (reused) {
       console.log(`[images] selected: ${cand.title || cand.url}`)
       console.log(`[images] downloaded: ${reused.path} (reused)`)
       return { ...reused, query }
     }
-    const got = await downloadImage(cand.url)
+    const got = await downloadImage(cand.url, signal)
+    signal.throwIfAborted()
     if (!got) continue
     const file = safeFilename(query, cand.url, got.ext)
     const path = `${IMAGE_DIR}/${file}`
@@ -490,10 +512,13 @@ async function pickDownload(
 
 export async function downloadImage(
   url: string,
+  signal?: AbortSignal,
 ): Promise<{ bytes: Uint8Array; mime: string; ext: string } | null> {
   if (!isSafeImageUrl(url)) return null
   try {
+    signal?.throwIfAborted()
     const res = await fetchSafe(url, {
+      signal,
       headers: {
         Accept: 'image/*,application/octet-stream;q=0.9',
         'User-Agent': IMAGE_UA,
@@ -518,10 +543,11 @@ export async function fetchSafe(
 ): Promise<Response> {
   if (hops > MAX_REDIRECTS) throw new Error('too many redirects')
   if (!isSafeImageUrl(url)) throw new Error('blocked url')
+  init.signal?.throwIfAborted()
   const res = await fetch(url, {
     ...init,
     redirect: 'manual',
-    signal: init.signal ?? AbortSignal.timeout(15_000),
+    signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
     headers: {
       'User-Agent': IMAGE_UA,
       ...(init.headers || {}),
@@ -736,4 +762,3 @@ function uniqueAssets(assets: ImageAsset[]): ImageAsset[] {
   }
   return out
 }
-
