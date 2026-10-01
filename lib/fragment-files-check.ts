@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   fragmentFiles,
+  fragmentWithFiles,
   localImports,
   withMissingLocalModules,
 } from './fragment-files'
@@ -46,6 +47,24 @@ const multi = fragmentFiles({
 })
 assert.equal(multi.length, 2)
 assert.equal(multi[1].file_path, 'data/data.ts')
+
+const explicit = fragmentFiles({ file_path: './pages/index.tsx', code: spotify, files: [
+  { file_path: 'components/Sidebar.tsx', file_content: 'export default function Sidebar(){ return <aside>Library</aside> }' },
+  { file_path: 'styles/Sidebar.module.css', file_content: '.sidebar { display: flex; }' },
+  { file_path: 'data/music.json', file_content: '{"title":"Library"}' },
+] })
+assert.equal(explicit.length, 4)
+assert.equal(explicit[0].file_path, 'pages/index.tsx')
+assert.equal(withMissingLocalModules(explicit, false), explicit, 'Explicit projects must never fabricate missing modules')
+const returned = fragmentWithFiles({ file_path: './pages/index.tsx', code: spotify }, explicit)
+assert.equal(returned.files.length, 3)
+assert.deepEqual(fragmentFiles(returned), explicit, 'Returned project retains every source file')
+for (const path of ['../steal.ts', '/tmp/steal.ts', 'data/../../steal.ts', 'package.json', 'src/next.config.js', '.env.local', 'public/evo-images/fake.jpg']) {
+  assert.throws(() => fragmentFiles({ file_path: 'pages/index.tsx', code: spotify, files: [{ file_path: path, file_content: 'unsafe' }] }), path)
+}
+assert.throws(() => fragmentFiles({ file_path: 'pages/index.tsx', code: spotify, files: [{ file_path: './pages/index.tsx', file_content: spotify }] }), 'Entry duplication is rejected')
+assert.throws(() => fragmentFiles({ file_path: 'pages/index.tsx', code: spotify, files: [{ file_path: 'data', file_content: 'file' }, { file_path: 'data/site.ts', file_content: 'data' }] }), 'File/folder collisions are rejected')
+assert.throws(() => fragmentFiles({ file_path: 'pages/index.tsx', code: spotify, files: [{ file_path: 'components/Empty.tsx', file_content: ' ' }] }), 'Empty source is rejected')
 
 const imports = localImports(spotify, 'pages/index.tsx')
 assert.deepEqual(

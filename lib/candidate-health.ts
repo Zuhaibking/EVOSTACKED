@@ -22,7 +22,11 @@ export type CandidateHealth = {
 export function candidateHealthLabel(
   status: string,
   health?: CandidateHealth,
+  sandboxStatus?: 'starting' | 'ready' | 'error',
 ): string | null {
+  if (sandboxStatus === 'error') return 'Preview failed'
+  if (sandboxStatus === 'starting') return 'Preparing preview'
+  if (sandboxStatus === 'ready') return 'Preview ready'
   if (status === 'generating' || status === 'pending' || status === 'judging' || status === 'error') {
     return null
   }

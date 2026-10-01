@@ -17,7 +17,7 @@ import {
   InspectSelection,
   draftFromSelection,
 } from '@/lib/inspect'
-import { FragmentSchema, fragmentCodeText } from '@/lib/schema'
+import { FragmentSchema, fragmentSourceFiles } from '@/lib/schema'
 import { getTemplateId } from '@/lib/templates'
 import { ExecutionResult, ExecutionResultWeb } from '@/lib/types'
 import { DeepPartial } from 'ai'
@@ -29,7 +29,7 @@ export type InspectControls = {
   setOpen: (open: boolean) => void
   selection: InspectSelection | null
   setSelection: (selection: InspectSelection | null) => void
-  onApply: (instruction: string) => void
+  onApply: (instruction: string, targetFile?: string) => void
   applying: boolean
   error?: string
   canUndo?: boolean
@@ -50,6 +50,7 @@ export function Preview({
   result,
   onClose,
   inspect,
+  onRuntimeError,
 }: {
   teamID: string | undefined
   accessToken: string | undefined
@@ -61,8 +62,10 @@ export function Preview({
   result?: ExecutionResult
   onClose: () => void
   inspect?: InspectControls
+  onRuntimeError?: (message: string) => void
 }) {
   const [guides, setGuides] = useState(false)
+  const [selectedSourceFile, setSelectedSourceFile] = useState<string | undefined>()
   const [draft, setDraft] = useState<InspectDraft | null>(null)
   const [baseline, setBaseline] = useState<InspectDraft | null>(null)
   const [hist, setHist] = useState<InspectDraft[]>([])
@@ -130,11 +133,12 @@ export function Preview({
     getTemplateId(result?.template!) !== 'code-interpreter-v1'
 
   const inspectAvailable = Boolean(isLinkAvailable && inspect)
-  const fileLabel = fragment.file_path || 'untitled'
-  const codeText = fragmentCodeText(fragment.code)
+  const fileLabel = fragment.title || fragment.file_path || 'Project'
+  const files = fragmentSourceFiles(fragment).map((file) => ({ name: file.file_path, content: file.file_content }))
+  const hasSource = files.some((file) => file.content.trim())
 
   return (
-    <div className="absolute md:relative z-10 top-0 left-0 bg-background h-full w-full overflow-hidden flex flex-col md:border-l md:border-border">
+    <div className="absolute md:relative z-10 top-0 left-0 bg-background h-full w-full overflow-hidden flex flex-col md:rounded-lg md:border md:border-border">
       <Tabs
         value={selectedTab}
         onValueChange={(value) =>
@@ -142,19 +146,17 @@ export function Preview({
         }
         className="h-full flex flex-col items-stretch"
       >
-        <header className="shrink-0 flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 md:px-4 h-10 sm:h-11 border-b border-border bg-background/95">
+        <header className="shrink-0 flex flex-wrap items-center gap-2 sm:gap-3 px-3 md:px-4 min-h-14 py-2 border-b border-border bg-background">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground shrink-0 hidden sm:inline">
-              §
-            </span>
-            <span className="font-mono text-[10px] sm:text-[11px] text-foreground truncate" title={fileLabel}>
+            <span className="font-mono text-[11px] sm:text-xs text-foreground truncate" title={fileLabel}>
               {fileLabel}
             </span>
+            {files.length > 1 && <span className="shrink-0 text-[11px] text-muted-foreground">{files.length} files</span>}
             {(isChatLoading || isPreviewLoading) && (
-              <span className="flex items-center gap-1 font-mono text-[9px] tracking-[0.2em] uppercase text-brand shrink-0">
+              <span className="flex items-center gap-1.5 text-xs text-brand shrink-0" role="status">
                 <LoaderCircle strokeWidth={2.5} className="h-3 w-3 animate-spin" />
                 <span className="hidden md:inline">
-                  {isPreviewLoading ? 'sandboxing' : 'streaming'}
+                  {isPreviewLoading ? 'Preparing preview' : 'Writing code'}
                 </span>
               </span>
             )}
@@ -162,8 +164,8 @@ export function Preview({
 
           <div
             role="tablist"
-            aria-label="Specimen view"
-            className="inline-flex border border-border shrink-0"
+            aria-label="Project view"
+            className="inline-flex rounded-lg bg-muted p-1 shrink-0"
           >
             <button
               role="tab"
@@ -171,8 +173,8 @@ export function Preview({
               aria-selected={selectedTab === 'code'}
               onClick={() => onSelectedTabChange('code')}
               className={`
-                h-6 sm:h-7 px-2 sm:px-3 font-mono text-[9px] sm:text-[10px] tracking-[0.22em] uppercase
-                inline-flex items-center gap-1 transition-colors
+                h-8 px-3 text-xs font-medium rounded-md
+                inline-flex items-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
                 ${
                   selectedTab === 'code'
                     ? 'bg-foreground text-background'
@@ -180,7 +182,7 @@ export function Preview({
                 }
               `}
             >
-              Source
+              Code
             </button>
             <button
               role="tab"
@@ -189,9 +191,8 @@ export function Preview({
               aria-selected={selectedTab === 'fragment'}
               onClick={() => onSelectedTabChange('fragment')}
               className={`
-                h-6 sm:h-7 px-2 sm:px-3 font-mono text-[9px] sm:text-[10px] tracking-[0.22em] uppercase
-                inline-flex items-center gap-1 transition-colors
-                border-l border-border
+                h-8 px-3 text-xs font-medium rounded-md
+                inline-flex items-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
                 ${
                   selectedTab === 'fragment'
                     ? 'bg-foreground text-background'
@@ -218,7 +219,7 @@ export function Preview({
                         inspect!.setOpen(next)
                         if (next) onSelectedTabChange('fragment')
                       }}
-                      className={`h-7 w-7 sm:h-8 sm:w-8 rounded-none ${
+                      className={`h-8 w-8 rounded-lg ${
                         inspect!.open
                           ? 'bg-brand text-brand-foreground hover:bg-brand/90'
                           : 'text-muted-foreground hover:text-foreground'
@@ -248,13 +249,13 @@ export function Preview({
                     variant="ghost"
                     size="icon"
                     onClick={onClose}
-                    className="h-7 w-7 sm:h-8 sm:w-8 rounded-none text-muted-foreground hover:text-foreground"
-                    aria-label="Close specimen"
+                    className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                    aria-label="Close preview"
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Close specimen</TooltipContent>
+                <TooltipContent>Close preview</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -263,16 +264,14 @@ export function Preview({
         <div className="flex-1 overflow-hidden w-full flex min-h-0">
           <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
             <TabsContent value="code" className="h-full m-0">
-              {codeText && fragment.file_path && (
-                <FragmentCode
-                  files={[
-                    {
-                      name: fragment.file_path,
-                      content: codeText,
-                    },
-                  ]}
-                />
+              {!hasSource && (
+                <div className="h-full min-h-48 flex flex-col items-center justify-center gap-3 p-8 text-center" role="status">
+                  <LoaderCircle className="h-6 w-6 animate-spin text-brand" />
+                  <p className="text-sm font-medium">Writing your first version</p>
+                  <p className="text-sm text-muted-foreground">The code will appear here as it is generated.</p>
+                </div>
               )}
+              {hasSource && <FragmentCode files={files} onSelectedFileChange={setSelectedSourceFile} />}
             </TabsContent>
             <TabsContent value="fragment" className="h-full m-0">
               {result && (
@@ -291,6 +290,7 @@ export function Preview({
                   guides={guides}
                   teamID={teamID}
                   accessToken={accessToken}
+                  onRuntimeError={onRuntimeError}
                 />
               )}
             </TabsContent>
@@ -301,7 +301,7 @@ export function Preview({
               draft={draft}
               baseline={baseline}
               fragment={fragment}
-              filePath={fragment.file_path}
+              filePath={selectedTab === 'code' ? selectedSourceFile : undefined}
               applying={inspect.applying}
               error={inspect.error}
               compare={compare}

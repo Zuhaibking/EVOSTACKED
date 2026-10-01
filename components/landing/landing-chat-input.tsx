@@ -2,7 +2,7 @@
 
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { FormEvent, KeyboardEvent, useMemo, useState } from 'react'
+import { FormEvent, KeyboardEvent, useState } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
 
 const QUICK_ADDS = [
@@ -20,26 +20,6 @@ const SAMPLES = [
   'Indie e-commerce storefront with Razorpay, low-cost hosting.',
   'Streamlit dashboard that analyses uploaded CSVs with Pandas.',
 ]
-
-/** Corner viewfinder bracket — decorative */
-function Bracket({
-  position,
-}: {
-  position: 'tl' | 'tr' | 'bl' | 'br'
-}) {
-  const map: Record<typeof position, string> = {
-    tl: 'top-0 left-0 border-t border-l',
-    tr: 'top-0 right-0 border-t border-r',
-    bl: 'bottom-0 left-0 border-b border-l',
-    br: 'bottom-0 right-0 border-b border-r',
-  }
-  return (
-    <span
-      aria-hidden
-      className={`pointer-events-none absolute h-4 w-4 border-foreground ${map[position]} -m-px`}
-    />
-  )
-}
 
 export function LandingChatInput() {
   const router = useRouter()
@@ -73,53 +53,27 @@ export function LandingChatInput() {
     })
   }
 
-  // Estimates — rough heuristics; real numbers shown at /app pre-flight.
-  const estimates = useMemo(() => {
-    const words = value.trim().split(/\s+/).filter(Boolean).length
-    const hasDetail = words >= 6
-    const N = hasDetail ? 20 : 12
-    const minutes = hasDetail ? '18–24 min' : '10–14 min'
-    const usd = hasDetail ? '≈ $0.80' : '≈ $0.45'
-    return { N, minutes, usd, ready: hasDetail }
-  }, [value])
-
   return (
     <form
       onSubmit={onSubmit}
-      aria-label="Submit specimen for tournament"
+      aria-label="Start a project"
       className="group relative"
     >
-      {/* Offset block shadow layer */}
-      <div
-        aria-hidden
-        className="absolute inset-0 translate-x-1.5 translate-y-1.5 bg-foreground/10 group-focus-within:translate-x-2 group-focus-within:translate-y-2 group-focus-within:bg-brand/40 transition-[transform,background-color] duration-200"
-      />
-
-      <div className="relative border border-foreground bg-card">
-        {/* Corner brackets */}
-        <Bracket position="tl" />
-        <Bracket position="tr" />
-        <Bracket position="bl" />
-        <Bracket position="br" />
-
+      <div className="relative overflow-hidden rounded-lg border border-border bg-card transition-colors focus-within:border-foreground/60">
         {/* Header bar */}
         <header className="flex items-center justify-between border-b border-border px-4 py-2.5 bg-background/40">
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-mono text-[10px] tracking-[0.24em] uppercase text-foreground">
-              Specimen&nbsp;Submission
+              Your next project
             </span>
-            <span className="text-muted-foreground/40 hidden sm:inline">·</span>
-            <span className="hidden sm:inline font-mono text-[10px] tracking-[0.18em] uppercase text-muted-foreground tabular">
-              Form&nbsp;0043-A · Rev.&nbsp;2
-            </span>
+
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75 animate-ping" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-accent" />
             </span>
             <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
-              Trials open
+              Ready when you are
             </span>
           </div>
         </header>
@@ -131,7 +85,7 @@ export function LandingChatInput() {
             className="flex items-baseline justify-between mb-3"
           >
             <span className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground">
-              § Field&nbsp;A — describe&nbsp;the&nbsp;brief
+              Describe your idea
             </span>
             <span className="font-mono text-[10px] tabular text-muted-foreground/60">
               {value.length}&nbsp;chars
@@ -142,7 +96,7 @@ export function LandingChatInput() {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="e.g. AI agent platform for creators, GCP asia-south1, budget under ₹10k/month, 5,000 MAU target. Preference for edge runtimes."
+            placeholder="e.g. A portfolio for a photographer, with a striking image gallery, a short bio, and a contact form."
             minRows={3}
             maxRows={10}
             disabled={submitting}
@@ -154,7 +108,7 @@ export function LandingChatInput() {
         {/* Field B — quick-add constraints */}
         <div className="px-4 md:px-6 pb-4 border-t border-border/60 pt-3">
           <p className="font-mono text-[10px] tracking-[0.24em] uppercase text-muted-foreground mb-2.5">
-            § Field&nbsp;B — append&nbsp;a&nbsp;constraint&nbsp;<span className="text-muted-foreground/60">(optional)</span>
+            Add a detail <span className="text-muted-foreground/60">(optional)</span>
           </p>
           <div className="flex flex-wrap gap-1.5">
             {QUICK_ADDS.map((q) => (
@@ -163,7 +117,7 @@ export function LandingChatInput() {
                 type="button"
                 onClick={() => appendToken(q.token)}
                 title={q.token}
-                className="inline-flex items-baseline gap-1.5 border border-border bg-background/60 px-2.5 py-1 font-mono text-[11px] tracking-[0.08em] uppercase text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-foreground hover:text-background transition-colors"
+                className="inline-flex items-baseline gap-1.5 rounded-md border border-border bg-background/60 px-2.5 py-1.5 font-mono text-[11px] tracking-[0.08em] uppercase text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-foreground hover:text-background transition-colors"
               >
                 <span>+ {q.label}</span>
                 <span className="text-[9px] opacity-60 group-hover:opacity-100">
@@ -171,27 +125,6 @@ export function LandingChatInput() {
                 </span>
               </button>
             ))}
-          </div>
-        </div>
-
-        {/* Estimate tape */}
-        <div className="px-4 md:px-6 pt-0 pb-3">
-          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 font-mono text-[10px] tracking-[0.18em] uppercase text-muted-foreground border-t border-dotted border-border pt-3">
-            <span className="text-muted-foreground/60">Est.</span>
-            <span>
-              <span className="text-foreground tabular">N={estimates.N}</span>&nbsp;candidates
-            </span>
-            <span className="text-muted-foreground/30">·</span>
-            <span>
-              <span className="text-foreground tabular">{estimates.minutes}</span>
-            </span>
-            <span className="text-muted-foreground/30">·</span>
-            <span>
-              <span className="text-foreground tabular">{estimates.usd}</span>&nbsp;llm+sbx
-            </span>
-            <span className="ml-auto text-muted-foreground/60">
-              {estimates.ready ? 'Ready to submit' : 'Keep going…'}
-            </span>
           </div>
         </div>
 
@@ -208,7 +141,7 @@ export function LandingChatInput() {
           <button
             type="submit"
             disabled={!value.trim() || submitting}
-            className="relative inline-flex items-center gap-2 border border-foreground bg-foreground text-background font-mono text-xs tracking-[0.22em] uppercase px-5 py-2.5 hover:bg-brand hover:border-brand hover:text-brand-foreground transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+            className="relative inline-flex items-center gap-2 rounded-md border border-foreground bg-foreground text-background font-mono text-xs tracking-[0.22em] uppercase px-5 py-2.5 hover:bg-brand hover:border-brand hover:text-brand-foreground transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
           >
             {submitting ? (
               <>
@@ -217,7 +150,7 @@ export function LandingChatInput() {
               </>
             ) : (
               <>
-                Begin Trial
+                Generate designs
                 <ArrowRight className="h-3.5 w-3.5" />
               </>
             )}
@@ -231,17 +164,14 @@ export function LandingChatInput() {
           Sample briefs
         </span>
         <ul className="flex flex-wrap gap-1.5">
-          {SAMPLES.map((ex, i) => (
+          {SAMPLES.map((ex) => (
             <li key={ex}>
               <button
                 type="button"
                 onClick={() => setValue(ex)}
-                className="group/s inline-flex items-baseline gap-2 border border-dotted border-border bg-background/40 px-2.5 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground hover:border-solid transition-colors max-w-[30rem]"
+                className="group/s inline-flex items-baseline gap-2 rounded-md border border-border bg-background/40 px-2.5 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground hover:border-solid transition-colors max-w-[30rem]"
                 title={ex}
               >
-                <span className="tracking-[0.18em] uppercase shrink-0">
-                  EX·{String(i + 1).padStart(2, '0')}
-                </span>
                 <span className="italic font-display text-[13px] truncate">
                   {ex}
                 </span>

@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import { validateProjectFiles } from './project-paths'
+
+export const fragmentFileSchema = z.object({
+  file_path: z.string().min(1).describe('Project-relative supporting source path, e.g. components/Hero.tsx, data/site.ts, or styles/Home.module.css. Never repeat the entry path or overwrite template configuration.'),
+  file_content: z.string().min(1).describe('Complete, working source of this supporting file. Include real implementation or data, never an empty module, placeholder component, or omitted-code marker.'),
+})
+export type FragmentFile = z.infer<typeof fragmentFileSchema>
 
 export const fragmentSchema = z.object({
   commentary: z
@@ -39,24 +46,72 @@ export const fragmentSchema = z.object({
   file_path: z
     .string()
     .describe(
-      'The template entry file to write (e.g. pages/index.tsx). Do not invent other paths.',
+      'The template entry path (e.g. pages/index.tsx). Its complete source belongs in code; additional project source belongs in files.',
     ),
   code: z
     .string()
     .describe(
-      'Full source of that single file. Must compile as-is. Inline all mock data, components, and helpers in this string. Do not import from relative paths such as ../data/data or ./foo — those files are never written. Allowed imports: react, next/*, and @/components/ui/*. If using framer-motion/motion, never combine spring or inertia with 3+ keyframe arrays (scale: [1.13, 0.97, 1]); use a single target or type: "tween". For real photographs use evo-image://<specific query> (never invent remote image URLs or use placeholder services). Next.js SSR + React hydration: never put CSS as <style> children (quotes become &#x27;); use dangerouslySetInnerHTML. Do not render Date.now, toLocale*, Math.random, or window during render.',
+      'Complete entry source. For web projects keep this page focused on composing real components imported from files. Include every imported local module in files unless it already exists in the template. Put reusable UI in components/, content and mock datasets in data/ or lib/, and custom styles in CSS modules when needed. Relative imports are allowed when their targets are included. If using framer-motion/motion, never combine spring or inertia with 3+ keyframe arrays; use a single target or type: "tween". For real photographs use evo-image://<specific query>, never invented remote URLs or placeholder services. Next.js: prefer CSS modules; for inline style tags use dangerouslySetInnerHTML. The server and FIRST client render must be identical. Initialize theme/UI state with deterministic literals; use browser APIs, dates, and randomness only in useEffect or event handlers. Gate useTheme/resolvedTheme-dependent icons on a mounted flag. Never suppressHydrationWarning or disable SSR to hide a mismatch.',
     ),
-  // code: z.array(z.object({
-  //   file_name: z.string().describe('Name of the file.'),
-  //   file_path: z.string().describe('Relative path to the file, including the file name.'),
-  //   file_content: z.string().describe('Content of the file.'),
-  //   file_finished: z.boolean().describe('Detect if finished generating the file.'),
-  // })),
-  // code_finished: z.boolean().describe('Detect if finished generating the code.'),
-  // error: z.string().optional().describe('Error message if the fragment is not valid.'),
+  files: z.array(fragmentFileSchema).optional().describe('Supporting source files only. New web projects must include at least two meaningful supporting files: a real reusable component and content/data, a helper, or a stylesheet. Entry source stays in code. Preserve all unchanged files during edits. Python scripts may use an empty array.'),
 })
 
 export type FragmentSchema = z.infer<typeof fragmentSchema>
+
+// A plain object schema converts reliably to provider JSON schemas. Conditional
+// web-project checks run after generation; legacy saved projects use fragmentSchema.
+export const generatedFragmentSchema = fragmentSchema.extend({
+  files: z.array(fragmentFileSchema).describe('Required generated project source bundle. Web: at least two useful supporting files, including a real component plus data/helper/styles; every custom local import must resolve. Python may return []. Never duplicate the entry path.'),
+})
+
+export function assertGeneratedFragment(value: unknown): FragmentSchema {
+  const fragment = generatedFragmentSchema.parse(value)
+  validateProjectFiles(fragmentSourceFiles(fragment))
+  const python = /\.py$/i.test(fragment.file_path) || /^(code-interpreter|streamlit|gradio)/.test(fragment.template)
+  if (!fragment.code.trim()) throw new Error('Generated project entry is empty.')
+  if (!python && fragment.files.length < 2) throw new Error('Web projects require a real component and supporting data, helpers, or styles.')
+  if (!python && !fragment.files.some(file => /(?:^|\/)components\/.+\.(?:tsx|jsx|ts|js|vue)$/i.test(file.file_path))) {
+    throw new Error('Web projects require a reusable component in components/.')
+  }
+  for (const file of fragment.files) {
+    const source = file.file_content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').trim()
+    if (!source || /^export\s*\{\s*\}\s*;?$/.test(source) || /\.\.\. existing code \.\.\./.test(source)) {
+      throw new Error(`Generated supporting file ${file.file_path} must contain complete implementation.`)
+    }
+  }
+  return fragment
+}
+
+type SourceFragment = { template?: string; file_path?: string; code?: unknown; files?: unknown }
+
+/** Pure source enumeration; legacy array-code payloads remain readable by clients. */
+export function fragmentSourceFiles(fragment: SourceFragment | null | undefined): FragmentFile[] {
+  if (!fragment) return []
+  const path = (value: string) => value.replace(/\\/g, '/').replace(/^\.\//, '')
+  const read = (value: unknown): FragmentFile[] => !Array.isArray(value) ? [] : value.flatMap(file => {
+    if (!file || typeof file !== 'object') return []
+    const record = file as Record<string, unknown>
+    const filePath = record.file_path ?? record.file_name
+    const content = record.file_content ?? record.content
+    return typeof filePath === 'string' && typeof content === 'string' ? [{ file_path: path(filePath), file_content: content }] : []
+  })
+  const entry = typeof fragment.code === 'string'
+    ? [{ file_path: path(fragment.file_path || 'pages/index.tsx'), file_content: fragment.code }]
+    : read(fragment.code)
+  return [...entry, ...read(fragment.files)]
+}
+
+/** Path labels keep edit/judge context unambiguous without dropping supporting source. */
+export function fragmentSourceText(fragment: SourceFragment | null | undefined): string {
+  return fragmentSourceFiles(fragment).map(file => `FILE: ${file.file_path}\n${file.file_content}`).join('\n\n')
+}
+
+/** Source equality includes every supporting file and ignores only array order. */
+export function sameFragmentSource(first: SourceFragment | null | undefined, second: SourceFragment | null | undefined): boolean {
+  if (!first || !second) return first === second
+  const sorted = (fragment: SourceFragment) => fragmentSourceFiles(fragment).map(file => [file.file_path, file.file_content]).sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]))
+  return first.template === second.template && first.file_path === second.file_path && JSON.stringify(sorted(first)) === JSON.stringify(sorted(second))
+}
 
 /** streamObject partials and legacy multi-file payloads can emit non-string `code`. */
 export function fragmentCodeText(code: unknown): string {
@@ -93,3 +148,12 @@ export const morphEditSchema = z.object({
 })
 
 export type MorphEditSchema = z.infer<typeof morphEditSchema>
+
+export const morphProjectEditSchema = z.object({
+  commentary: morphEditSchema.shape.commentary,
+  edits: z.array(z.object({
+    file_path: morphEditSchema.shape.file_path,
+    instruction: morphEditSchema.shape.instruction,
+    edit: morphEditSchema.shape.edit,
+  })).min(1).describe('Edits to the entry or supporting files. Include every file needed for the requested change. Existing files use Morph patches; new files must contain full source. Preserve untouched files.'),
+})

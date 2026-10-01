@@ -6,7 +6,7 @@ import {
   InspectDraft,
   InspectSelection,
   draftDirty,
-  locateSourceSnippet,
+  locateProjectSourceSnippet,
   pillInstruction,
   serializeInspectApply,
   toColorInput,
@@ -104,7 +104,7 @@ export function InspectPanel({
   onClose: () => void
   onReselect: () => void
   onDraft: (draft: InspectDraft) => void
-  onApply: (instruction: string) => void
+  onApply: (instruction: string, targetFile?: string) => void
   onUndo?: () => void
   onRedo?: () => void
   onReset?: () => void
@@ -114,10 +114,9 @@ export function InspectPanel({
   guides: boolean
 }) {
   const [instruction, setInstruction] = useState('')
-  const code = typeof fragment?.code === 'string' ? fragment.code : ''
   const source = useMemo(
-    () => locateSourceSnippet(code, selection),
-    [code, selection],
+    () => locateProjectSourceSnippet(fragment, selection, filePath),
+    [fragment, filePath, selection],
   )
   const dirty = draftDirty(baseline, draft)
   const canApply = Boolean(selection && draft && (dirty || instruction.trim()) && !applying)
@@ -129,7 +128,7 @@ export function InspectPanel({
 
   function applyNow() {
     if (!selection || !draft || !baseline || !canApply) return
-    onApply(serializeInspectApply(selection, baseline, draft, instruction))
+    onApply(serializeInspectApply(selection, baseline, draft, instruction), source.line || filePath ? source.filePath : undefined)
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -181,8 +180,8 @@ export function InspectPanel({
           <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
             Source
           </p>
-          <p className="font-mono text-[11px] truncate">
-            {filePath || '—'}
+          <p className="font-mono text-[11px] truncate" title={source.filePath}>
+            {source.filePath || '—'}
             {source.line ? `:${source.line}` : ''}
           </p>
           {source.snippet ? (

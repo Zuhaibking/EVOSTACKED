@@ -3,8 +3,9 @@
 import type { CandidateHealth, HealthState } from './candidate-health'
 import type { WrittenFile } from './fragment-files'
 import { packagesToInstall, npmPackageName } from './fragment-deps'
-import { sanitizeStyleHydration } from './hydrate-safe'
+import { sanitizeHydrationFile } from './hydrate-safe'
 import { repairSyntax } from './syntax-safe'
+import { normalizeProjectPath, validateProjectFiles } from './project-paths'
 
 export type { CandidateHealth, HealthState } from './candidate-health'
 export { candidateHealthLabel } from './candidate-health'
@@ -82,14 +83,14 @@ export function classifyOutput(
 ): NormalizedError {
   const text = raw || ''
   const message = text.split('\n').map((l) => l.trim()).find(Boolean) || text.slice(0, 240)
-  const loc = /(?:\.\/)?([A-Za-z0-9_./-]+\.[A-Za-z]+):(\d+):(\d+)/.exec(text)
+  const loc = /(?:\.\/)?([A-Za-z0-9_./@()[\]-]+\.[A-Za-z]+)(?::(\d+):(\d+)|\((\d+),(\d+)\))/.exec(text)
   const base = {
     message,
     rawOutput: text.slice(0, 4000),
     phase,
     file: loc?.[1],
-    line: loc ? Number(loc[2]) : undefined,
-    column: loc ? Number(loc[3]) : undefined,
+    line: loc ? Number(loc[2] || loc[4]) : undefined,
+    column: loc ? Number(loc[3] || loc[5]) : undefined,
   }
 
   if (phase === 'install' || /npm ERR!/i.test(text)) {
@@ -154,7 +155,7 @@ export function regressed(before: GateSnapshot, after: GateSnapshot): boolean {
 }
 
 export function repairPrompt(ctx: RepairContext): string {
-  const file = ctx.files.find((f) => ctx.error.file && f.file_path.endsWith(ctx.error.file)) || ctx.files[0]
+  const file = ctx.files[fileIndex(ctx.files, ctx.error)]
   return `Fix the root cause with the smallest possible change.
 
 Do not redesign the application.
@@ -168,6 +169,7 @@ Do not suppress errors just to make the build pass.
 Do not add @ts-ignore, @ts-nocheck, or eslint-disable.
 Do not comment out broken code.
 Do not replace the page with a fallback.
+Keep server HTML and the first client render identical. Initialize state with deterministic values and restore browser preferences in useEffect. Gate useTheme/resolvedTheme-dependent output until mounted; do not suppress hydration warnings or disable SSR.
 
 Error category: ${ctx.error.category}
 Phase: ${ctx.error.phase}
@@ -176,10 +178,11 @@ Message: ${ctx.error.message}
 Previous attempts:
 ${ctx.history.join('\n') || '(none)'}
 
-Return only the full corrected contents of ${file?.file_path || 'the file'} inside one tsx code fence.
+Return JSON only: {"files":[{"file_path":"project-relative path","file_content":"complete corrected source"}]}.
+Include only changed files. Preserve all other files. Fix ${file?.file_path || ctx.error.file || 'the indicated source'} when it is responsible. Missing local imports need a real implemented module at the correct resolved path; do not install local paths as npm packages or fabricate empty stubs. You may add a real missing module. Do not replace template configuration. CSS and JSON fixes must keep their original language.
 
-SOURCE:
-${file?.file_content || ''}`
+PROJECT SOURCE:
+${ctx.files.map(source => `FILE: ${source.file_path}\n${source.file_content}`).join('\n\n')}`
 }
 
 export function acceptPatch(before: string, after: string): boolean {
@@ -198,7 +201,31 @@ export function filesFromModel(
   error: NormalizedError,
   text: string,
 ): WrittenFile[] | null {
-  const fence = /```(?:tsx|ts|jsx|js)?\s*([\s\S]*?)```/.exec(text)
+  const json = /```json\s*([\s\S]*?)```/.exec(text)?.[1] || text.trim()
+  if (json.startsWith('{')) {
+    try {
+      const value = JSON.parse(json)
+      const patches = value.files
+      if (!('files' in value)) {
+        if (!text.includes('```')) return null
+      } else {
+      if (!Array.isArray(patches) || !patches.length) return null
+      validateProjectFiles(patches)
+      const copy = files.map(file => ({ ...file }))
+      for (const patch of patches) {
+        const path = normalizeProjectPath(patch.file_path)
+        const i = copy.findIndex(file => file.file_path === path)
+        if (!acceptPatch(i < 0 ? '' : copy[i].file_content, patch.file_content)) return null
+        const updated = { file_path: path, file_content: patch.file_content }
+        if (i < 0) copy.push(updated)
+        else copy[i] = updated
+      }
+      validateProjectFiles(copy)
+      return copy
+      }
+    } catch { return null }
+  }
+  const fence = /```(?:(?:tsx|ts|jsx|js|css|json|vue|html)\b)?\s*([\s\S]*?)```/.exec(text)
   const next = (fence?.[1] || '').trim()
   if (!next) return null
   const i = fileIndex(files, error)
@@ -222,20 +249,16 @@ export function deterministicRepair(
   if (error.category === 'SYNTAX_ERROR' || /Unexpected eof|Parsing ecmascript/i.test(error.message)) {
     const repaired = repairSyntax(code)
     if (repaired !== code) next = repaired
-  } else if (error.category === 'NEXT_SSR_ERROR' && error.line) {
-    const which = /document is not defined/i.test(error.message)
-      ? 'document'
-      : /localStorage is not defined/i.test(error.message)
-        ? 'localStorage'
-        : 'window'
-    next = guardBrowserLine(code, error.line, which)
+  } else if (error.category === 'NEXT_SSR_ERROR') {
+    const repaired = sanitizeHydrationFile(files[i].file_path, code)
+    if (repaired !== code) next = repaired
   } else if (error.category === 'NEXT_CLIENT_SERVER_ERROR' && !/^\s*['"]use client['"]/.test(code)) {
     next = `'use client'\n${code}`
   } else if (error.category === 'EXPORT_ERROR' && !/\bexport\s+default\b/.test(code)) {
     const name = /export\s+function\s+([A-Za-z0-9_]+)/.exec(code)?.[1] || /function\s+([A-Za-z0-9_]+)/.exec(code)?.[1]
     if (name) next = `${code.replace(/\s*$/, '')}\nexport default ${name}\n`
   } else if (error.category === 'HYDRATION_ERROR') {
-    const repaired = sanitizeStyleHydration(code)
+    const repaired = sanitizeHydrationFile(files[i].file_path, code)
     if (repaired !== code) next = repaired
   }
 
@@ -321,21 +344,21 @@ export async function healCandidate(opts: {
     }
   }
   if (probe.ok) {
-    note('[EvoStack][BUILD] PASS')
-    note('[EvoStack][SMOKE] PASS')
-    note('[EvoStack][RESULT] VERIFIED')
+    note(`[EvoStack][${probe.phase === 'build' ? 'BUILD' : 'HTTP'}] PASS`)
+    note('[EvoStack][RUNTIME] Browser hydration and interactions not checked')
+    note('[EvoStack][RESULT] UNVERIFIED')
     return {
       files,
       probed,
       health: healthOf({
-        state: 'VERIFIED',
+        state: 'UNVERIFIED',
         logs,
         attempts,
         repaired,
-        verified: true,
+        verified: false,
         dependency: 'passed',
-        build: 'passed',
-        runtime: 'passed',
+        build: probe.phase === 'build' ? 'passed' : 'skipped',
+        runtime: 'skipped',
       }),
     }
   }
@@ -353,7 +376,7 @@ export async function healCandidate(opts: {
     history.push(`${err.category}: ${err.message}`)
 
     let nextFiles: WrittenFile[] | null = null
-    if (err.category === 'MODULE_NOT_FOUND' && err.package && !reinstalled.has(err.package)) {
+    if (err.category === 'MODULE_NOT_FOUND' && err.package && npmPackageName(err.package) && !reinstalled.has(err.package)) {
       reinstalled.add(err.package)
       note(`[EvoStack][DEPENDENCY] Missing package: ${err.package}`)
       note('[EvoStack][STATE] INSTALLING_DEPENDENCIES')
@@ -400,7 +423,10 @@ export async function healCandidate(opts: {
       more.forEach((p) => present.add(p))
     }
 
-    files = nextFiles
+    files = nextFiles.map((file) => ({
+      ...file,
+      file_content: sanitizeHydrationFile(file.file_path, file.file_content),
+    }))
     note('[EvoStack][STATE] REBUILDING')
     const afterProbe = await runProbe(opts.probe, files)
     probed = true
@@ -428,21 +454,21 @@ export async function healCandidate(opts: {
       }
     }
     if (afterProbe.ok) {
-      note('[EvoStack][BUILD] PASS')
-      note('[EvoStack][SMOKE] PASS')
-      note('[EvoStack][RESULT] VERIFIED')
+      note(`[EvoStack][${afterProbe.phase === 'build' ? 'BUILD' : 'HTTP'}] PASS`)
+      note('[EvoStack][RUNTIME] Browser hydration and interactions not checked')
+      note('[EvoStack][RESULT] UNVERIFIED')
       return {
         files,
         probed,
         health: healthOf({
-          state: 'VERIFIED',
+          state: 'UNVERIFIED',
           logs,
           attempts,
           repaired,
-          verified: true,
+          verified: false,
           dependency: 'passed',
-          build: 'passed',
-          runtime: 'passed',
+          build: afterProbe.phase === 'build' ? 'passed' : 'skipped',
+          runtime: 'skipped',
         }),
       }
     }
@@ -462,7 +488,7 @@ export async function healCandidate(opts: {
       verified: false,
       dependency: 'passed',
       build: inconclusive ? 'skipped' : 'failed',
-      runtime: 'failed',
+      runtime: 'skipped',
     }),
   }
 }
@@ -494,29 +520,18 @@ function gatesFrom(installOk: boolean, probe: ProbeResult): GateSnapshot {
     build: probe.ok || !compileFail,
     preview: probe.ok,
     http: probe.ok || http,
-    runtime: probe.ok && !/Application error|Unhandled Runtime/i.test(probe.output),
+    runtime: false,
   }
 }
 
 function fileIndex(files: WrittenFile[], error: NormalizedError): number {
   if (error.file) {
-    const i = files.findIndex((f) => f.file_path === error.file || f.file_path.endsWith(error.file!))
+    const path = error.file.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+    const i = files.findIndex((f) => f.file_path === path || path.endsWith(`/${f.file_path}`))
     if (i >= 0) return i
+    if (files.length > 1) return -1
   }
   return files.findIndex((f) => /\.(tsx|jsx|ts|js|vue)$/i.test(f.file_path))
-}
-
-function guardBrowserLine(code: string, line: number, which: string): string | null {
-  const lines = code.split('\n')
-  const row = lines[line - 1]
-  if (!row || !row.includes(which) || row.includes(`typeof ${which}`)) return null
-  const re = new RegExp(`\\b${which}\\b`)
-  if (!re.test(row)) return null
-  lines[line - 1] = row.replace(
-    re,
-    `(typeof ${which} !== "undefined" ? ${which} : (undefined as any))`,
-  )
-  return lines.join('\n')
 }
 
 function healthOf(p: {

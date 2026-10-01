@@ -7,18 +7,19 @@ import {
 } from '@/lib/fragment-deps'
 import {
   fragmentFiles,
+  fragmentWithFiles,
   withMissingLocalModules,
   type WrittenFile,
 } from '@/lib/fragment-files'
-import { resolveImages } from '@/lib/images'
+import { IMAGE_DIR, IMAGE_PUBLIC, resolveImages } from '@/lib/images'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
-import { FragmentSchema } from '@/lib/schema'
+import { FragmentSchema, fragmentSchema } from '@/lib/schema'
 import {
   isStaticHtml,
   resolveSandboxPort,
   resolveSandboxTemplate,
 } from '@/lib/templates'
-import { ExecutionResultInterpreter, ExecutionResultWeb } from '@/lib/types'
+import { ExecutionResult, ExecutionResultInterpreter, ExecutionResultWeb } from '@/lib/types'
 import {
   CandidateHealth,
   filesFromModel,
@@ -28,32 +29,97 @@ import {
   type ProbeResult,
   type RepairContext,
 } from '@/lib/verify'
-import { Sandbox } from '@e2b/code-interpreter'
+import { auth } from '@clerk/nextjs/server'
+import { Sandbox as InterpreterSandbox } from '@e2b/code-interpreter'
 import { LanguageModel, generateText } from 'ai'
+import { NotFoundError, Sandbox as WebSandbox } from 'e2b'
+import { createHash } from 'node:crypto'
 
 const sandboxTimeout = 10 * 60 * 1000 // 10 minute in ms
+// ponytail: process-local dedupe; multiple hosts need a shared durable job store.
+const previewCreations = new Map<string, { promise: Promise<Response>; expiresAt: number }>()
+function prunePreviewCreations() {
+  for (const [key, job] of previewCreations) {
+    if (job.expiresAt && job.expiresAt <= Date.now()) previewCreations.delete(key)
+  }
+  const completed = [...previewCreations].filter(([, job]) => job.expiresAt)
+  for (const [key] of completed.slice(0, Math.max(0, completed.length - 32))) previewCreations.delete(key)
+}
+type Sandbox = {
+  sandboxId: string
+  getHost: (port: number) => string
+  files: {
+    write: (path: string, data: string | ArrayBuffer) => Promise<unknown>
+    read: (path: string) => Promise<string>
+  }
+  commands: {
+    run: (cmd: string, opts?: { timeoutMs?: number; requestTimeoutMs?: number }) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+  }
+}
 
 export const maxDuration = 180
 
 export async function POST(req: Request) {
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid body')
+  } catch {
+    return Response.json({ error: 'Invalid sandbox request.' }, { status: 400 })
+  }
+  const parsed = fragmentSchema.safeParse(body.fragment)
+  if (!parsed.success) return Response.json({ error: 'Invalid project source.' }, { status: 400 })
+  if (body.cachedResult !== undefined && (!body.cachedResult || typeof body.cachedResult !== 'object' ||
+    !('sbxId' in body.cachedResult) || typeof body.cachedResult.sbxId !== 'string' ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(body.cachedResult.sbxId) ||
+    !('template' in body.cachedResult) || typeof body.cachedResult.template !== 'string')) {
+    return Response.json({ error: 'Invalid saved preview.' }, { status: 400 })
+  }
   const {
-    fragment,
     userID,
     teamID,
     accessToken,
     model,
     config,
+    runtimeError,
+    cachedResult,
+    projectID,
+    candidateID,
+    runID,
   }: {
-    fragment: FragmentSchema
-    userID: string | undefined
-    teamID: string | undefined
-    accessToken: string | undefined
+    userID?: string
+    teamID?: string
+    accessToken?: string
     model?: LLMModel
     config?: LLMModelConfig
-  } = await req.json()
-  console.log('fragment', fragment)
-  console.log('userID', userID)
-  // console.log('apiKey', apiKey)
+    runtimeError?: string
+    cachedResult?: ExecutionResult
+    projectID?: string
+    candidateID?: string
+    runID?: string
+  } = body as {
+    userID?: string; teamID?: string; accessToken?: string; model?: LLMModel; config?: LLMModelConfig
+    runtimeError?: string; cachedResult?: ExecutionResult; projectID?: string; candidateID?: string; runID?: string
+  }
+  let fragment = parsed.data
+  let sourceFiles: WrittenFile[]
+  try { sourceFiles = fragmentFiles(fragment) } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : 'Invalid project source paths.' }, { status: 400 })
+  }
+  const cachedWeb = cachedResult && cachedResult.template !== 'code-interpreter-v1' ? cachedResult as ExecutionResultWeb : undefined
+  // Existing keyless fresh-generation checks remain usable. Reopening a saved
+  // sandbox always requires a verified Clerk session, never a body userID.
+  let ownerID = typeof userID === 'string' ? userID : ''
+  let verifiedOwner = false
+  if (cachedWeb || (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)) {
+    try {
+      ownerID = (await auth()).userId || ''
+    } catch {
+      return Response.json({ error: 'Sign in to reopen this saved preview.' }, { status: 401 })
+    }
+    if (!ownerID) return Response.json({ error: 'Sign in to open a preview.' }, { status: 401 })
+    verifiedOwner = true
+  }
 
   // Strip any "-dev" suffix the prompt-side template ids carry in development.
   // E2B's hosted templates don't have the suffix; the -dev convention only
@@ -63,12 +129,116 @@ export async function POST(req: Request) {
     fragment.file_path,
   )
 
+  if (cachedWeb) {
+    const savedActual = fragmentSchema.safeParse(cachedWeb.fragment)
+    const savedPortable = fragmentSchema.safeParse(cachedWeb.recoveryFragment)
+    if ((savedActual.success || savedPortable.success) &&
+      !(savedActual.success && sameSource(fragment, savedActual.data)) &&
+      !(savedPortable.success && sameSource(fragment, savedPortable.data))) {
+      return Response.json({ error: 'The saved preview does not match this version. Generate a preview from its saved source.' }, { status: 409 })
+    }
+    try {
+      const info = await WebSandbox.getInfo(cachedWeb.sbxId, { requestTimeoutMs: 10_000 })
+      if (info.metadata.userID !== ownerID ||
+        (typeof projectID === 'string' && info.metadata.projectID && info.metadata.projectID !== projectID) ||
+        (typeof candidateID === 'string' && info.metadata.candidateID && info.metadata.candidateID !== candidateID)) {
+        return Response.json({ error: 'This saved preview belongs to another workspace or account.' }, { status: 403 })
+      }
+      if (info.metadata.template && info.metadata.template !== sandboxTemplate) {
+        return Response.json({ error: 'The saved preview template does not match this project.' }, { status: 409 })
+      }
+      const resumed = await WebSandbox.connect(cachedWeb.sbxId, { timeoutMs: sandboxTimeout, requestTimeoutMs: 10_000 })
+      const url = `https://${resumed.getHost(resolveSandboxPort(sandboxTemplate))}`
+      const preview = await probePreview(url)
+      if (!preview.ok) return Response.json({ error: 'The saved preview is temporarily unavailable. Please retry.' }, { status: 503 })
+      const storedSource = fragmentSchema.safeParse(cachedWeb.fragment)
+      let actualFragment = storedSource.success ? storedSource.data : fragment
+      if (!storedSource.success) {
+        const restoredFiles = await Promise.all(sourceFiles.map(async file => {
+          try { return { ...file, file_content: await resumed.files.read(file.file_path) } } catch { return file }
+        }))
+        actualFragment = fragmentWithFiles(fragment, restoredFiles)
+      }
+      let manifest: unknown = []
+      try { manifest = JSON.parse(await resumed.files.read(`${IMAGE_DIR}/manifest.json`)) } catch { /* Projects without photos have no manifest. */ }
+      let imageQueries = validImageQueries(manifest)
+      if (!imageQueries.length) imageQueries = validImageQueries(cachedWeb.imageQueries)
+      const savedRecovery = fragmentSchema.safeParse(cachedWeb.recoveryFragment)
+      const recoveryFragment = portableFragment(actualFragment, imageQueries, savedRecovery.success ? savedRecovery.data : undefined)
+      if (!storedSource.success && !sameSource(fragment, actualFragment) && !sameSource(fragment, recoveryFragment)) {
+        return Response.json({ error: 'The saved preview does not match this version. Generate a preview from its saved source.' }, { status: 409 })
+      }
+      const refreshed = await resumed.getInfo({ requestTimeoutMs: 10_000 })
+      return Response.json({
+        sbxId: resumed.sandboxId,
+        template: sandboxTemplate,
+        url,
+        expiresAt: refreshed.endAt.getTime(),
+        fragment: actualFragment,
+        recoveryFragment,
+        imageQueries,
+        health: {
+          ...cachedWeb.health,
+          state: 'UNVERIFIED', verified: false, runtimeStatus: 'skipped',
+          buildStatus: cachedWeb.health?.buildStatus || 'skipped',
+          dependencyStatus: cachedWeb.health?.dependencyStatus || 'skipped',
+          repairAttempts: cachedWeb.health?.repairAttempts || 0, repaired: Boolean(cachedWeb.health?.repaired),
+          log: [...(Array.isArray(cachedWeb.health?.log) ? cachedWeb.health.log : []), '[EvoStack][PREVIEW] Saved sandbox reconnected; HTTP responded.'],
+        },
+      } satisfies ExecutionResultWeb)
+    } catch (error) {
+      if (!isMissingSandbox(error)) {
+        console.warn('[EvoStack][RECONNECT] failed', error instanceof Error ? error.name : 'SandboxError')
+        return Response.json({ error: 'Unable to reconnect the saved preview. Please retry.' }, { status: reconnectErrorStatus(error) })
+      }
+      // Only a genuinely missing sandbox can use the paid creation path.
+      const savedRecovery = fragmentSchema.safeParse(cachedWeb.recoveryFragment)
+      if (savedRecovery.success) {
+        fragment = savedRecovery.data
+        try { sourceFiles = fragmentFiles(fragment) } catch {
+          return Response.json({ error: 'Invalid saved project source paths.' }, { status: 400 })
+        }
+      }
+    }
+  }
+
+  // Auth/reconnect failures return above; only fresh web creation shares a paid job.
+  if (sandboxTemplate === 'code-interpreter-v1' || !verifiedOwner) return createPreview()
+  prunePreviewCreations()
+  const sourceHash = createHash('sha256').update(JSON.stringify({
+    template: sandboxTemplate,
+    files: [...sourceFiles].sort((a, b) => a.file_path.localeCompare(b.file_path)),
+    dependencies: [...fragment.additional_dependencies].sort(),
+    installRequested: fragment.has_additional_dependencies,
+    install: fragment.install_dependencies_command,
+    runtimeError: typeof runtimeError === 'string' ? runtimeError.trim().slice(0, 4000) : '',
+  })).digest('hex')
+  const key = JSON.stringify([ownerID, typeof projectID === 'string' ? projectID : '', typeof candidateID === 'string' ? candidateID : 'primary', typeof runID === 'string' ? runID : '', sourceHash])
+  const existing = previewCreations.get(key)
+  if (existing) return (await existing.promise).clone()
+  if ([...previewCreations.values()].filter((job) => !job.expiresAt).length >= 8) {
+    return Response.json({ error: 'Preview creation is busy. Please retry shortly.' }, { status: 429 })
+  }
+  const job = { promise: Promise.resolve().then(createPreview), expiresAt: 0 }
+  previewCreations.set(key, job)
+  job.promise = job.promise.then(async (response) => {
+    const value = await response.clone().json() as ExecutionResultWeb
+    if (!response.ok || value.health?.state === 'FAILED') previewCreations.delete(key)
+    else { job.expiresAt = Date.now() + sandboxTimeout; prunePreviewCreations() }
+    return response
+  }).catch((error) => { previewCreations.delete(key); throw error })
+  return (await job.promise).clone()
+
+  async function createPreview() {
   // Create an interpreter or a sandbox
-  const sbx = await Sandbox.create(sandboxTemplate, {
+  const options = {
     metadata: {
       template: sandboxTemplate,
-      userID: userID ?? '',
+      userID: ownerID,
       teamID: teamID ?? '',
+      ...(typeof projectID === 'string' ? { projectID: projectID.slice(0, 128) } : {}),
+      ...(typeof candidateID === 'string' ? { candidateID: candidateID.slice(0, 128) } : {}),
+      ...(typeof runID === 'string' ? { runID: runID.slice(0, 128) } : {}),
     },
     timeoutMs: sandboxTimeout,
     ...(teamID && accessToken
@@ -79,9 +249,18 @@ export async function POST(req: Request) {
           },
         }
       : {}),
-  })
+  }
+  const createdAt = Date.now()
+  const sbx: Sandbox = sandboxTemplate === 'code-interpreter-v1'
+    ? await InterpreterSandbox.create(sandboxTemplate, options)
+    : await WebSandbox.create(sandboxTemplate, {
+        ...options,
+        // Hosted baseline templates predate secured envd access. Match the
+        // interpreter SDK's previous access setting while enabling persistence.
+        secure: false,
+        lifecycle: { onTimeout: 'pause', autoResume: true },
+      })
 
-  const sourceFiles = fragmentFiles(fragment)
   const npmPkgs = extraNpmPackages(
     sourceFiles,
     fragment.additional_dependencies,
@@ -92,10 +271,17 @@ export async function POST(req: Request) {
     sandboxTemplate === 'nextjs-developer' && !isStaticHtml(fragment)
 
   const imaged = await resolveImages(sourceFiles)
+  // The image manifest belongs to preview infrastructure, never to editable source.
+  const imageManifest = imaged.files.find(file => file.file_path === `${IMAGE_DIR}/manifest.json`)
+  if (imageManifest) await sbx.files.write(imageManifest.file_path, imageManifest.file_content)
+  const imageSourceFiles = imaged.files.filter(file => file.file_path !== `${IMAGE_DIR}/manifest.json`)
+  const legacySingleFile = fragment.files === undefined
   let health: CandidateHealth | undefined
-  let files = withMissingLocalModules(imaged.files)
+  let files = withMissingLocalModules(imageSourceFiles, legacySingleFile)
+  let reportedRuntimeError = typeof runtimeError === 'string' ? runtimeError.trim().slice(0, 4000) : ''
 
   if (healNext) {
+    let typecheckPassed = false
     for (const bin of imaged.binaries) {
       await sbx.files.write(bin.file_path, bin.data)
       console.log(`Copied image to ${bin.file_path} in ${sbx.sandboxId}`)
@@ -103,20 +289,33 @@ export async function POST(req: Request) {
     const present = await readInstalledPackages(sbx)
     const previewUrl = `https://${sbx.getHost(resolveSandboxPort(sandboxTemplate))}`
     const healed = await healCandidate({
-      files: imaged.files,
+      files: imageSourceFiles,
       present,
       declared: fragment.additional_dependencies,
       label: fragment.title || sbx.sandboxId,
       log: (line) => console.log(line),
       install: (pkgs) => installMissing(sbx, pkgs),
       probe: async (nextFiles) => {
-        await writeFiles(sbx, withMissingLocalModules(nextFiles))
+        await writeFiles(sbx, withMissingLocalModules(nextFiles, legacySingleFile))
+        typecheckPassed = false
+        const types = await runCmd(sbx, './node_modules/.bin/tsc --project ./tsconfig.json --noEmit --incremental false --pretty false', 30_000)
+        typecheckPassed = types.ok
+        if (!types.ok) return { ok: false, output: types.output, phase: 'build' }
+        if (reportedRuntimeError) {
+          const output = reportedRuntimeError
+          reportedRuntimeError = ''
+          return { ok: false, output, phase: 'preview' }
+        }
         return probePreview(previewUrl)
       },
       llmRepair: (ctx) => repairWithModel(model, config, ctx),
     })
     health = healed.health
-    files = withMissingLocalModules(healed.files)
+    if (typecheckPassed) {
+      health.buildStatus = 'passed'
+      health.log.push('[EvoStack][TYPECHECK] PASS')
+    }
+    files = withMissingLocalModules(healed.files, legacySingleFile)
     await writeFiles(sbx, files)
   } else {
     if (npmTemplate && npmPkgs.length) {
@@ -175,7 +374,7 @@ export async function POST(req: Request) {
 
   // Execute code or return a URL to the running sandbox
   if (sandboxTemplate === 'code-interpreter-v1') {
-    const { logs, error, results } = await sbx.runCode(fragment.code || '')
+    const { logs, error, results } = await (sbx as InterpreterSandbox).runCode(fragment.code || '')
 
     return new Response(
       JSON.stringify({
@@ -189,14 +388,66 @@ export async function POST(req: Request) {
     )
   }
 
+  const actualFragment = fragmentWithFiles(fragment, files)
   return new Response(
     JSON.stringify({
       sbxId: sbx?.sandboxId,
       template: sandboxTemplate,
       url: `https://${sbx?.getHost(resolveSandboxPort(sandboxTemplate))}`,
       health,
+      expiresAt: createdAt + sandboxTimeout,
+      fragment: actualFragment,
+      recoveryFragment: portableFragment(actualFragment, imaged.manifest),
+      imageQueries: validImageQueries(imaged.manifest),
     } as ExecutionResultWeb),
   )
+  }
+}
+
+function sameSource(first: FragmentSchema, second: FragmentSchema) {
+  try {
+    const source = (fragment: FragmentSchema) => fragmentFiles(fragment).map(file => [file.file_path, file.file_content.trim()]).sort((a, b) => a[0].localeCompare(b[0]))
+    return JSON.stringify(source(first)) === JSON.stringify(source(second))
+  } catch { return false }
+}
+
+function isMissingSandbox(error: unknown) {
+  if (error instanceof NotFoundError) return true
+  if (!error || typeof error !== 'object') return false
+  const value = error as { status?: number; statusCode?: number; code?: number }
+  return value.status === 404 || value.statusCode === 404 || value.code === 404
+}
+
+function reconnectErrorStatus(error: unknown) {
+  if (!error || typeof error !== 'object') return 503
+  const value = error as { status?: number; statusCode?: number; code?: number; name?: string }
+  const status = value.status || value.statusCode || value.code
+  if (status === 401 || status === 403 || value.name === 'AuthenticationError') return status === 401 ? 401 : 403
+  if (status === 429 || value.name === 'RateLimitError') return 429
+  return 503
+}
+
+function portableFragment(actual: FragmentSchema, manifest: unknown, saved?: FragmentSchema): FragmentSchema {
+  let converted = false
+  const files = fragmentFiles(actual).map(file => {
+    let code = file.file_content
+    for (const row of validImageQueries(manifest)) {
+      const path = `${IMAGE_PUBLIC}/${row.file}`
+      if (code.includes(path)) {
+        code = code.split(path).join(`evo-image://${row.query}`)
+        converted = true
+      }
+    }
+    return { ...file, file_content: code }
+  })
+  return converted ? fragmentWithFiles(actual, files) : saved || actual
+}
+
+function validImageQueries(manifest: unknown): NonNullable<ExecutionResultWeb['imageQueries']> {
+  return (Array.isArray(manifest) ? manifest.slice(0, 128) : []).filter((row) =>
+    row && typeof row.file === 'string' && /^[\w-][\w.-]{0,200}$/.test(row.file) &&
+    typeof row.query === 'string' && row.query.trim() && row.query.length <= 1000 && !/["'`\\\r\n)]/.test(row.query),
+  ).map((row) => ({ file: row.file, query: row.query }))
 }
 
 async function writeFiles(sbx: Sandbox, files: WrittenFile[]) {
@@ -207,15 +458,22 @@ async function writeFiles(sbx: Sandbox, files: WrittenFile[]) {
 }
 
 async function runCmd(sbx: Sandbox, cmd: string, timeoutMs: number) {
-  const result = await sbx.commands.run(cmd, {
-    timeoutMs,
-    requestTimeoutMs: timeoutMs,
-  })
+  let result
+  try {
+    result = await sbx.commands.run(cmd, {
+      timeoutMs,
+      requestTimeoutMs: timeoutMs,
+    })
+  } catch (error) {
+    // E2B throws on a nonzero exit; keep compiler/install diagnostics for repair.
+    if (!error || typeof error !== 'object' || !('exitCode' in error) || typeof error.exitCode !== 'number') throw error
+    result = error
+  }
   const rec = result as { stdout?: string; stderr?: string; exitCode?: number }
   return {
-    ok: rec.exitCode == null || rec.exitCode === 0,
+    ok: rec.exitCode === 0,
     stdout: rec.stdout || '',
-    output: `${rec.stdout || ''}\n${rec.stderr || ''}`,
+    output: `${rec.stdout || ''}\n${rec.stderr || ''}`.replace(/^(.+?\.(?:tsx?|jsx?))\((\d+),(\d+)\):/gm, '$1:$2:$3:'),
   }
 }
 

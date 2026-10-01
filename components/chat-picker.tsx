@@ -29,34 +29,34 @@ export function ChatPicker({
   onLanguageModelChange: (config: LLMModelConfig) => void
 }) {
   return (
-    <div className="flex items-center space-x-2">
-      <div className="flex flex-col">
+    <div className="flex min-w-0 flex-1 items-center gap-1">
+      <div className="flex w-[76px] shrink-0 flex-col">
         <Select
           name="template"
-          defaultValue={selectedTemplate}
+          value={selectedTemplate}
           onValueChange={onSelectedTemplateChange}
         >
-          <SelectTrigger className="whitespace-nowrap border-none shadow-none focus:ring-0 px-0 py-0 h-6 text-xs">
-            <SelectValue placeholder="Select a persona" />
+          <SelectTrigger aria-label="App framework" className="h-8 min-w-0 rounded-md border-transparent bg-transparent px-1.5 text-[11px] text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-1 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0">
+            <SelectValue placeholder="App framework" />
           </SelectTrigger>
           <SelectContent side="top">
             <SelectGroup>
-              <SelectLabel>Persona</SelectLabel>
+              <SelectLabel>App framework</SelectLabel>
               <SelectItem value="auto">
-                <div className="flex items-center space-x-2">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <Sparkles
-                    className="flex text-[#a1a1aa]"
+                    className="flex shrink-0 text-muted-foreground"
                     width={14}
                     height={14}
                   />
-                  <span>Auto</span>
+                  <span className="truncate">Auto</span>
                 </div>
               </SelectItem>
               {Object.entries(templates).map(([templateId, template]) => (
                 <SelectItem key={templateId} value={templateId}>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <Image
-                      className="flex"
+                      className="flex shrink-0"
                       src={`/thirdparty/templates/${getTemplateId(
                         templateId,
                       )}.svg`}
@@ -64,7 +64,7 @@ export function ChatPicker({
                       width={14}
                       height={14}
                     />
-                    <span>{template.name}</span>
+                    <span className="truncate">{template.name}</span>
                   </div>
                 </SelectItem>
               ))}
@@ -72,13 +72,13 @@ export function ChatPicker({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex flex-col">
+      <div className="flex min-w-0 max-w-[130px] flex-[1.3] flex-col">
         <Select
           name="languageModel"
-          defaultValue={languageModel.model}
+          value={languageModel.model}
           onValueChange={(e) => onLanguageModelChange({ model: e })}
         >
-          <SelectTrigger className="whitespace-nowrap border-none shadow-none focus:ring-0 px-0 py-0 h-6 text-xs">
+          <SelectTrigger aria-label="Language model" className="h-8 min-w-0 rounded-md border-transparent bg-transparent px-1.5 text-[11px] text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-1 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0">
             <SelectValue placeholder="Language model" />
           </SelectTrigger>
           <SelectContent>
@@ -89,15 +89,15 @@ export function ChatPicker({
                 <SelectLabel>{provider}</SelectLabel>
                 {models?.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       <Image
-                        className="flex"
+                        className="flex shrink-0"
                         src={`/thirdparty/logos/${model.providerId}.svg`}
                         alt={model.provider}
                         width={14}
                         height={14}
                       />
-                      <span>{model.name}</span>
+                      <span className="truncate">{model.name}</span>
                     </div>
                   </SelectItem>
                 ))}

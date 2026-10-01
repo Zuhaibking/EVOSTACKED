@@ -3,6 +3,7 @@
 import { sanitizeHydrationFile } from './hydrate-safe'
 import { sanitizeMotionFile } from './motion-safe'
 import { sanitizeSyntaxFile } from './syntax-safe'
+import { normalizeProjectPath, validateProjectFiles } from './project-paths'
 
 export type WrittenFile = { file_path: string; file_content: string }
 
@@ -18,6 +19,7 @@ const TEMPLATE_KEEP = /^(components\/ui(?:\/|$)|lib\/utils(?:\.|$)|hooks\/)/
 export function fragmentFiles(fragment: {
   file_path?: string
   code?: unknown
+  files?: unknown
 }): WrittenFile[] {
   const mainPath = fragment.file_path || 'pages/index.tsx'
   const code = fragment.code
@@ -36,14 +38,32 @@ export function fragmentFiles(fragment: {
         ''
       if (path) files.push({ file_path: posix(path), file_content: content })
     }
-    if (files.length) return files.map(safeFile)
+    if (files.length) return checkedFiles(files)
   }
-  return [
+  const files = [
     {
       file_path: posix(mainPath),
       file_content: typeof code === 'string' ? code : '',
     },
-  ].map(safeFile)
+  ]
+  if (fragment.files !== undefined) {
+    if (!Array.isArray(fragment.files)) throw new Error('Invalid supporting project files.')
+    for (const file of fragment.files) {
+      if (!file || typeof file.file_path !== 'string' || typeof file.file_content !== 'string') throw new Error('Invalid supporting project file.')
+      files.push({ file_path: file.file_path, file_content: file.file_content })
+    }
+  }
+  return checkedFiles(files)
+}
+
+function checkedFiles(files: WrittenFile[]) {
+  validateProjectFiles(files)
+  return files.map(file => safeFile({ ...file, file_path: normalizeProjectPath(file.file_path) }))
+}
+
+export function fragmentWithFiles<T extends { file_path: string; code: string }>(fragment: T, files: WrittenFile[]) {
+  const entry = files.find(file => file.file_path === normalizeProjectPath(fragment.file_path)) || files[0]
+  return { ...fragment, file_path: entry.file_path, code: entry.file_content, files: files.filter(file => file.file_path !== entry.file_path).map(file => ({ ...file })) }
 }
 
 function safeFile(file: WrittenFile): WrittenFile {
@@ -96,7 +116,8 @@ export function localImports(code: string, fromFile: string): LocalImport[] {
   return out
 }
 
-export function withMissingLocalModules(files: WrittenFile[]): WrittenFile[] {
+export function withMissingLocalModules(files: WrittenFile[], allowLegacyStubs = true): WrittenFile[] {
+  if (!allowLegacyStubs) return files
   const have = files.map((f) => posix(f.file_path))
   const extras: WrittenFile[] = []
   for (const file of files) {
@@ -107,8 +128,8 @@ export function withMissingLocalModules(files: WrittenFile[]): WrittenFile[] {
       have.push(path)
     }
   }
-  // ponytail: stubs only make missing local imports compile (empty lists / null components).
-  // Upgrade: persist a files[] array from the model so real mock data is written instead.
+  // ponytail: legacy single-file compatibility can synthesize stubs; explicit
+  // projects bypass this ceiling and must repair real missing modules.
   return extras.length ? [...files, ...extras] : files
 }
 

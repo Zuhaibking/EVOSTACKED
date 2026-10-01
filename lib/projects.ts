@@ -1,5 +1,5 @@
 import { Message } from './messages'
-import { FragmentSchema } from './schema'
+import { FragmentSchema, fragmentCodeText, sameFragmentSource } from './schema'
 import { VariantId, Verdict } from './tournament'
 import { Candidate } from './tournament-client'
 import { ExecutionResult } from './types'
@@ -8,6 +8,24 @@ import { DeepPartial } from 'ai'
 export const PROJECTS_KEY = 'evostack.projects.v1'
 const LEGACY_RUN_KEY = 'evostack:run:v1'
 const SAVE_DEBOUNCE_MS = 280
+const PROJECT_ID = /^[A-Za-z0-9_-]{1,128}$/
+
+/** Reuse the project identity for its saved-workspace URL. */
+export function projectPath(id: string): string {
+  if (!PROJECT_ID.test(id)) throw new Error('Invalid project ID')
+  return `/app/${encodeURIComponent(id)}`
+}
+
+export function projectIdFromPath(pathname: string): string | null {
+  const match = /^\/app\/([^/]+)\/?$/.exec(pathname)
+  if (!match) return null
+  try {
+    const id = decodeURIComponent(match[1])
+    return PROJECT_ID.test(id) ? id : null
+  } catch {
+    return null
+  }
+}
 
 export type ProjectWorkspace = {
   messages: Message[]
@@ -18,6 +36,7 @@ export type ProjectWorkspace = {
   currentTab: 'code' | 'fragment'
   chatInput: string
   tournament: {
+    runID?: string
     candidates?: Record<VariantId, Candidate>
     verdict?: Verdict
     phase: 'idle' | 'generating' | 'judging' | 'done'
@@ -45,6 +64,26 @@ export type ProjectStore = {
   version: 1
   activeId: string
   projects: Record<string, ProjectRecord>
+}
+
+/** Recheck saved sandboxes while keeping the workspace source authoritative. */
+export function prepareProjectForOpen(project: ProjectRecord): ProjectRecord {
+  const savedCandidates = project.tournament.candidates
+  if (!savedCandidates) return project
+  const source = fragmentCodeText(project.fragment?.code)
+  const selectedCandidate = project.selectedCandidate ?? (
+    source.trim() ? Object.values(savedCandidates).find((candidate) => sameFragmentSource(candidate.fragment, project.fragment))?.id : undefined
+  )
+  const candidates = Object.fromEntries(Object.entries(savedCandidates).map(([id, candidate]) => {
+    let next = id === selectedCandidate && project.fragment
+      ? { ...candidate, fragment: project.fragment, result: project.result ?? candidate.result }
+      : candidate
+    if (next.result || next.sandboxStatus === 'starting') {
+      next = { ...next, sandboxStatus: undefined, sandboxError: undefined }
+    }
+    return [id, next]
+  })) as Record<VariantId, Candidate>
+  return { ...project, selectedCandidate, tournament: { ...project.tournament, candidates } }
 }
 
 export function blankWorkspace(): ProjectWorkspace {
@@ -132,6 +171,7 @@ function sanitizeProject(raw: unknown): ProjectRecord | null {
         ? {
             candidates: raw.tournament.candidates as ProjectWorkspace['tournament']['candidates'],
             verdict: raw.tournament.verdict as Verdict | undefined,
+            runID: typeof raw.tournament.runID === 'string' && PROJECT_ID.test(raw.tournament.runID) ? raw.tournament.runID : undefined,
             phase,
           }
         : ws.tournament,
@@ -211,6 +251,7 @@ function migrateLegacy(): ProjectStore | null {
         ? {
             candidates: snap.tournament.candidates as ProjectWorkspace['tournament']['candidates'],
             verdict: snap.tournament.verdict as Verdict | undefined,
+            runID: typeof snap.tournament.runID === 'string' && PROJECT_ID.test(snap.tournament.runID) ? snap.tournament.runID : undefined,
             phase:
               snap.tournament.phase === 'idle' ||
               snap.tournament.phase === 'generating' ||
@@ -253,6 +294,11 @@ export function persistStore(store: ProjectStore) {
 
 export function listProjects(store: ProjectStore): ProjectRecord[] {
   return Object.values(store.projects).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** Missing routed IDs must stay missing instead of opening the active project. */
+export function getProjectById(store: ProjectStore, id: string): ProjectRecord | undefined {
+  return Object.hasOwn(store.projects, id) ? store.projects[id] : undefined
 }
 
 export function getActive(store: ProjectStore): ProjectRecord {

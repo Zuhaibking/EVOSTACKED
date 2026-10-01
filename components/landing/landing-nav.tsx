@@ -4,74 +4,17 @@ import Link from 'next/link'
 
 export function LandingNav() {
   return (
-    <header className="relative border-b border-border bg-background">
-      <div className="max-w-[1400px] mx-auto px-6 md:px-10">
-        <div className="flex items-center justify-between py-3">
-          <div className="flex items-center gap-3">
-            <span className="label-caps">Vol. 01 — Iss. 04</span>
-            <span className="hidden md:inline text-muted-foreground/40">/</span>
-            <span className="hidden md:inline font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground">
-              2026 · Q2
-            </span>
-          </div>
-          <div className="flex items-center gap-6">
-            <span className="hidden sm:inline font-mono text-[11px] tracking-[0.2em] uppercase text-muted-foreground">
-              Apache-2.0
-            </span>
-            <a
-              href="https://github.com/Zuhaibking/EVOSTACKED"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="EvoStack on GitHub"
-              className="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.18em] uppercase text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <GitHubLogoIcon className="h-3.5 w-3.5" />
-              Source
-            </a>
-          </div>
-        </div>
-
-        <div className="rule" />
-
-        <div className="flex items-end justify-between py-6 md:py-8">
-          <Link href="/" className="flex items-baseline gap-3 group">
-            <Logo width={30} height={30} className="text-foreground translate-y-0.5" />
-            <span className="font-display font-black text-4xl md:text-5xl tracking-tight leading-none">
-              Evo<span className="italic font-normal">Stack</span>
-            </span>
-          </Link>
-
-          <nav aria-label="Primary" className="hidden md:flex items-end gap-8">
-            <a href="#protocol" className="label-caps hover:text-foreground transition-colors">
-              § Protocol
-            </a>
-            <a href="#ledger" className="label-caps hover:text-foreground transition-colors">
-              § Ledger
-            </a>
-            <a href="#findings" className="label-caps hover:text-foreground transition-colors">
-              § Findings
-            </a>
-            <a href="#colophon" className="label-caps hover:text-foreground transition-colors">
-              § Colophon
-            </a>
-            <Link
-              href="/app"
-              className="font-mono text-xs tracking-[0.2em] uppercase border border-foreground text-foreground hover:bg-foreground hover:text-background transition-colors px-3 py-2"
-            >
-              Enter Arena →
-            </Link>
-          </nav>
-        </div>
-
-        <div className="rule" />
-
-        <p className="py-2 font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground flex flex-wrap gap-x-6 gap-y-1">
-          <span>A tournament engine for software architecture.</span>
-          <span className="text-muted-foreground/50">—</span>
-          <span>Published by Team Zuhaib.</span>
-          <span className="text-muted-foreground/50">—</span>
-          <span>Forked from E2B Fragments.</span>
-        </p>
+    <header className="border-b border-border bg-background">
+      <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-6 py-6 md:px-10">
+        <Link href="/" className="flex items-center gap-2.5" aria-label="EvoStack home">
+          <Logo width={26} height={26} className="text-foreground" />
+          <span className="font-display text-3xl font-black leading-none tracking-tight">Evo<span className="font-normal italic">Stack</span></span>
+        </Link>
+        <nav aria-label="Primary" className="flex items-center gap-5 md:gap-8">
+          <a href="#protocol" className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-foreground sm:inline">The method</a>
+          <a href="https://github.com/Zuhaibking/EVOSTACKED" target="_blank" rel="noopener noreferrer" aria-label="EvoStack on GitHub" className="hidden items-center gap-2 text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"><GitHubLogoIcon className="h-4 w-4" /><span className="font-mono text-[11px] uppercase tracking-[0.12em]">Source</span></a>
+          <Link href="/app" className="rounded-lg border border-foreground px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.12em] text-foreground transition-colors hover:bg-foreground hover:text-background">Enter arena →</Link>
+        </nav>
       </div>
     </header>
   )

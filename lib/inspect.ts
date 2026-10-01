@@ -1,6 +1,7 @@
-import { FragmentSchema, fragmentCodeText } from './schema'
-import { sanitizeStyleHydration } from './hydrate-safe'
-import { sanitizeMotionKeyframes } from './motion-safe'
+import { FragmentSchema, fragmentSchema, fragmentSourceFiles } from './schema'
+import { sanitizeHydrationFile } from './hydrate-safe'
+import { sanitizeMotionFile } from './motion-safe'
+import { normalizeProjectPath, validateProjectFiles } from './project-paths'
 import { DeepPartial } from 'ai'
 
 export const INSPECT_SOURCE = 'evostack-inspect'
@@ -98,39 +99,68 @@ export function isInspectMessage(data: unknown): data is InspectMessage {
 export function toCompleteFragment(
   fragment: DeepPartial<FragmentSchema> | undefined,
 ): FragmentSchema | null {
-  if (!fragment) return null
-  const code = sanitizeStyleHydration(
-    sanitizeMotionKeyframes(fragmentCodeText(fragment.code)),
-  )
-  if (!code.trim() || !fragment.file_path || !fragment.template) return null
-  return {
-    commentary: fragment.commentary || '',
-    template: fragment.template,
-    title: fragment.title || 'App',
-    description: fragment.description || '',
-    additional_dependencies: (fragment.additional_dependencies ?? []).filter(
-      (d): d is string => typeof d === 'string',
-    ),
-    has_additional_dependencies: Boolean(fragment.has_additional_dependencies),
-    install_dependencies_command: fragment.install_dependencies_command || '',
-    port: typeof fragment.port === 'number' ? fragment.port : 3000,
-    file_path: fragment.file_path,
-    code,
-  }
+  if (!fragment?.file_path || !fragment.template) return null
+  try {
+    // A streamed incomplete file must not be silently discarded before an edit.
+    if (fragment.files !== undefined && (!Array.isArray(fragment.files) || fragment.files.some(file => !file || typeof file.file_path !== 'string' || typeof file.file_content !== 'string'))) return null
+    const files = fragmentSourceFiles(fragment).map(file => ({
+      file_path: normalizeProjectPath(file.file_path),
+      file_content: sanitizeHydrationFile(file.file_path, sanitizeMotionFile(file.file_path, file.file_content)),
+    }))
+    validateProjectFiles(files)
+    const entryPath = normalizeProjectPath(fragment.file_path)
+    const entry = files.find(file => file.file_path === entryPath)
+    if (!entry) return null
+    const supporting = files.filter(file => file.file_path !== entryPath)
+    return {
+      commentary: fragment.commentary || '',
+      template: fragment.template,
+      title: fragment.title || 'App',
+      description: fragment.description || '',
+      additional_dependencies: (fragment.additional_dependencies ?? []).filter((d): d is string => typeof d === 'string'),
+      has_additional_dependencies: Boolean(fragment.has_additional_dependencies),
+      install_dependencies_command: fragment.install_dependencies_command || '',
+      port: typeof fragment.port === 'number' || fragment.port === null ? fragment.port : 3000,
+      file_path: entryPath,
+      code: entry.file_content,
+      ...(fragment.files !== undefined || supporting.length ? { files: supporting } : {}),
+    }
+  } catch { return null }
 }
 
 export function isValidPatchedFragment(
   prev: FragmentSchema,
   next: unknown,
 ): next is FragmentSchema {
-  if (!next || typeof next !== 'object') return false
-  const n = next as Partial<FragmentSchema>
-  const code = fragmentCodeText(n.code)
-  if (!code.trim()) return false
-  if (typeof n.file_path !== 'string' || !n.file_path) return false
-  if (n.file_path !== prev.file_path) return false
-  if (typeof n.template !== 'string' || n.template !== prev.template) return false
-  return true
+  const parsed = fragmentSchema.safeParse(next)
+  if (!parsed.success || parsed.data.file_path !== prev.file_path || parsed.data.template !== prev.template) return false
+  try {
+    const before = fragmentSourceFiles(prev)
+    const after = fragmentSourceFiles(parsed.data)
+    validateProjectFiles(before)
+    validateProjectFiles(after)
+    const paths = new Set(after.map(file => normalizeProjectPath(file.file_path)))
+    return before.every(file => paths.has(normalizeProjectPath(file.file_path)))
+  } catch { return false }
+}
+
+/** A unique element/source match is a hint; ambiguous matches are left to full-context editing. */
+export function locateProjectSourceSnippet(
+  fragment: DeepPartial<FragmentSchema> | undefined,
+  selection: InspectSelection | null,
+  targetFile?: string,
+): { filePath?: string; line: number; snippet: string } {
+  const files = fragmentSourceFiles(fragment)
+  if (targetFile) {
+    const file = files.find(file => file.file_path === targetFile)
+    return file ? { filePath: file.file_path, ...locateSourceSnippet(file.file_content, selection) } : { line: 0, snippet: '' }
+  }
+  if (!selection) return { line: 0, snippet: '' }
+  const matches = files.flatMap(file => {
+    const match = locateSourceSnippet(file.file_content, selection)
+    return match.line ? [{ filePath: file.file_path, ...match }] : []
+  })
+  return matches.length === 1 ? matches[0] : { line: 0, snippet: '' }
 }
 
 export function locateSourceSnippet(

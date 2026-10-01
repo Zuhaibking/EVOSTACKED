@@ -30,9 +30,9 @@ const mono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'EvoStack — Fifty specimens. One survives.',
+  title: 'EvoStack — Find your best direction.',
   description:
-    'A tournament engine for software architecture. EvoStack generates competing implementations of your idea, tests them under live load, and ships the survivor as deploy-ready code.',
+    'Turn your idea into three distinct app designs. Compare the directions, preview your favorite, and refine it with AI.',
 }
 
 const clerkReady = Boolean(
@@ -54,8 +54,9 @@ export default function RootLayout({
         <body className="font-sans antialiased">
           <ThemeProvider
             attribute="class"
+            storageKey="evostack-appearance"
             defaultTheme="dark"
-            enableSystem
+            enableSystem={false}
             disableTransitionOnChange
           >
             {children}
@@ -77,17 +78,17 @@ export default function RootLayout({
       appearance={{
         baseTheme: dark,
         variables: {
-          colorPrimary: 'hsl(40 28% 92%)',
-          colorBackground: 'hsl(30 12% 7%)',
-          colorText: 'hsl(40 28% 92%)',
-          colorTextSecondary: 'hsl(35 14% 62%)',
-          colorInputBackground: 'hsl(30 10% 10%)',
-          colorInputText: 'hsl(40 28% 92%)',
-          colorNeutral: 'hsl(40 28% 92%)',
-          colorDanger: 'hsl(8 76% 60%)',
+          colorPrimary: 'hsl(var(--brand))',
+          colorBackground: 'hsl(var(--card))',
+          colorText: 'hsl(var(--foreground))',
+          colorTextSecondary: 'hsl(var(--muted-foreground))',
+          colorInputBackground: 'hsl(var(--background))',
+          colorInputText: 'hsl(var(--foreground))',
+          colorNeutral: 'hsl(var(--foreground))',
+          colorDanger: 'hsl(var(--destructive))',
           fontFamily: 'var(--font-body), ui-sans-serif, system-ui',
-          fontFamilyButtons: 'var(--font-mono), ui-monospace, monospace',
-          borderRadius: '0',
+          fontFamilyButtons: 'var(--font-body), ui-sans-serif, system-ui',
+          borderRadius: '8px',
         },
       }}
     >

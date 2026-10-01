@@ -329,22 +329,13 @@ function closeStack(stack: Frame[]): string {
 
 function parses(code: string, filePath: string): boolean {
   try {
-    const ts = /\.(tsx|ts|jsx)$/i.test(filePath)
-    const { transformSync } = require('next/dist/build/swc/index.js') as {
-      transformSync: (src: string, opts: object) => unknown
-    }
-    transformSync(code, {
-      filename: filePath,
-      jsc: {
-        parser: {
-          syntax: ts ? 'typescript' : 'ecmascript',
-          tsx: /\.(tsx|jsx)$/i.test(filePath),
-          dynamicImport: true,
-        },
-        target: 'es2017',
-      },
+    const ts = require('typescript') as typeof import('typescript')
+    const result = ts.transpileModule(code, {
+      fileName: filePath,
+      compilerOptions: { target: ts.ScriptTarget.ES2017, jsx: ts.JsxEmit.Preserve },
+      reportDiagnostics: true,
     })
-    return true
+    return !result.diagnostics?.some((d) => d.category === ts.DiagnosticCategory.Error)
   } catch {
     return false
   }

@@ -32,6 +32,7 @@ export function FragmentWeb({
   guides = false,
   teamID,
   accessToken,
+  onRuntimeError,
 }: {
   result: ExecutionResultWeb
   inspectEnabled?: boolean
@@ -45,6 +46,7 @@ export function FragmentWeb({
   guides?: boolean
   teamID?: string
   accessToken?: string
+  onRuntimeError?: (message: string) => void
 }) {
   const [iframeKey, setIframeKey] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -69,6 +71,19 @@ export function FragmentWeb({
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
+      if (event.source !== iframeRef.current?.contentWindow) return
+      try {
+        if (event.origin !== new URL(iframeSrc).origin) return
+      } catch {
+        return
+      }
+      const data = event.data
+      if (data?.source === INSPECT_SOURCE && data.type === 'runtime-error') {
+        if (typeof data.payload?.message === 'string' && data.payload.message.trim()) {
+          onRuntimeError?.(data.payload.message.slice(0, 2000))
+        }
+        return
+      }
       if (!isInspectMessage(event.data)) return
       if (event.data.type === 'ready' && inspectEnabled) {
         postToPreview({ type: 'enable' })
@@ -86,7 +101,7 @@ export function FragmentWeb({
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [inspectEnabled, guides, onSelection, onText])
+  }, [inspectEnabled, guides, onSelection, onText, iframeSrc, onRuntimeError])
 
   useEffect(() => {
     postToPreview({ type: inspectEnabled ? 'enable' : 'disable' })
@@ -138,6 +153,7 @@ export function FragmentWeb({
           ref={iframeRef}
           key={iframeKey}
           className="h-full w-full"
+          title="Generated app preview"
           sandbox="allow-forms allow-scripts allow-same-origin"
           loading="lazy"
           src={iframeSrc}
@@ -156,18 +172,20 @@ export function FragmentWeb({
         ) : null}
       </div>
       {result.health?.state === 'FAILED' ? (
-        <p className="px-3 py-2 text-xs text-destructive border-b border-destructive/30">
+        <p role="alert" className="m-3 rounded-lg bg-destructive/5 px-3 py-3 text-xs leading-relaxed text-destructive border border-destructive/20">
           {result.health.log.slice(-3).join(' · ')}
         </p>
       ) : null}
-      <div className="p-2 border-t">
-        <div className="flex items-center bg-muted dark:bg-white/10 rounded-2xl">
+      <div className="p-3 border-t border-border bg-card">
+        <div className="flex items-center gap-1 bg-muted/60 rounded-lg border border-border">
           <TooltipProvider>
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <Button
-                  variant="link"
-                  className="text-muted-foreground"
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground shrink-0 rounded-lg"
+                  aria-label="Refresh preview"
                   onClick={refreshIframe}
                 >
                   <RotateCw className="h-4 w-4" />
@@ -176,14 +194,14 @@ export function FragmentWeb({
               <TooltipContent>Refresh</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <span className="text-muted-foreground text-xs flex-1 text-ellipsis overflow-hidden whitespace-nowrap">
+          <span className="text-muted-foreground font-mono text-[11px] min-w-0 flex-1 text-ellipsis overflow-hidden whitespace-nowrap">
             {result.url}
           </span>
           <TooltipProvider>
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <CopyButton
-                  variant="link"
+                  variant="ghost"
                   content={result.url}
                   className="text-muted-foreground"
                 />

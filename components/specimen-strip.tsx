@@ -4,13 +4,13 @@ import { fragmentCodeText } from '@/lib/schema'
 import { Candidate } from '@/lib/tournament-client'
 import { candidateHealthLabel } from '@/lib/candidate-health'
 import { VariantId } from '@/lib/tournament'
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 const STATUS_COPY: Record<Candidate['status'], string> = {
-  pending: 'Standby',
+  pending: 'Waiting',
   generating: 'Generating',
-  done: 'Sequenced',
+  done: 'Code ready',
   error: 'Failed',
   judging: 'Judging',
 }
@@ -20,7 +20,10 @@ function formatPct(n?: number) {
   return `${(n * 100).toFixed(0)}`
 }
 
-function statusDot(status: Candidate['status']) {
+function statusDot(status: Candidate['status'], sandboxStatus?: Candidate['sandboxStatus']) {
+  if (sandboxStatus === 'error') return 'bg-destructive'
+  if (sandboxStatus === 'starting') return 'bg-brand animate-pulse'
+  if (sandboxStatus === 'ready') return 'bg-brand-accent'
   if (status === 'generating') return 'bg-brand animate-pulse'
   if (status === 'done') return 'bg-brand-accent'
   if (status === 'error') return 'bg-destructive'
@@ -71,7 +74,7 @@ export function SpecimenStrip({
 
   if (layout === 'rail') {
     return (
-      <section aria-label="Specimens — tournament candidates" className="relative">
+      <section aria-label="Generated versions" className="relative">
         {isLive && (
           <span
             aria-hidden
@@ -79,11 +82,11 @@ export function SpecimenStrip({
             style={{ width: `${(doneCount / Math.max(list.length, 1)) * 100}%` }}
           />
         )}
-        <div className="flex flex-col gap-1.5">{tabs}</div>
+        <div className="flex flex-col gap-3">{tabs}</div>
         {phase === 'done' && verdictReasoning && (
           <p className="mt-2.5 font-display italic text-[12px] sm:text-[13px] text-muted-foreground leading-relaxed">
             <span className="font-mono not-italic text-[9px] sm:text-[10px] tracking-[0.22em] uppercase text-foreground mr-2 whitespace-nowrap">
-              Editor’s note ·
+              Why this version ·
             </span>
             {verdictReasoning}
           </p>
@@ -94,8 +97,8 @@ export function SpecimenStrip({
 
   return (
     <section
-      aria-label="Specimens — tournament candidates"
-      className="border-b border-border/60 bg-background/95 relative"
+      aria-label="Generated versions"
+      className="rounded-lg border border-border bg-background relative overflow-hidden"
     >
       {/* Hairline progress meter across the whole strip during gen */}
       {isLive && (
@@ -111,8 +114,8 @@ export function SpecimenStrip({
         <div className="flex items-stretch gap-2 sm:gap-3 py-2 sm:py-2.5">
           {/* Left rail — masthead label + phase meta, stacked */}
           <div className="hidden md:flex flex-col justify-center shrink-0 pr-1 border-r border-border/70 mr-1">
-            <span className="font-mono text-[9px] tracking-[0.26em] uppercase text-muted-foreground leading-tight">
-              § Specimens
+            <span className="text-xs font-medium text-muted-foreground leading-tight">
+              Versions
             </span>
             <span className="font-mono text-[9px] tracking-[0.2em] uppercase text-foreground/70 tabular leading-tight mt-0.5">
               {phase === 'generating' && (
@@ -131,7 +134,7 @@ export function SpecimenStrip({
           </div>
 
           {/* Tab strip — takes the room */}
-          <div className="flex-1 grid grid-cols-3 gap-1 sm:gap-1.5 min-w-0">
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0">
             {tabs}
           </div>
 
@@ -139,9 +142,9 @@ export function SpecimenStrip({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            aria-label={open ? 'Collapse specimens' : 'Expand specimens'}
+            aria-label={open ? 'Collapse version details' : 'Expand version details'}
             aria-expanded={open}
-            className="self-stretch inline-flex flex-col items-center justify-center w-8 sm:w-9 border border-border hover:border-foreground/70 hover:bg-foreground/[0.04] text-muted-foreground hover:text-foreground transition-colors shrink-0 gap-0.5"
+            className="self-stretch inline-flex flex-col items-center justify-center w-9 rounded-lg border border-border hover:border-brand/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 gap-0.5 focus-visible:ring-2 focus-visible:ring-brand"
           >
             {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             <span className="font-mono text-[7px] tracking-[0.2em] uppercase hidden sm:inline">
@@ -173,7 +176,7 @@ export function SpecimenStrip({
             {phase === 'done' && verdictReasoning && (
               <p className="mt-2.5 font-display italic text-[12px] sm:text-[13px] text-muted-foreground leading-relaxed max-w-3xl">
                 <span className="font-mono not-italic text-[9px] sm:text-[10px] tracking-[0.22em] uppercase text-foreground mr-2 whitespace-nowrap">
-                  Editor’s note ·
+                  Why this version ·
                 </span>
                 {verdictReasoning}
               </p>
@@ -185,10 +188,7 @@ export function SpecimenStrip({
   )
 }
 
-/**
- * Two-line "candidate tab": sigil column + meta row + title row.
- * Slim but substantial — feels like a newspaper section bookmark, not a chip.
- */
+/** A single selection target, with preview status separate from the design identity. */
 function CandidateTab({
   c,
   idx,
@@ -200,118 +200,52 @@ function CandidateTab({
   isSelected: boolean
   onSelect: () => void
 }) {
-  const isWin = !!c.isWinner
   const isGen = c.status === 'generating'
-  const isPending = c.status === 'pending'
   const isError = c.status === 'error'
-
-  const composite =
-    c.scoreComposite != null
-      ? c.scoreComposite.toFixed(2)
-      : isGen
-        ? '·'
-        : c.fragment?.code
-          ? '·'
-          : '—'
-
-  const title =
-    c.fragment?.title ||
-    (isGen ? 'streaming…' : isPending ? 'standby' : isError ? 'failed' : '—')
+  const title = c.fragment?.title || (
+    isGen ? 'Creating your design…' : c.status === 'pending' ? 'Waiting to begin' : isError ? 'Generation failed' : c.label
+  )
+  const error = c.sandboxError || c.error
+  const status = c.sandboxStatus === 'error' && error
+    ? `Preview failed: ${error}`
+    : candidateHealthLabel(c.status, c.health, c.sandboxStatus) ?? STATUS_COPY[c.status]
 
   return (
-    <div
-      aria-current={isSelected ? 'true' : undefined}
-      title={`${c.label}${c.fragment?.title ? ' — ' + c.fragment.title : ''}`}
-      className={`
-        group relative flex items-stretch h-12 sm:h-[52px] text-left min-w-0
-        border transition-colors overflow-hidden
-        ${
-          isSelected
-            ? 'border-brand-accent bg-brand-accent/[0.06] text-foreground shadow-[2px_2px_0_0_hsl(var(--brand)/0.18)]'
-            : isWin
-              ? 'border-brand-accent/50 bg-brand-accent/[0.03] text-foreground'
-              : 'border-border text-foreground/85'
-        }
-        ${isPending || isError ? 'opacity-55' : ''}
-      `}
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={c.status === 'pending' || isError}
+      aria-pressed={isSelected}
+      aria-label={`${c.label}: ${title}. ${status}${isSelected ? '. Selected' : ''}`}
+      title={error || c.scoreComment || `${c.label} — ${title}`}
+      className={`group relative flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-lg border px-3.5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/50 disabled:cursor-not-allowed ${
+        isSelected
+          ? 'border-foreground/15 bg-foreground/[0.045]'
+          : 'border-border bg-card hover:border-foreground/20 hover:bg-foreground/[0.025]'
+      }`}
     >
-      {/* Live shimmer rail */}
-      {isGen && (
-        <span
-          aria-hidden
-          className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-brand to-transparent specimen-shimmer"
-        />
-      )}
-
-      {/* Sigil column — full-height brutalist square */}
-      <span
-        className={`flex items-center justify-center w-9 sm:w-11 shrink-0 border-r font-display text-[15px] sm:text-[17px] font-black leading-none ${
-          isSelected
-            ? 'border-brand-accent/60 text-brand-accent bg-brand-accent/[0.06]'
-            : isWin
-              ? 'border-brand-accent/60 text-brand-accent bg-brand-accent/[0.06]'
-              : 'border-border text-foreground/80 bg-foreground/[0.015]'
-        }`}
-      >
-        {c.sigil}
-      </span>
-
-      {/* Content column */}
-      <span className="flex-1 min-w-0 flex flex-col justify-center px-2 sm:px-2.5 py-1 gap-0.5">
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className="font-mono text-[9px] sm:text-[10px] tracking-[0.2em] uppercase text-muted-foreground shrink-0">
-            {c.label}
+      {isSelected && <span aria-hidden className="absolute bottom-3 left-0 top-3 w-[2px] rounded-r-full bg-brand-accent/80" />}
+      <span className="flex min-w-0 items-start gap-3">
+        <span aria-hidden className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-sm font-medium ${isSelected ? 'border-brand-accent/15 bg-brand-accent/[0.06] text-brand-accent' : 'border-border bg-background/70 text-muted-foreground'}`}>
+          {c.sigil}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex items-center gap-2 font-sans text-[11px] leading-none text-muted-foreground">
+            <span className="truncate">{c.label}</span>
+            <span className="font-mono text-[9px] text-muted-foreground/40">{String(idx + 1).padStart(2, '0')}</span>
           </span>
-          <span className="font-mono text-[8px] tracking-[0.16em] uppercase text-muted-foreground/50 tabular shrink-0 hidden md:inline">
-            · {String(idx + 1).padStart(2, '0')}
-          </span>
-          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot(c.status)}`} />
-          {isWin && <span className="text-brand-accent text-[11px] leading-none shrink-0">★</span>}
+          <span className="truncate font-sans text-[13px] font-medium leading-snug text-foreground">{title}</span>
         </span>
-
-        {/* Row 2 — candidate title (the actual generated identity) */}
-        <span
-          className={`font-display text-[12px] sm:text-[13px] leading-tight truncate ${
-            isGen ? 'italic text-muted-foreground/70' : 'text-foreground'
-          }`}
-        >
-          {isGen && !c.fragment?.title ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              streaming…
-            </span>
-          ) : (
-            title
-          )}
-        </span>
+        {isSelected ? <Check aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-accent" /> : c.isWinner ? <span className="shrink-0 rounded-full bg-brand-accent/[0.06] px-2 py-1 font-sans text-[9px] leading-none text-brand-accent">Editor’s pick</span> : null}
       </span>
-
-      <span
-        className={`flex items-center px-1.5 sm:px-2 font-display text-[12px] sm:text-[13px] tabular leading-none shrink-0 ${
-          isSelected || isWin ? 'text-brand-accent' : 'text-foreground'
-        }`}
-      >
-        {composite}
-      </span>
-
-      {isSelected ? (
-        <span
-          className="flex items-center justify-center min-w-[3.75rem] sm:min-w-[4.25rem] shrink-0 border-l border-brand-accent/50 px-2 font-mono text-[9px] sm:text-[10px] tracking-[0.18em] uppercase text-brand-accent"
-        >
-          ACTIVE
+      <span className="flex min-w-0 items-center justify-between gap-3 pl-11">
+        <span title={error} className={`flex min-w-0 items-center gap-1.5 font-sans text-[10px] ${c.sandboxStatus === 'error' || isError ? 'text-destructive' : 'text-muted-foreground/70'}`}>
+          <span aria-hidden className={`h-1 w-1 shrink-0 rounded-full ${statusDot(c.status, c.sandboxStatus)}`} />
+          <span className="truncate">{status}</span>
         </span>
-      ) : (
-        <button
-          type="button"
-          onClick={onSelect}
-          disabled={isPending || isError}
-          aria-label={`Use ${c.label}`}
-          className="flex items-center justify-center min-w-[3.75rem] sm:min-w-[4.25rem] shrink-0 border-l border-border px-2 font-mono text-[9px] sm:text-[10px] tracking-[0.18em] uppercase text-foreground hover:bg-foreground/[0.06] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        >
-          USE
-        </button>
-      )}
-    </div>
+        {c.scoreComposite != null && <span title="Editorial score" className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">{c.scoreComposite.toFixed(2)}</span>}
+      </span>
+    </button>
   )
 }
 
@@ -362,16 +296,16 @@ function CandidateCard({
       onClick={onSelect}
       disabled={isPending || isError}
       className={`
-        group relative w-full text-left bg-card transition-all overflow-hidden flex flex-col
+        group relative w-full text-left bg-card transition-colors overflow-hidden flex flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand
         ${
           isWin
-            ? 'border-2 border-brand-accent shadow-[3px_3px_0_0_hsl(var(--brand)/0.25)]'
+            ? 'border border-brand-accent'
             : isSelected
-              ? 'border-2 border-foreground'
-              : 'border border-border hover:border-foreground/60'
+              ? 'border border-brand-accent bg-brand-accent/[0.025]'
+              : 'border border-border hover:border-brand/40'
         }
         ${isPending || isError ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
-        rounded-none p-0
+        rounded-lg p-0
       `}
     >
       {isGen && (
@@ -394,15 +328,15 @@ function CandidateCard({
             className={`font-mono text-[9px] lg:text-[10px] tracking-[0.18em] uppercase whitespace-nowrap shrink-0 inline-flex items-center gap-1 ${
               isWin
                 ? 'text-brand-accent'
-                : isError
+                : isError || c.sandboxStatus === 'error'
                   ? 'text-destructive'
                   : 'text-foreground/80'
             }`}
           >
-            {isGen && <Loader2 className="h-3 w-3 animate-spin" />}
+            {(isGen || c.sandboxStatus === 'starting') && <Loader2 className="h-3 w-3 animate-spin" />}
             {isWin
-              ? `★ ${candidateHealthLabel(c.status, c.health) || 'Survived'}`
-              : (candidateHealthLabel(c.status, c.health) ?? STATUS_COPY[c.status])}
+              ? `★ ${candidateHealthLabel(c.status, c.health, c.sandboxStatus) || 'Selected'}`
+              : (candidateHealthLabel(c.status, c.health, c.sandboxStatus) ?? STATUS_COPY[c.status])}
           </span>
         </div>
 
@@ -416,6 +350,11 @@ function CandidateCard({
             {c.fragment?.description || (
               <span className="opacity-60 italic">drafting description…</span>
             )}
+          </p>
+        )}
+        {(isError || c.sandboxStatus === 'error') && (
+          <p className="mt-2 text-xs leading-relaxed text-destructive line-clamp-3">
+            {c.sandboxError || c.error || 'This version could not be generated. Try another prompt.'}
           </p>
         )}
       </div>

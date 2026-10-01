@@ -59,39 +59,26 @@ export function DeployDialog({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="default">
+        <Button variant="outline" size="sm">
           <Logo width={16} height={16} className="mr-2" />
-          Deploy
+          Share
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="p-4 w-80 flex flex-col gap-2">
-        <div className="text-sm font-semibold">Deploy to E2B</div>
+      <DropdownMenuContent align="end" className="p-5 w-80 max-w-[calc(100vw-24px)] rounded-xl flex flex-col gap-3 shadow-lg">
+        <div className="text-base font-semibold">Share your preview</div>
         <div className="text-sm text-muted-foreground">
-          Deploying the fragment will make it publicly accessible to others via
-          link.
+          Create a public preview link and choose how long it stays available.
         </div>
         <div className="text-sm text-muted-foreground">
-          The fragment will be available up until the expiration date you choose
-          and you&apos;ll be billed based on our{' '}
+          Keeping this preview running uses sandbox compute. See{' '}
           <a
             href="https://e2b.dev/docs/pricing"
             target="_blank"
             className="underline"
           >
-            Compute pricing
+            E2B pricing
           </a>
           .
-        </div>
-        <div className="text-sm text-muted-foreground">
-          All new accounts receive $100 worth of compute credits. Upgrade to{' '}
-          <a
-            href="https://e2b.dev/dashboard?tab=billing"
-            target="_blank"
-            className="underline"
-          >
-            Pro tier
-          </a>{' '}
-          for longer expiration.
         </div>
         <form className="flex flex-col gap-2" onSubmit={publishURL}>
           {publishedURL ? (
@@ -102,7 +89,7 @@ export function DeployDialog({
           ) : (
             <Select onValueChange={(value) => setDuration(value)} required>
               <SelectTrigger>
-                <SelectValue placeholder="Set expiration" />
+                <SelectValue placeholder="Choose preview lifetime" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -119,9 +106,9 @@ export function DeployDialog({
           <Button
             type="submit"
             variant="default"
-            disabled={publishedURL !== null}
+            disabled={publishedURL !== null || !duration}
           >
-            {publishedURL ? 'Deployed' : 'Accept and deploy'}
+            {publishedURL ? 'Preview link ready' : 'Create preview link'}
           </Button>
         </form>
       </DropdownMenuContent>

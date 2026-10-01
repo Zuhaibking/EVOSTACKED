@@ -3,7 +3,7 @@ import { Duration } from '@/lib/duration'
 import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
 import { toPrompt } from '@/lib/prompt'
 import ratelimit from '@/lib/ratelimit'
-import { fragmentSchema as schema } from '@/lib/schema'
+import { assertGeneratedFragment, generatedFragmentSchema as schema } from '@/lib/schema'
 import { Templates } from '@/lib/templates'
 import { streamObject, LanguageModel, CoreMessage } from 'ai'
 
@@ -64,7 +64,14 @@ export async function POST(req: Request) {
       ...modelParams,
     })
 
-    return stream.toTextStreamResponse()
+    const completed = stream.object.then(assertGeneratedFragment)
+    // Observe rejection while text is still streaming; flush reports validation
+    // failures to the client before onFinish can create an incomplete project.
+    void completed.catch(() => {})
+    const response = stream.toTextStreamResponse()
+    return new Response(response.body!.pipeThrough(new TransformStream({
+      async flush() { await completed },
+    })), { headers: response.headers })
   } catch (error: any) {
     return handleAPIError(error, { hasOwnApiKey: !!config.apiKey })
   }

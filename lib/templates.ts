@@ -87,7 +87,7 @@ const templates = {
     ],
     file: 'pages/index.tsx',
     instructions:
-      'A Next.js 13+ app that reloads automatically. Using the pages router. Write only pages/index.tsx. Inline all UI and mock data in that file. Do not import local files you did not write. If you use framer-motion, spring/inertia cannot animate 3+ keyframes — use a single target or type: "tween". Real photos: evo-image://<query> only; never invent image URLs. Next SSR hydrates as React: put CSS in dangerouslySetInnerHTML, never as <style> text children.',
+      'A Next.js 13+ app that reloads automatically using the pages router. Keep pages/index.tsx as a focused entry composing real reusable components from components/. Return at least two meaningful supporting source files in files, including a component plus data/lib helpers or styles/Home.module.css. Include complete source for every custom local import. Use CSS modules for custom styles; global CSS can only be imported from the existing pages/_app.tsx. Do not replace the router or template configuration. If you use framer-motion, spring/inertia cannot animate 3+ keyframes — use a single target or type: "tween". Real photos: evo-image://<query> only; never invent image URLs. Next SSR: style tags use dangerouslySetInnerHTML, never text children. Initialize useState with deterministic literals, restore browser preferences in useEffect, and gate useTheme/resolvedTheme-dependent icons on a mounted flag. Never read browser APIs in render or state initializers or hide mismatches with suppressHydrationWarning/disabled SSR.',
     port: 3000,
   },
   [getTemplateIdSuffix('vue-developer')]: {
@@ -95,7 +95,7 @@ const templates = {
     lib: ['vue@latest', 'nuxt@3.13.0', 'tailwindcss'],
     file: 'app/app.vue',
     instructions:
-      'A Vue.js 3+ app that reloads automatically. Only when asked specifically for a Vue app. Write only app/app.vue. Inline all UI and mock data in that file.',
+      'A Vue.js 3+ app that reloads automatically. Only when asked specifically for a Vue app. Keep app/app.vue as a focused entry. Put real reusable Vue components in app/components/ and content/data or composables in supporting files; return at least two meaningful supporting files. Include every custom imported module and keep Nuxt server/first-client rendering deterministic.',
     port: 3000,
   },
   [getTemplateIdSuffix('streamlit-developer')]: {

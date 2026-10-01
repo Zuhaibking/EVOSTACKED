@@ -23,6 +23,7 @@ export function FragmentPreview({
   guides,
   teamID,
   accessToken,
+  onRuntimeError,
 }: {
   result: ExecutionResult
   inspectEnabled?: boolean
@@ -36,6 +37,7 @@ export function FragmentPreview({
   guides?: boolean
   teamID?: string
   accessToken?: string
+  onRuntimeError?: (message: string) => void
 }) {
   if (getTemplateId(result.template) === 'code-interpreter-v1') {
     return <FragmentInterpreter result={result as ExecutionResultInterpreter} />
@@ -55,6 +57,7 @@ export function FragmentPreview({
       guides={guides}
       teamID={teamID}
       accessToken={accessToken}
+      onRuntimeError={onRuntimeError}
     />
   )
 }

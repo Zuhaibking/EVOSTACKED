@@ -99,7 +99,7 @@ for (const spec of [
       return null
     },
   })
-  assert.equal(healed.health.verified, true, spec)
+  assert.equal(healed.health.verified, false, spec)
   assert.equal(healed.health.dependencyStatus, 'passed')
   assert.equal(llmCalls, 0)
   assert.ok(healed.health.log.some((l) => l.includes('Installing')))
@@ -126,7 +126,7 @@ const syntax = await healCandidate({
       : okProbe(),
   install: installOk,
 })
-assert.equal(syntax.health.verified, true)
+assert.equal(syntax.health.verified, false)
 assert.match(syntax.files[0].file_content, /`;\nexport default/)
 assert.equal(syntax.health.repairAttempts >= 1, true)
 
@@ -139,8 +139,9 @@ const ssr = await healCandidate({
       : { ok: false, output: 'ReferenceError: window is not defined\n./pages/index.tsx:2:3', httpStatus: 500, phase: 'preview' },
   install: installOk,
 })
-assert.equal(ssr.health.verified, true)
-assert.match(ssr.files[0].file_content, /typeof window/)
+assert.equal(ssr.health.state, 'FAILED')
+assert.equal(ssr.health.verified, false)
+assert.doesNotMatch(ssr.files[0].file_content, /typeof window|undefined as any/)
 
 const client = await healCandidate({
   files: page('import { useState } from "react"\nexport default function Page(){ return <div/> }\n'),
@@ -151,7 +152,7 @@ const client = await healCandidate({
       : { ok: false, output: "You're importing a component that needs useState. It only works in a Client Component.\n./pages/index.tsx:1:1", httpStatus: 500, phase: 'build' },
   install: installOk,
 })
-assert.equal(client.health.verified, true)
+assert.equal(client.health.verified, false)
 assert.match(client.files[0].file_content, /^'use client'/)
 
 const exported = await healCandidate({
@@ -163,7 +164,7 @@ const exported = await healCandidate({
       : { ok: false, output: 'The default export is not a React Component\n./pages/index.tsx:1:1', httpStatus: 500, phase: 'build' },
   install: installOk,
 })
-assert.equal(exported.health.verified, true)
+assert.equal(exported.health.verified, false)
 assert.match(exported.files[0].file_content, /export default Page/)
 
 const hydration = await healCandidate({
@@ -175,7 +176,7 @@ const hydration = await healCandidate({
       : { ok: false, output: 'Hydration failed because the server HTML did not match\n./pages/index.tsx:1:1', httpStatus: 500, phase: 'preview' },
   install: installOk,
 })
-assert.equal(hydration.health.verified, true)
+assert.equal(hydration.health.verified, false)
 
 const hooks = await healCandidate({
   files: page('export default function Page(){ if (true) { return null } return <div/> }\n'),
@@ -208,9 +209,22 @@ const modelFixed = await healCandidate({
     return page(`export default function Page(){ return <div>FIXED</div> }\n`)
   },
 })
-assert.equal(modelFixed.health.verified, true)
+assert.equal(modelFixed.health.verified, false)
 assert.equal(modelTries, 1)
 assert.ok(modelFixed.health.log.some((l) => l.includes('Attempt 1/3')))
+
+const repairedTheme = await healCandidate({
+  files: page('export default function Page(){ return <div/> }\n'),
+  present: ['react', 'next'],
+  probe: async (files) => files[0].file_content.includes('__evoHydrationReact') ? okProbe() : {
+    ok: false, output: 'Hydration failed because the server HTML did not match', httpStatus: 500, phase: 'preview',
+  },
+  install: installOk,
+  llmRepair: async () => page("import React, { useState } from 'react'; export default function Page(){ const [theme, setTheme] = useState(() => typeof window === 'undefined' ? 'light' : localStorage.getItem('theme') || 'light'); return <button>{theme === 'dark' ? '☀️' : '🌙'}</button> }"),
+})
+assert.match(repairedTheme.files[0].file_content, /__evoHydrationReact.useEffect/)
+assert.equal(repairedTheme.health.state, 'UNVERIFIED')
+assert.equal(repairedTheme.health.runtimeStatus, 'skipped')
 
 let badTries = 0
 const budget = await healCandidate({
@@ -240,6 +254,7 @@ const rolled = await healCandidate({
       ? { ok: false, output: "Module not found: Can't resolve 'react'\n./pages/index.tsx:1:1", httpStatus: 500, phase: 'preview' }
       : { ok: false, output: 'ReferenceError: window is not defined\n./pages/index.tsx:2:3', httpStatus: 500, phase: 'preview' },
   install: installOk,
+  llmRepair: async () => page("export default function Page(){ return <div>typeof window</div> }\n"),
 })
 assert.equal(rolled.health.verified, false)
 assert.ok(rolled.health.log.some((l) => l.includes('ROLLBACK')))
@@ -248,6 +263,48 @@ assert.equal(rolled.files[0].file_content.includes('typeof window'), false)
 assert.equal(acceptPatch('export default function Page(){ return <div/> }', '@ts-nocheck\nexport default function Page(){ return null }'), false)
 assert.equal(acceptPatch('x'.repeat(300), 'tiny'), false)
 assert.equal(filesFromModel(page('export default function Page(){ return <div/> }\n'), classifyOutput('x', 'build'), 'no fence'), null)
+
+const project: WrittenFile[] = [
+  ...page('import Hero from "../components/Hero"; export default function Page(){ return <Hero/> }'),
+  { file_path: 'components/Hero.tsx', file_content: 'export default function Hero(){ const title: string = 1; return <h1>{title}</h1> }' },
+  { file_path: 'styles/Hero.module.css', file_content: '.hero { color: green; }' },
+  { file_path: 'data/site.json', file_content: '{"title":"Campus"}' },
+]
+const supportError = classifyOutput("components/Hero.tsx(1,45): error TS2322: Type 'number' is not assignable to type 'string'.", 'build')
+assert.equal(supportError.file, 'components/Hero.tsx')
+assert.equal(supportError.line, 1)
+assert.equal(supportError.column, 45)
+const supportPatch = filesFromModel(project, supportError, '```tsx\nexport default function Hero(){ const title: string = "Campus"; return <h1>{title}</h1> }\n```')!
+assert.equal(supportPatch[0].file_content, project[0].file_content, 'Component repair cannot overwrite entry')
+assert.equal(supportPatch[2].file_content, project[2].file_content)
+assert.match(supportPatch[1].file_content, /"Campus"/)
+const cssError = classifyOutput('styles/Hero.module.css:2:1 CssSyntaxError', 'build')
+assert.equal(filesFromModel(project, cssError, '```css\n.hero { color: lime; }\n```')![2].file_content.trim(), '.hero { color: lime; }')
+const jsonError = classifyOutput('data/site.json:1:1 Unexpected token', 'build')
+assert.equal(filesFromModel(project, jsonError, '```json\n{"title":"Updated"}\n```')![3].file_content.trim(), '{"title":"Updated"}')
+assert.equal(filesFromModel(project, { ...supportError, file: 'components/Unknown.tsx' }, '```tsx\nexport default function Wrong(){ return null }\n```'), null)
+for (const path of ['../outside.ts', 'package.json', 'next.config.js']) {
+  assert.equal(filesFromModel(project, supportError, JSON.stringify({ files: [{ file_path: path, file_content: 'export const wrong = true' }] })), null)
+}
+const localProject = project.map(file => file.file_path === 'components/Hero.tsx'
+  ? { ...file, file_content: 'import { title } from "../data/title"; export default function Hero(){ return <h1>{title}</h1> }' } : file)
+let localInstalls = 0
+const localHealed = await healCandidate({
+  files: localProject, present: ['react', 'next'],
+  install: async () => { localInstalls++; return { ok: true, output: '' } },
+  probe: async files => files.some(file => file.file_path === 'data/title.ts') ? okProbe() : {
+    ok: false, phase: 'build', output: "components/Hero.tsx(1,23): error TS2307: Cannot find module '../data/title' or its corresponding type declarations.",
+  },
+  llmRepair: async ctx => {
+    assert.match(repairPrompt(ctx), /FILE: components\/Hero\.tsx/)
+    assert.match(repairPrompt(ctx), /FILE: data\/site\.json/)
+    return filesFromModel(ctx.files, ctx.error, JSON.stringify({ files: [{ file_path: 'data/title.ts', file_content: 'export const title = "Campus welcome"' }] }))
+  },
+})
+assert.equal(localInstalls, 0, 'Missing local modules are source repairs, never npm installs')
+assert.equal(localHealed.health.state, 'UNVERIFIED')
+assert.equal(localHealed.files.length, 5)
+assert.deepEqual(localHealed.files.slice(0, 4), localProject, 'New module repair preserves every existing source')
 
 let timeoutLlm = 0
 const timedOut = await healCandidate({
@@ -265,7 +322,11 @@ assert.equal(timedOut.health.state, 'UNVERIFIED')
 assert.equal(timeoutLlm, 0)
 
 assert.equal(candidateHealthLabel('done'), 'Unverified')
-assert.equal(candidateHealthLabel('done', syntax.health), 'Verified')
+assert.equal(candidateHealthLabel('done', syntax.health), 'Unverified')
+assert.equal(syntax.health.runtimeStatus, 'skipped')
+assert.equal(syntax.health.buildStatus, 'skipped')
+assert.ok(syntax.health.log.some((line) => line.includes('[HTTP] PASS')))
+assert.ok(syntax.health.log.some((line) => line.includes('Browser hydration and interactions not checked')))
 assert.equal(candidateHealthLabel('done', hooks.health), 'Failed')
 assert.equal(candidateHealthLabel('generating'), null)
 

@@ -9,7 +9,7 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
-        <script src="/${INSPECT_BRIDGE_FILENAME}" defer />
+        <script src="/${INSPECT_BRIDGE_FILENAME}" />
       </Head>
       <body>
         <Main />
@@ -53,13 +53,20 @@ async function tryRead(sbx: SandboxFiles, path: string): Promise<string | null> 
 async function ensureScriptTag(sbx: SandboxFiles, path: string) {
   const cur = await tryRead(sbx, path)
   if (cur == null) return false
-  if (cur.includes(INSPECT_BRIDGE_FILENAME)) return true
+  if (cur.includes(INSPECT_BRIDGE_FILENAME)) {
+    const synchronous = cur.replace(
+      /<script\b[^>]*__evo_inspect\.js[^>]*>/g,
+      (tag) => tag.replace(/\s+(?:defer|async)(?:=\{?(?:true|false)\}?|=['"][^'"]*['"])?/g, ''),
+    )
+    if (synchronous !== cur) await sbx.files.write(path, synchronous)
+    return true
+  }
   if (/<Head[\s>]/.test(cur) && !cur.includes(INSPECT_BRIDGE_FILENAME)) {
     await sbx.files.write(
       path,
       cur.replace(
         /<Head([^>]*)>/,
-        `<Head$1>\n        <script src="/${INSPECT_BRIDGE_FILENAME}" defer />`,
+        `<Head$1>\n        <script src="/${INSPECT_BRIDGE_FILENAME}" />`,
       ),
     )
     return true
@@ -80,7 +87,7 @@ export async function injectInspectBridge(sbx: SandboxFiles) {
     } catch {
       // not a Next pages app
     }
-  } else if (!nextDoc.includes(INSPECT_BRIDGE_FILENAME)) {
+  } else {
     await ensureScriptTag(sbx, 'pages/_document.tsx')
     await ensureScriptTag(sbx, 'pages/_document.jsx')
   }

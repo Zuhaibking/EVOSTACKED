@@ -1,4 +1,4 @@
-import { FragmentSchema, fragmentCodeText } from './schema'
+import { FragmentSchema, fragmentCodeText, fragmentSourceText } from './schema'
 import { ExecutionResult } from './types'
 import { CoreMessage, DeepPartial } from 'ai'
 
@@ -26,13 +26,22 @@ export type Message = {
 
 export function toAISDKMessages(messages: Message[]): CoreMessage[] {
   return messages.map((message) => {
-    const parts = message.content.flatMap((content) => {
+    const source = fragmentSourceText(message.object)
+    let includedSource = false
+    const parts = message.content.flatMap<MessageText | MessageImage>((content) => {
       if (content.type === 'image') {
         return [{ type: 'image' as const, image: content.image }]
+      }
+      // The UI displays entry code, but edit context must include the full bundle.
+      if (content.type === 'code' && source) {
+        if (includedSource) return []
+        includedSource = true
+        return [{ type: 'text' as const, text: source }]
       }
       const text = fragmentCodeText(content.text)
       return text ? [{ type: 'text' as const, text }] : []
     })
+    if (source && !includedSource) parts.push({ type: 'text', text: source })
 
     // Assistant array parts must be text | tool-call. Non-string `code`
     // (stream partials / multi-file) used to blow up streamObject's Zod check.
