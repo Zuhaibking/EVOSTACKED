@@ -26,6 +26,7 @@ import {
   healCandidate,
   isBuildFailure,
   repairPrompt,
+  unusedTemplateUiErrors,
   type ProbeResult,
   type RepairContext,
 } from '@/lib/verify'
@@ -267,6 +268,9 @@ export async function POST(req: Request) {
     },
     timeoutMs: sandboxTimeout,
     requestTimeoutMs: 60_000,
+    // Hosted baseline templates predate secured envd access. Match the
+    // interpreter SDK's previous access setting while enabling persistence.
+    secure: false,
     ...(teamID && accessToken
       ? {
           headers: {
@@ -278,15 +282,22 @@ export async function POST(req: Request) {
   }
   const createdAt = Date.now()
   provisioningStarted = true
-  const created = await withSignal<Sandbox>(sandboxTemplate === 'code-interpreter-v1'
+  const sandboxTask = withSignal<Sandbox>(sandboxTemplate === 'code-interpreter-v1'
     ? InterpreterSandbox.create(sandboxTemplate, options)
     : WebSandbox.create(sandboxTemplate, {
         ...options,
-        // Hosted baseline templates predate secured envd access. Match the
-        // interpreter SDK's previous access setting while enabling persistence.
-        secure: false,
         lifecycle: { onTimeout: 'pause', autoResume: true },
       }), signal)
+  const imageTask = withSignal(resolveImages(sourceFiles, signal), signal)
+  let created: Sandbox
+  let imaged: Awaited<ReturnType<typeof resolveImages>>
+  try {
+    ;[created, imaged] = await Promise.all([sandboxTask, imageTask])
+  } catch (error) {
+    void sandboxTask.catch(() => {})
+    void imageTask.catch(() => {})
+    throw error
+  }
   signal.throwIfAborted()
   const sbx = guardedSandbox(created, signal, deadline)
 
@@ -299,8 +310,6 @@ export async function POST(req: Request) {
   const healNext =
     sandboxTemplate === 'nextjs-developer' && !isStaticHtml(fragment)
 
-  const imaged = await withSignal(resolveImages(sourceFiles, signal), signal)
-  signal.throwIfAborted()
   // The image manifest belongs to preview infrastructure, never to editable source.
   const imageManifest = imaged.files.find(file => file.file_path === `${IMAGE_DIR}/manifest.json`)
   if (imageManifest) await sbx.files.write(imageManifest.file_path, imageManifest.file_content)
@@ -312,6 +321,7 @@ export async function POST(req: Request) {
 
   if (healNext) {
     let typecheckPassed = false
+    let probedFiles: WrittenFile[] | null = null
     if (imaged.binaries.length) await sbx.files.write(imaged.binaries.map(bin => ({ path: bin.file_path, data: bin.data })))
     const present = await readInstalledPackages(sbx)
     const previewUrl = `https://${sbx.getHost(resolveSandboxPort(sandboxTemplate))}`
@@ -323,9 +333,17 @@ export async function POST(req: Request) {
       log: (line) => console.log(line),
       install: (pkgs) => installMissing(sbx, pkgs),
       probe: async (nextFiles) => {
-        await writeFiles(sbx, withMissingLocalModules(nextFiles, legacySingleFile))
+        const written = withMissingLocalModules(nextFiles, legacySingleFile)
+        await writeFiles(sbx, written)
+        probedFiles = written
         typecheckPassed = false
-        const types = await runCmd(sbx, './node_modules/.bin/tsc --project ./tsconfig.json --noEmit --incremental false --pretty false', 30_000)
+        let types = await runCmd(sbx, './node_modules/.bin/tsc --project ./tsconfig.json --noEmit --incremental false --pretty false', 30_000)
+        const staleUi = unusedTemplateUiErrors(types.output, nextFiles)
+        if (!types.ok && staleUi.length) {
+          await sbx.commands.run(`rm -f ${staleUi.join(' ')}`)
+          console.log(`[EvoStack][TYPECHECK] skipped unused template files: ${staleUi.join(', ')}`)
+          types = await runCmd(sbx, './node_modules/.bin/tsc --project ./tsconfig.json --noEmit --incremental false --pretty false', 30_000)
+        }
         typecheckPassed = types.ok
         if (!types.ok) return { ok: false, output: types.output, phase: 'build' }
         if (reportedRuntimeError) {
@@ -343,7 +361,9 @@ export async function POST(req: Request) {
       health.log.push('[EvoStack][TYPECHECK] PASS')
     }
     files = withMissingLocalModules(healed.files, legacySingleFile)
-    await writeFiles(sbx, files)
+    // The probe already wrote these bytes. A repair can roll back after that
+    // write, so a changed set or any repair still uploads.
+    if (health.repaired || !sameWrittenFiles(probedFiles, files)) await writeFiles(sbx, files)
   } else {
     if (npmTemplate && npmPkgs.length) {
       const installed = await installMissing(sbx, npmPkgs)
@@ -514,6 +534,11 @@ function validImageQueries(manifest: unknown): NonNullable<ExecutionResultWeb['i
     row && typeof row.file === 'string' && /^[\w-][\w.-]{0,200}$/.test(row.file) &&
     typeof row.query === 'string' && row.query.trim() && row.query.length <= 1000 && !/["'`\\\r\n)]/.test(row.query),
   ).map((row) => ({ file: row.file, query: row.query }))
+}
+
+function sameWrittenFiles(current: readonly WrittenFile[] | null, next: readonly WrittenFile[]) {
+  if (!current || current.length !== next.length) return false
+  return current.every((file, index) => file.file_path === next[index].file_path && file.file_content === next[index].file_content)
 }
 
 async function writeFiles(sbx: Sandbox, files: WrittenFile[]) {

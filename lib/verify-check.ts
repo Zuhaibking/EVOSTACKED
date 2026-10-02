@@ -6,6 +6,7 @@ import {
   candidateHealthLabel,
   classifyOutput,
   filesFromModel,
+  unusedTemplateUiErrors,
   healCandidate,
   regressed,
   repairPrompt,
@@ -49,6 +50,18 @@ assert.equal(classifyOutput("You're importing a component that needs useState. I
 assert.equal(classifyOutput('React Hook "useState" is called conditionally', 'preview').category, 'REACT_RUNTIME_ERROR')
 assert.equal(classifyOutput('The default export is not a React Component', 'build').category, 'EXPORT_ERROR')
 assert.equal(classifyOutput("components/QRCode.tsx(2,20): error TS7016: Could not find a declaration file for module 'qrcode'.", 'build').category, 'TYPE_DECLARATION_MISSING')
+assert.deepEqual(
+  unusedTemplateUiErrors("components/ui/resizable.tsx:10:5: error TS2339: Property 'PanelGroup' does not exist.", page('export default function Page(){return null}')),
+  ['components/ui/resizable.tsx'],
+)
+assert.deepEqual(
+  unusedTemplateUiErrors("components/ui/resizable.tsx:10:5: error TS2339: Property 'PanelGroup' does not exist.", [{ file_path: 'pages/index.tsx', file_content: "import { ResizablePanel } from '@/components/ui/resizable'" }]),
+  [],
+)
+assert.deepEqual(
+  unusedTemplateUiErrors("components/ui/resizable.tsx(10,5): error TS2339\npages/index.tsx:2:3: error TS2322", page('export default function Page(){return null}')),
+  ['components/ui/resizable.tsx'],
+)
 assert.equal(classifyOutput("Attempted import error: 'Foo' is not exported from 'bar'", 'build').category, 'IMPORT_ERROR')
 assert.equal(regressed(
   { install: true, build: true, preview: false, http: true, runtime: false },

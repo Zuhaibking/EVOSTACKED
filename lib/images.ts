@@ -27,6 +27,7 @@ const MIN_BYTES = 2048
 const MAX_BYTES = 8 * 1024 * 1024
 const MAX_REDIRECTS = 5
 const DOWNLOAD_TRIES = 5
+const IMAGE_QUERY_CONCURRENCY = 3
 
 export type ImageAsset = {
   query: string
@@ -174,24 +175,44 @@ export async function resolveImages(
     signal.addEventListener('abort', onAbort, { once: true })
   })
 
-  try {
-  for (const query of queries) {
-    if (signal.aborted) break
-    try {
-      const asset = await Promise.race([resolveOne(query, byUrl, signal), stopped])
-      if (signal.aborted) break
-      if (asset) {
-        byQuery.set(query, asset)
-        byUrl.set(asset.source, asset)
-      } else {
+  const outcomes: (ImageAsset | null | undefined)[] = new Array(queries.length)
+  let nextQuery = 0
+  const runQuery = async () => {
+    while (!signal.aborted) {
+      const index = nextQuery++
+      if (index >= queries.length) return
+      const query = queries[index]
+      try {
+        // Snapshot so in-flight queries keep today's provider order and cannot
+        // steal a photo another query has not finished selecting.
+        const asset = await Promise.race([resolveOne(query, new Map(byUrl), signal), stopped])
+        if (signal.aborted) return
+        outcomes[index] = asset
+        if (asset) byUrl.set(asset.source, asset)
+        else console.warn(`[images] omitted: no real image for "${query}"`)
+      } catch (err) {
+        if (signal.aborted) return
+        outcomes[index] = null
         console.warn(`[images] omitted: no real image for "${query}"`)
+        console.warn('[images] failed', err instanceof Error ? err.message : err)
       }
-    } catch (err) {
-      console.warn(`[images] omitted: no real image for "${query}"`)
-      console.warn('[images] failed', err instanceof Error ? err.message : err)
     }
   }
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(IMAGE_QUERY_CONCURRENCY, queries.length) }, () => runQuery()))
   } finally { signal.removeEventListener('abort', onAbort) }
+
+  // Same dedup as the old sequential loop: the earliest query keeps the file.
+  const seenSource = new Map<string, ImageAsset>()
+  for (let index = 0; index < queries.length; index++) {
+    const asset = outcomes[index]
+    if (!asset) continue
+    const earlier = seenSource.get(asset.source)
+    const chosen = earlier ? { ...earlier, query: queries[index] } : asset
+    byQuery.set(queries[index], chosen)
+    if (!earlier) seenSource.set(asset.source, asset)
+  }
 
   const publicByQuery = new Map<string, string>()
   Array.from(byQuery.entries()).forEach(([query, asset]) => {

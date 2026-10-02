@@ -153,6 +153,26 @@ function installDetail(text: string): string {
   return ''
 }
 
+/** Template UI that fails tsc but is not part of this project. Repairing it only delays the preview. */
+export function unusedTemplateUiErrors(output: string, files: readonly Pick<WrittenFile, 'file_path' | 'file_content'>[]): string[] {
+  const authored = new Set(files.map((file) => file.file_path.replace(/^\.\//, '')))
+  const referenced = new Set<string>()
+  for (const file of files) {
+    for (const match of file.file_content.matchAll(/@\/components\/ui\/([A-Za-z0-9_./-]+)/g)) {
+      const base = match[1].replace(/\.(tsx|ts|jsx|js)$/, '')
+      referenced.add(`components/ui/${base}.tsx`)
+      referenced.add(`components/ui/${base}.ts`)
+    }
+  }
+  const paths = new Set<string>()
+  for (const line of output.split('\n')) {
+    const match = /^(components\/ui\/[A-Za-z0-9_./-]+\.tsx?)(?::\d+:\d+:|\(\d+,\d+\):)/.exec(line.trim())
+    if (!match || authored.has(match[1]) || referenced.has(match[1])) continue
+    paths.add(match[1])
+  }
+  return [...paths]
+}
+
 export function regressed(before: GateSnapshot, after: GateSnapshot): boolean {
   return (Object.keys(before) as (keyof GateSnapshot)[]).some((k) => before[k] && !after[k])
 }

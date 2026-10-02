@@ -447,4 +447,55 @@ async function checkPhotoBudget() {
   } finally { globalThis.fetch = originalFetch; AbortSignal.timeout = originalTimeout }
 }
 
-void checkPhotoBudget().catch(error => { console.error(error); process.exitCode = 1 })
+void checkPhotoBudget()
+  .then(() => checkQueryConcurrency())
+  .catch(error => { console.error(error); process.exitCode = 1 })
+
+async function checkQueryConcurrency() {
+  const originalFetch = globalThis.fetch
+  let active = 0
+  let max = 0
+  const jpeg = new Uint8Array(3000)
+  jpeg[0] = 0xff
+  jpeg[1] = 0xd8
+  jpeg[2] = 0xff
+  jpeg[3] = 0xe0
+  const queries = [
+    'alpha courtyard photograph',
+    'beta harbor photograph',
+    'gamma mountain photograph',
+    'delta forest photograph',
+  ]
+  try {
+    globalThis.fetch = async (url) => {
+      active++
+      max = Math.max(max, active)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      active--
+      const href = String(url)
+      if (href.includes('api.openverse.org')) {
+        return Response.json({
+          results: [{ title: 'shared subject', url: 'https://images.example.com/shared.jpg', mature: false, width: 1200, height: 800 }],
+        })
+      }
+      if (href === 'https://images.example.com/shared.jpg') {
+        return new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+      }
+      return Response.json({ results: [] })
+    }
+    const result = await resolveImages([{
+      file_path: 'pages/index.tsx',
+      file_content: queries.map(query => `<img src="evo-image://${query}" />`).join(''),
+    }])
+    assert.ok(max >= 2 && max <= 3, `image queries overlapped ${max} at once`)
+    const paths = queries.map(query => {
+      const file = result.files[0].file_content.match(new RegExp(`evo-image://${query.replace(/ /g, ' ')}`))
+      assert.equal(file, null)
+      return result.manifest.find(row => row.query === query)?.file
+    })
+    assert.ok(paths[0]?.startsWith('alpha-courtyard-'))
+    assert.deepEqual(paths, [paths[0], paths[0], paths[0], paths[0]])
+    assert.equal(result.binaries.length, 1)
+    console.log('images-check query concurrency ok: cap 3, earliest query keeps the shared file')
+  } finally { globalThis.fetch = originalFetch }
+}
