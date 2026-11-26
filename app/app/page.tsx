@@ -53,6 +53,7 @@ import { ExecutionResult } from '@/lib/types'
 import { createSandbox } from '@/lib/sandbox-client'
 import { DiscoveryPanel } from '@/components/discovery/discovery-panel'
 import { EvidenceBoard } from '@/components/evidence/evidence-board'
+import { rankCandidates } from '@/lib/evidence/score'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from '@ai-sdk/react'
 import { usePostHog } from 'posthog-js/react'
@@ -93,7 +94,27 @@ export default function Home() {
   const [discovery, setDiscovery] = useState<{ idea: string; messages: Message[] } | null>(null)
   const [measuring, setMeasuring] = useState<Partial<Record<VariantId, boolean>>>({})
   const [evidenceWeights, setEvidenceWeights] = useLocalStorage<EvidenceWeights>('evostack.evidence.weights', DEFAULT_WEIGHTS)
-  const [evidenceOpen, setEvidenceOpen] = useLocalStorage('evostack.evidence.open', true)
+  // The full leaderboard opens as an overlay over the preview; the in-flow row stays one line so the
+  // preview keeps its height. Transient on purpose: it must never re-open over the preview on load.
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const evidenceToggleRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!evidenceOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      // An open modal (auth / delete / share dialog) owns this Esc.
+      if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')) return
+      // Layered dismiss: this Esc closes only the leaderboard, not the inspect selection behind it.
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      const focusInside = document.getElementById('evidence-leaderboard')?.contains(document.activeElement)
+      setEvidenceOpen(false)
+      if (focusInside) requestAnimationFrame(() => evidenceToggleRef.current?.focus())
+    }
+    // Capture phase: runs before the preview's window-level Esc handler.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [evidenceOpen])
   const tournament = useTournament()
   // Persisted evidence weights drive the tournament's winner reconciliation.
   useEffect(() => {
@@ -1085,10 +1106,41 @@ export default function Home() {
       }
     })
   const measuredCount = evidenceCandidates.filter((c) => c.evidence).length
+  const evidenceLeader = rankCandidates(evidenceCandidates, evidenceWeights).find((r) => r.measured && !r.score.disqualified) ?? null
+  /** Leaderboard overlay. Inside the preview box it is capped to that box, so it can never push or overflow the pane. */
+  const renderEvidenceOverlay = (placement: 'preview' | 'row') => (evidenceOpen && showEvidence ? (
+    <div
+      id="evidence-leaderboard"
+      className={`workspace-scrollbar absolute inset-x-0 z-30 overflow-y-auto border-b border-border/70 bg-background/95 px-5 pb-4 pt-1 shadow-2xl shadow-black/40 backdrop-blur ${
+        placement === 'preview' ? 'top-0 max-h-[70vh] lg:max-h-full' : 'top-full max-h-[min(72vh,calc(100dvh-240px))]'
+      }`}
+    >
+      {measuredCount > 0 ? (
+        <EvidenceBoard
+          candidates={evidenceCandidates}
+          winnerId={tournament.verdict?.winnerId ?? null}
+          weights={evidenceWeights}
+          onWeightsChange={setEvidenceWeights}
+          onSelect={(id) => { setSelectedCandidate(id as VariantId); setEvidenceOpen(false) }}
+          selectedId={selectedCandidate ?? null}
+        />
+      ) : (
+        <EvidenceSkeleton count={Math.max(evidenceCandidates.length, 1)} />
+      )}
+    </div>
+  ) : null)
   const isMeasuring = Object.values(measuring).some(Boolean)
   const showEvidence = hasTournament && (measuredCount > 0 || isMeasuring)
   const winnerId = tournament.winnerId ?? tournament.verdict?.winnerId ?? null
   const activeProjectId = projectStore?.activeId
+  // Close the leaderboard when switching projects or starting a new run
+  // (React's "adjust state when a key changes" pattern, no effect needed).
+  const evidenceScope = `${activeProjectId ?? ''}:${tournament.runID ?? ''}`
+  const [openedInScope, setOpenedInScope] = useState(evidenceScope)
+  if (openedInScope !== evidenceScope) {
+    setOpenedInScope(evidenceScope)
+    setEvidenceOpen(false)
+  }
   const showLaunch = Boolean(
     activeProjectId && fragment && tournament.phase === 'done' && selectedSpec?.status === 'done' &&
     selectedSpec.sandboxStatus === 'ready' && result && 'url' in result,
@@ -1309,7 +1361,7 @@ export default function Home() {
           )}
         </aside>
 
-        <section className="relative flex min-h-[420px] min-w-0 flex-col overflow-hidden bg-background lg:min-h-0">
+        <section className="relative flex min-h-[420px] min-w-0 flex-col overflow-x-hidden overflow-y-auto bg-background lg:min-h-0">
           {!fragment && dockCommand && (
             <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-6">
               <span className="flex items-center gap-2 text-xs text-muted-foreground"><Layers3 className="h-3.5 w-3.5" />Workspace</span>
@@ -1341,43 +1393,49 @@ export default function Home() {
             />
           )}
           {showEvidence && (
-            <div className="shrink-0 border-b border-border/60 bg-background">
+            <div className="relative shrink-0 border-b border-border/60 bg-background">
               <button
                 type="button"
+                ref={evidenceToggleRef}
                 onClick={() => setEvidenceOpen(!evidenceOpen)}
                 aria-expanded={evidenceOpen}
+                aria-controls="evidence-leaderboard"
                 className="flex h-10 w-full items-center justify-between gap-3 px-5 text-left text-xs transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <Gauge className="h-3.5 w-3.5 shrink-0 text-brand" />
-                  <span className="font-medium text-foreground">Evidence</span>
-                  <span className="truncate text-muted-foreground">
-                    {measuredCount} of {evidenceCandidates.length} measured{isMeasuring ? ' · measuring live previews…' : ''}
+                  <span className="shrink-0 font-medium text-foreground">Evidence</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {measuredCount} of {evidenceCandidates.length} measured
                   </span>
-                  {isMeasuring && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-brand" />}
-                </span>
-                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${evidenceOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {evidenceOpen && (
-                <div className="workspace-scrollbar max-h-[42vh] overflow-y-auto px-5 pb-4">
-                  {measuredCount > 0 ? (
-                    <EvidenceBoard
-                      candidates={evidenceCandidates}
-                      winnerId={tournament.verdict?.winnerId ?? null}
-                      weights={evidenceWeights}
-                      onWeightsChange={setEvidenceWeights}
-                      onSelect={(id) => setSelectedCandidate(id as VariantId)}
-                      selectedId={selectedCandidate ?? null}
-                    />
-                  ) : (
-                    <EvidenceSkeleton count={Math.max(evidenceCandidates.length, 1)} />
+                  {isMeasuring && <Loader2 aria-hidden className="h-3 w-3 shrink-0 animate-spin text-brand" />}
+                  {isMeasuring && <span className="sr-only">Measuring live previews…</span>}
+                  {evidenceLeader && (
+                    <span className="hidden min-w-0 items-center gap-1.5 truncate text-muted-foreground md:flex">
+                      <span aria-hidden>·</span>
+                      <span className="text-brand-accent" aria-hidden>★</span>
+                      <span className="truncate font-medium text-foreground">{evidenceLeader.candidate.label}</span>
+                      <span className="font-mono tabular-nums text-foreground">{evidenceLeader.score.total.toFixed(1)}</span>
+                      {typeof evidenceLeader.candidate.evidence?.ttfbP95Ms === 'number' && (
+                        <span className="shrink-0">· p95 {Math.round(evidenceLeader.candidate.evidence.ttfbP95Ms)} ms</span>
+                      )}
+                      {typeof evidenceLeader.candidate.evidence?.errorRate === 'number' && (
+                        <span className="shrink-0">· {Math.round(evidenceLeader.candidate.evidence.errorRate * 100)}% errors</span>
+                      )}
+                    </span>
                   )}
-                </div>
-              )}
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                  <span className="hidden sm:inline">{evidenceOpen ? 'Hide leaderboard' : 'View leaderboard'}</span>
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${evidenceOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+              {!fragment && renderEvidenceOverlay('row')}
             </div>
           )}
           {fragment ? (
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="relative min-h-[70vh] flex-1 overflow-hidden lg:min-h-[360px]">
+              {renderEvidenceOverlay('preview')}
               <Preview
                 teamID={userTeam?.id}
                 accessToken={session?.access_token}
