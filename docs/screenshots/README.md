@@ -87,3 +87,25 @@ These are real captures, not mockups. Each one comes from a headless Chrome run 
 
 **22 — Record drawer with validation errors** returned by the API.
 ![Validation](22-module-record-drawer-validation.png)
+
+## 6. Preview layout fix (before / after)
+
+**23 — Before: the preview is crushed.** Owner's screen at 1918×850. The launch card (~157 px) and the expanded evidence leaderboard (~400 px) were stacked above the preview in a fixed-height pane, so the website was squeezed into a ~50 px strip.
+![Before](23-preview-layout-before-1918x850.png)
+
+**24 — After: the preview fills the pane.** Same 1918×850 viewport. Launch is one compact row and evidence is one summary line, so the preview iframe is 554 px tall.
+![After](24-preview-layout-after-1918x850.png)
+
+**25 — The full leaderboard opens as an overlay.** "View leaderboard" opens it on top of the preview without moving or resizing it. Esc closes it.
+![Leaderboard overlay](25-evidence-leaderboard-overlay.png)
+
+**26 — Mobile (390×844).** The launch bar, evidence row and preview stack in order, and the preview no longer covers them.
+![Mobile](26-preview-layout-after-mobile.png)
+
+## 7. Images in generated sites (before / after)
+
+**27 — Before: broken image.** The image source (Openverse) was timing out and returning 5xx errors, which used up the whole image budget. Every reference became an empty `src`, so cards showed only their alt text.
+![Broken image](27-images-before-broken-card.png)
+
+**28 — After: on-brand AI photos.** The images are generated per `evo-image://` query (`gpt-image-2.6-flare`, about 6 s each, WebP). They are cached and restored after inspector edits. Stock photos are now a resilient fallback, and the last fallback is a clean placeholder (the pastel advisor card here comes from a deliberately string-concatenated reference). Nothing renders broken.
+![AI photos](28-images-after-ai-photos.png)

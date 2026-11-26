@@ -298,7 +298,12 @@ export async function POST(req: Request) {
     if (signal.aborted) discardSandbox('request ended before creation finished')
   }, () => {})
   const sandboxTask = withSignal<Sandbox>(creating, signal)
-  const imageTask = withSignal(resolveImages(sourceFiles, signal), signal)
+  // Photos resolve while the sandbox boots; the site's title/description steer AI photos,
+  // and paid AI photos count against the verified owner's hourly quota.
+  const imageTask = withSignal(resolveImages(sourceFiles, signal, {
+    context: { title: fragment.title, description: fragment.description },
+    userId: ownerID,
+  }), signal)
   let created: Sandbox
   let imaged: Awaited<ReturnType<typeof resolveImages>>
   try {
@@ -600,9 +605,10 @@ function portableFragment(actual: FragmentSchema, manifest: unknown, saved?: Fra
   return converted ? fragmentWithFiles(actual, files) : saved || actual
 }
 
+/** Rows that convert a photo file back into its evo-image:// query; `portable: false` files (runtime-built or unknown query) stay files. */
 function validImageQueries(manifest: unknown): NonNullable<ExecutionResultWeb['imageQueries']> {
   return (Array.isArray(manifest) ? manifest.slice(0, 128) : []).filter((row) =>
-    row && typeof row.file === 'string' && /^[\w-][\w.-]{0,200}$/.test(row.file) &&
+    row && row.portable !== false && typeof row.file === 'string' && /^[\w-][\w.-]{0,200}$/.test(row.file) &&
     typeof row.query === 'string' && row.query.trim() && row.query.length <= 1000 && !/["'`\\\r\n)]/.test(row.query),
   ).map((row) => ({ file: row.file, query: row.query }))
 }

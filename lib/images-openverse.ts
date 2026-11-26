@@ -1,4 +1,4 @@
-import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
+import { isSafeImageUrl, providerJson, type ImageCandidate } from './images-shared'
 
 const OPENVERSE = 'https://api.openverse.org/v1/images/'
 
@@ -9,28 +9,8 @@ export async function searchOpenverse(query: string, signal?: AbortSignal): Prom
     q,
     page_size: '20',
   }).toString()}`
-  try {
-    signal?.throwIfAborted()
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': IMAGE_UA,
-      },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
-    })
-    if (!res.ok) {
-      console.warn(`[images] openverse http ${res.status}`)
-      return []
-    }
-    const data: unknown = await res.json()
-    return parseOpenverse(data)
-  } catch (err) {
-    console.warn(
-      '[images] openverse search failed',
-      err instanceof Error ? err.message : err,
-    )
-    return []
-  }
+  const data = await providerJson('openverse', url, signal)
+  return data ? parseOpenverse(data) : []
 }
 
 export function parseOpenverse(data: unknown): ImageCandidate[] {

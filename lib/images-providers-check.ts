@@ -43,12 +43,13 @@ async function main() {
     hitsByProvider.set(name, total)
   }
 
-  if (!hitsByProvider.get('openverse')) {
-    throw new Error('openverse returned zero results for all test queries')
+  // The resolver searches providers in parallel behind circuit breakers, so one
+  // provider outage (Openverse 5xx/timeouts) degrades quality but never blanks photos.
+  const dead = [...hitsByProvider].filter(([, total]) => !total).map(([name]) => name)
+  if (dead.length === providers.length) {
+    throw new Error('every stock image provider returned zero results for all test queries')
   }
-  if (!hitsByProvider.get('wikimedia')) {
-    throw new Error('wikimedia returned zero results for all test queries')
-  }
+  if (dead.length) console.warn(`[images-providers-check] no results from: ${dead.join(', ')}`)
 
   console.log(
     JSON.stringify({

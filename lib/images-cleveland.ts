@@ -1,4 +1,4 @@
-import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
+import { isSafeImageUrl, providerJson, type ImageCandidate } from './images-shared'
 
 const CMA = 'https://openaccess-api.clevelandart.org/api/artworks/'
 const CC0_URL = 'https://creativecommons.org/publicdomain/zero/1.0/'
@@ -12,27 +12,8 @@ export async function searchCleveland(query: string, signal?: AbortSignal): Prom
     has_image: '1',
     limit: '20',
   }).toString()}`
-  try {
-    signal?.throwIfAborted()
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': IMAGE_UA,
-      },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
-    })
-    if (!res.ok) {
-      console.warn(`[images] cleveland http ${res.status}`)
-      return []
-    }
-    return parseCleveland(await res.json())
-  } catch (err) {
-    console.warn(
-      '[images] cleveland search failed',
-      err instanceof Error ? err.message : err,
-    )
-    return []
-  }
+  const data = await providerJson('cleveland', url, signal)
+  return data ? parseCleveland(data) : []
 }
 
 export function parseCleveland(data: unknown): ImageCandidate[] {

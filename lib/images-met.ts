@@ -1,4 +1,4 @@
-import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
+import { isSafeImageUrl, providerJson, type ImageCandidate } from './images-shared'
 
 const MET_SEARCH = 'https://collectionapi.metmuseum.org/public/collection/v1.1'
 const MET_OBJECT = 'https://collectionapi.metmuseum.org/public/collection/v1'
@@ -16,35 +16,18 @@ export async function searchMet(query: string, signal?: AbortSignal): Promise<Im
     offset: '0',
     limit: String(SEARCH_LIMIT),
   }).toString()}`
-  try {
-    signal?.throwIfAborted()
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': IMAGE_UA,
-      },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
-    })
-    if (!res.ok) {
-      console.warn(`[images] met http ${res.status}`)
-      return []
-    }
-    const ids = parseMetSearch(await res.json()).slice(0, OBJECT_FETCH_CAP)
-    const out: ImageCandidate[] = []
-    for (const id of ids) {
-      signal?.throwIfAborted()
-      const row = await fetchMetObject(id, signal)
-      const cand = parseMetObject(row)
-      if (cand) out.push(cand)
-    }
-    return out
-  } catch (err) {
-    console.warn(
-      '[images] met search failed',
-      err instanceof Error ? err.message : err,
-    )
-    return []
+  const data = await providerJson('met', url, signal)
+  if (!data) return []
+  // Object lookups run together; each is bounded by the shared provider timeout.
+  const ids = parseMetSearch(data).slice(0, OBJECT_FETCH_CAP)
+  const rows = await Promise.all(ids.map((id) =>
+    providerJson('met', `${MET_OBJECT}/objects/${id}`, signal, { record: false })))
+  const out: ImageCandidate[] = []
+  for (const row of rows) {
+    const cand = parseMetObject(row)
+    if (cand) out.push(cand)
   }
+  return out
 }
 
 export function parseMetSearch(data: unknown): number[] {
@@ -84,23 +67,6 @@ export function parseMetObject(data: unknown): ImageCandidate | null {
     provider: 'met',
     ...(description ? { description } : {}),
     ...(tags ? { tags } : {}),
-  }
-}
-
-async function fetchMetObject(id: number, signal?: AbortSignal): Promise<unknown> {
-  try {
-    signal?.throwIfAborted()
-    const res = await fetch(`${MET_OBJECT}/objects/${id}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': IMAGE_UA,
-      },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
-    })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
   }
 }
 

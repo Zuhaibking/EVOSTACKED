@@ -11,11 +11,8 @@ import {
   Copy,
   DatabaseZap,
   ExternalLink,
-  LayoutDashboard,
   Loader2,
   RotateCcw,
-  ServerCog,
-  Workflow,
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -209,30 +206,23 @@ export function LaunchBackend({
   }
 
   return (
-    <div className={`shrink-0 border-b border-border/60 bg-background px-4 py-3 ${className}`}>
-      <div className="relative overflow-hidden rounded-xl border border-brand/25 bg-gradient-to-r from-brand/[0.06] via-card to-card px-4 py-3.5 sm:px-5">
+    <div className={`shrink-0 border-b border-border/60 bg-background px-4 py-2 ${className}`}>
+      <div className="relative overflow-hidden rounded-xl border border-brand/25 bg-gradient-to-r from-brand/[0.06] via-card to-card px-3.5 py-2.5 sm:px-4">
         {stage === 'idle' && (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-brand/30 bg-brand/10 text-brand">
-                <DatabaseZap className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold leading-snug text-foreground">
-                  Make it real: launch backend &amp; control center for {displayName}
-                </p>
-                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                  Creates an isolated database, a REST API and an admin panel tailored to {projectType ? <span className="font-medium text-foreground">{projectType}</span> : 'your project'}. Website form submissions appear in the dashboard live.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/70 px-1.5 py-0.5"><DatabaseZap className="h-3 w-3" />Isolated database</span>
-                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/70 px-1.5 py-0.5"><ServerCog className="h-3 w-3" />REST API</span>
-                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/70 px-1.5 py-0.5"><LayoutDashboard className="h-3 w-3" />Control Center</span>
-                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background/70 px-1.5 py-0.5"><Workflow className="h-3 w-3" />Workflows</span>
-                </div>
-              </div>
+          // One compact row: this bar sits above the live preview and must never squeeze it.
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-brand/30 bg-brand/10 text-brand">
+              <DatabaseZap className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold leading-snug text-foreground">
+                Make it real: launch backend &amp; control center for {displayName}
+              </p>
+              <p className="truncate text-[12px] leading-snug text-muted-foreground">
+                Isolated database · REST API · admin panel tailored to {projectType ? <span className="font-medium text-foreground">{projectType}</span> : 'your project'} · live form submissions
+              </p>
             </div>
-            <Button type="button" onClick={launch} className="shrink-0 gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90">
+            <Button type="button" size="sm" onClick={launch} className="shrink-0 gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90">
               Launch backend<ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -243,7 +233,7 @@ export function LaunchBackend({
             <div className="flex items-center justify-between gap-3">
               <p className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-foreground" role="status" aria-live="polite">
                 {stage === 'ready'
-                  ? <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-accent/15 text-brand-accent"><Check className="h-3 w-3" /></span>
+                  ? <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-accent/15 text-brand-accent"><Check className="h-3 w-3" /></span>
                   : stage === 'error'
                     ? <CircleAlert className="h-4 w-4 text-destructive" />
                     : <Loader2 className="h-4 w-4 animate-spin text-brand" />}
@@ -279,9 +269,24 @@ export function LaunchBackend({
                 )}
               </div>
             </div>
-            <ol className="mt-3 grid gap-2 sm:grid-cols-4">
+            {stage === 'ready' && (
+              <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-[12px] text-muted-foreground">
+                <span className="min-w-0 truncate" title={[detail.design, detail.database].filter(Boolean).join(' · ')}>
+                  {[detail.design, detail.database].filter(Boolean).join(' · ')}
+                </span>
+                {detail.connect && (detail.connect.startsWith('Skipped') ? (
+                  // Always visible: forms on the site are NOT wired to the backend yet.
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400" title={detail.connect}>
+                    <CircleAlert className="h-3 w-3" />Website not connected
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1"><Check className="h-3 w-3 text-brand-accent" />{detail.connect}</span>
+                ))}
+              </p>
+            )}
+            {stage !== 'ready' && <ol className="mt-2.5 grid gap-2 sm:grid-cols-4">
               {STEPS.map((s, index) => {
-                const done = stage === 'ready' || index < current
+                const done = index < current
                 const active = stage === 'running' && index === current
                 const failed = stage === 'error' && error?.step === index
                 const label = s.key === 'database' && active && detail.database ? detail.database : s.label
@@ -297,7 +302,7 @@ export function LaunchBackend({
                   </li>
                 )
               })}
-            </ol>
+            </ol>}
             {stage === 'error' && error && (
               <p role="alert" className="mt-2 text-[12px] leading-relaxed text-destructive">{error.message}</p>
             )}

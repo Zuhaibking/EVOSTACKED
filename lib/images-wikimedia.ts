@@ -1,4 +1,4 @@
-import { IMAGE_UA, isSafeImageUrl, type ImageCandidate } from './images-shared'
+import { isSafeImageUrl, providerJson, type ImageCandidate } from './images-shared'
 
 const WIKI = 'https://commons.wikimedia.org/w/api.php'
 
@@ -17,28 +17,8 @@ export async function searchWikimedia(query: string, signal?: AbortSignal): Prom
     iiprop: 'url|size|mime|extmetadata',
     iiurlwidth: '1600',
   }).toString()}`
-  try {
-    signal?.throwIfAborted()
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': IMAGE_UA,
-      },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
-    })
-    if (!res.ok) {
-      console.warn(`[images] wikimedia http ${res.status}`)
-      return []
-    }
-    const data: unknown = await res.json()
-    return parseWikimedia(data)
-  } catch (err) {
-    console.warn(
-      '[images] wikimedia search failed',
-      err instanceof Error ? err.message : err,
-    )
-    return []
-  }
+  const data = await providerJson('wikimedia', url, signal)
+  return data ? parseWikimedia(data) : []
 }
 
 export function parseWikimedia(data: unknown): ImageCandidate[] {
