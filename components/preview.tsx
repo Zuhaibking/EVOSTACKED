@@ -6,6 +6,7 @@ import { FragmentPreview } from './fragment-preview'
 import { InspectPanel } from './inspect-panel'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
+import { toast } from '@/components/ui/use-toast'
 import {
   Tooltip,
   TooltipContent,
@@ -21,7 +22,7 @@ import { FragmentSchema, fragmentSourceFiles } from '@/lib/schema'
 import { getTemplateId } from '@/lib/templates'
 import { ExecutionResult, ExecutionResultWeb } from '@/lib/types'
 import { DeepPartial } from 'ai'
-import { Crosshair, LoaderCircle, X } from 'lucide-react'
+import { Crosshair, Download, LoaderCircle, X } from 'lucide-react'
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react'
 
 export type InspectControls = {
@@ -235,6 +236,9 @@ export function Preview({
               </TooltipProvider>
             )}
             {result && isLinkAvailable && (
+              <DownloadProjectButton sbxId={result.sbxId} title={fragment.title} disabled={isPreviewLoading} />
+            )}
+            {result && isLinkAvailable && (
               <DeployDialog
                 url={(result as ExecutionResultWeb).url!}
                 sbxId={result.sbxId!}
@@ -340,5 +344,54 @@ export function Preview({
         </div>
       </Tabs>
     </div>
+  )
+}
+
+function DownloadProjectButton({ sbxId, title, disabled }: { sbxId: string; title?: string; disabled?: boolean }) {
+  const [busy, setBusy] = useState(false)
+  async function download() {
+    setBusy(true)
+    try {
+      const response = await fetch('/api/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sbxId, title }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || 'Could not download this project.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '')?.[1] || 'project.zip'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast({
+        title: 'Download failed',
+        description: error instanceof Error ? error.message : 'Could not download this project.',
+        variant: 'destructive',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={download}
+      disabled={disabled || busy}
+      aria-label="Download Project"
+      title={disabled ? 'Preview is still being prepared' : 'Download project files'}
+    >
+      {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      Download Project
+    </Button>
   )
 }
