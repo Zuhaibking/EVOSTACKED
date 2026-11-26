@@ -15,9 +15,95 @@ import {
   livePayload,
   stableInspectSrc,
 } from '@/lib/inspect'
+import type { PlatformMeta } from '@/lib/platform/types'
+import { projectIdFromPath } from '@/lib/projects'
 import { ExecutionResultWeb } from '@/lib/types'
 import { ExternalLink, LoaderCircle, RotateCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+
+// ───────── Website → Control Center relay (data bridge in lib/inspect-bridge-script.js) ─────────
+const DATA_SOURCE = 'evostack-data'
+const COLLECTION_KEY = /^[a-z][a-z0-9_]{0,39}$/
+const LIST_PARAMS = ['q', 'sort', 'dir', 'limit', 'offset', 'status'] as const
+type PreviewReply = (message: Record<string, unknown>) => void
+
+/** The public slice of a blueprint a generated website may target: schema only, never records. */
+function platformConfig(meta: PlatformMeta, apiBase: string) {
+  return {
+    projectId: meta.projectId,
+    apiBase,
+    appName: meta.appName,
+    collections: meta.blueprint.collections
+      .filter((c) => c.publicCreate || c.publicRead)
+      .map((c) => ({
+        key: c.key,
+        label: c.label,
+        singular: c.singular,
+        publicCreate: c.publicCreate,
+        publicRead: c.publicRead,
+        fields: c.fields.map((f) => ({ key: f.key, label: f.label, type: f.type, options: f.options, publicWritable: f.publicWritable, required: f.required })),
+      })),
+  }
+}
+
+const platformMetaCache = new Map<string, { expires: number; meta: Promise<PlatformMeta | null> }>()
+function platformMeta(projectId: string): Promise<PlatformMeta | null> {
+  const hit = platformMetaCache.get(projectId)
+  if (hit && hit.expires > Date.now()) return hit.meta
+  const entry = { expires: Date.now() + 15_000, meta: Promise.resolve<PlatformMeta | null>(null) }
+  entry.meta = fetch(`/api/p/${encodeURIComponent(projectId)}`, { cache: 'no-store' })
+    .then(async (res) => (res.ok ? ((await res.json()) as { meta?: PlatformMeta }).meta ?? null : null))
+    .catch(() => null)
+    .then((meta) => {
+      if (!meta) entry.expires = Date.now() + 4_000 // not provisioned yet: re-check soon
+      return meta
+    })
+  platformMetaCache.set(projectId, entry)
+  return entry.meta
+}
+
+/** Relay a preview's data-bridge message to this project's platform API, answering via `reply`. */
+async function relayPlatformData(data: { type?: unknown; id?: unknown; collection?: unknown; data?: unknown; params?: unknown }, reply: PreviewReply) {
+  const projectId = projectIdFromPath(window.location.pathname)
+  if (data.type === 'config-request') {
+    const meta = projectId ? await platformMeta(projectId) : null
+    reply({ type: 'platform-config', config: meta ? platformConfig(meta, window.location.origin) : null })
+    return
+  }
+  if (data.type !== 'submit' && data.type !== 'list') return
+  const id = typeof data.id === 'string' && data.id.length <= 80 ? data.id : null
+  if (!id) return
+  const ack = (body: Record<string, unknown>) => reply({ type: 'data-ack', id, ...body })
+  // Outside a saved project the bridge posts to its own configured apiBase instead.
+  if (!projectId) return ack({ ok: false, fallback: true, error: 'not_connected' })
+  const collection = typeof data.collection === 'string' && COLLECTION_KEY.test(data.collection) ? data.collection : null
+  if (!collection) return ack({ ok: false, status: 400, error: 'invalid_collection' })
+  const url = `/api/p/${encodeURIComponent(projectId)}/records/${collection}`
+  // Anonymous + `x-evo-source: website` = public semantics: generated code never borrows the owner's session.
+  let res: Response
+  try {
+    if (data.type === 'submit') {
+      const record = data.data
+      if (!record || typeof record !== 'object' || Array.isArray(record)) return ack({ ok: false, status: 400, error: 'invalid_data' })
+      const body = JSON.stringify({ data: record })
+      if (body.length > 32 * 1024) return ack({ ok: false, status: 413, error: 'payload_too_large' })
+      res = await fetch(url, { method: 'POST', credentials: 'omit', cache: 'no-store', headers: { 'content-type': 'application/json', 'x-evo-source': 'website' }, body })
+    } else {
+      const raw = data.params && typeof data.params === 'object' ? (data.params as Record<string, unknown>) : {}
+      const query = new URLSearchParams()
+      for (const key of LIST_PARAMS) {
+        const value = raw[key]
+        if (typeof value === 'string' || typeof value === 'number') query.set(key, String(value).slice(0, 200))
+      }
+      const qs = query.toString()
+      res = await fetch(qs ? `${url}?${qs}` : url, { credentials: 'omit', cache: 'no-store', headers: { 'x-evo-source': 'website' } })
+    }
+  } catch {
+    return ack({ ok: false, fallback: true, error: 'network_error' })
+  }
+  const result = (await res.json().catch(() => null)) as { message?: unknown; error?: unknown } | null
+  ack({ ok: res.ok, status: res.status, result, ...(res.ok ? {} : { error: String(result?.message || result?.error || `HTTP ${res.status}`) }) })
+}
 
 export function FragmentWeb({
   result,
@@ -92,6 +178,19 @@ export function FragmentWeb({
         return
       }
       const data = event.data
+      const previewWindow = event.source as Window | null
+      const previewOrigin = event.origin
+      const reply: PreviewReply = (message) => {
+        try {
+          previewWindow?.postMessage({ source: INSPECT_SOURCE, ...message }, previewOrigin)
+        } catch {
+          // the preview reloaded or navigated away; the bridge falls back on its own
+        }
+      }
+      if (data?.source === DATA_SOURCE && typeof data.type === 'string') {
+        void relayPlatformData(data, reply)
+        return
+      }
       if (data?.source === INSPECT_SOURCE && data.type === 'runtime-error') {
         if (typeof data.payload?.message === 'string' && data.payload.message.trim()) {
           setPreviewError(data.payload.message.slice(0, 2000))
@@ -105,6 +204,8 @@ export function FragmentWeb({
         return
       }
       if (!isInspectMessage(event.data)) return
+      // A provisioned project hands its public schema to the site so forms land in the Control Center.
+      if (event.data.type === 'ready') void relayPlatformData({ type: 'config-request' }, reply)
       if (event.data.type === 'ready' && inspectEnabled) {
         postToPreview({ type: 'enable' })
         postToPreview({ type: 'guides', on: guides })

@@ -1,5 +1,5 @@
 import { downloadAccess, projectZipName, readProjectZip } from '@/lib/project-archive'
-import { auth } from '@clerk/nextjs/server'
+import { requireUserId } from '@/lib/server-auth'
 import { NotFoundError, Sandbox } from 'e2b'
 
 export const maxDuration = 180
@@ -7,6 +7,9 @@ export const maxDuration = 180
 const ROOT = '/home/user'
 
 export async function POST(req: Request) {
+  const authz = await requireUserId()
+  if ('response' in authz) return Response.json({ error: 'Sign in to download this project.' }, { status: 401 })
+  const userId = authz.userId
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -21,19 +24,10 @@ export async function POST(req: Request) {
   const title = typeof body.title === 'string' ? body.title : undefined
   const projectID = typeof body.projectID === 'string' ? body.projectID : undefined
   const candidateID = typeof body.candidateID === 'string' ? body.candidateID : undefined
-  const clerk = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)
-  let userId = ''
-  if (clerk) {
-    try {
-      userId = (await auth()).userId || ''
-    } catch {
-      return Response.json({ error: 'Sign in to download this project.' }, { status: 401 })
-    }
-    if (!userId) return Response.json({ error: 'Sign in to download this project.' }, { status: 401 })
-  }
   try {
     const info = await Sandbox.getInfo(sbxId, { requestTimeoutMs: 10_000 })
-    const access = downloadAccess({ clerk, userId, metadata: info.metadata || {}, projectID, candidateID })
+    // Ownership is always enforced; there is no anonymous download path.
+    const access = downloadAccess({ clerk: true, userId, metadata: info.metadata || {}, projectID, candidateID })
     if (!access.ok) return Response.json({ error: access.error }, { status: access.status })
     const sbx = await Sandbox.connect(sbxId, { timeoutMs: 180_000, requestTimeoutMs: 15_000 })
     const zip = await readProjectZip({

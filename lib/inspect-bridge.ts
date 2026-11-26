@@ -2,6 +2,10 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 
 export const INSPECT_BRIDGE_FILENAME = '__evo_inspect.js'
+/** Same-origin data-bridge config the bridge fetches on load (see POST /api/p/{id}/connect). */
+export const PLATFORM_CONFIG_FILENAME = '__evo_platform.json'
+/** Served until the project is connected, so unconnected sites never log a 404 on load. */
+const PLATFORM_CONFIG_PLACEHOLDER = '{"connected":false}\n'
 
 const NEXT_DOCUMENT = `import { Html, Head, Main, NextScript } from 'next/document'
 
@@ -74,10 +78,22 @@ async function ensureScriptTag(sbx: SandboxFiles, path: string) {
   return true
 }
 
+/** Connect a sandboxed site to its project backend: the bridge picks this up on load / next submit. */
+export async function writePlatformConfig(sbx: SandboxFiles, config: unknown) {
+  await sbx.files.write(`public/${PLATFORM_CONFIG_FILENAME}`, `${JSON.stringify(config, null, 2)}\n`)
+}
+
 export async function injectInspectBridge(sbx: SandboxFiles) {
   const js = inspectBridgeSource()
   if (await tryRead(sbx, `public/${INSPECT_BRIDGE_FILENAME}`) !== js) {
     await sbx.files.write(`public/${INSPECT_BRIDGE_FILENAME}`, js)
+  }
+  if (await tryRead(sbx, `public/${PLATFORM_CONFIG_FILENAME}`) == null) {
+    try {
+      await sbx.files.write(`public/${PLATFORM_CONFIG_FILENAME}`, PLATFORM_CONFIG_PLACEHOLDER)
+    } catch {
+      // the placeholder only silences a 404; the bridge works without it
+    }
   }
 
   const nextDoc =

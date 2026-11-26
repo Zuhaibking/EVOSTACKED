@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import {
@@ -90,6 +88,33 @@ function unzipStore(zip: Uint8Array) {
   return out
 }
 
+/**
+ * Lists entries the way unzip/bsdtar do: from the central directory found via
+ * the end-of-central-directory record. Replaces `tar -tf`, which only works
+ * with bsdtar (GNU tar cannot read zips).
+ */
+function centralDirectoryNames(zip: Uint8Array) {
+  const buf = Buffer.from(zip)
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  assert.ok(eocd >= 0 && eocd + 22 <= buf.length, 'end of central directory record')
+  const count = buf.readUInt16LE(eocd + 10)
+  let offset = buf.readUInt32LE(eocd + 16)
+  assert.equal(offset + buf.readUInt32LE(eocd + 12), eocd, 'central directory ends at the EOCD record')
+  const names: string[] = []
+  for (let i = 0; i < count; i++) {
+    assert.equal(buf.readUInt32LE(offset), 0x02014b50, 'central directory header')
+    const nameLen = buf.readUInt16LE(offset + 28)
+    const name = buf.subarray(offset + 46, offset + 46 + nameLen).toString('utf8')
+    const local = buf.readUInt32LE(offset + 42)
+    assert.equal(buf.readUInt32LE(local), 0x04034b50, `${name}: local header offset`)
+    assert.equal(buf.subarray(local + 30, local + 30 + buf.readUInt16LE(local + 26)).toString('utf8'), name, `${name}: local header name`)
+    names.push(name)
+    offset += 46 + nameLen + buf.readUInt16LE(offset + 30) + buf.readUInt16LE(offset + 32)
+  }
+  assert.equal(offset, eocd, 'central directory entry count')
+  return names
+}
+
 async function check() {
   assert.equal(projectRelativePath('/home/user', '/home/user/node_modules/react/index.js'), null)
   assert.equal(projectRelativePath('/home/user', '/home/user/../../etc/passwd'), null)
@@ -122,15 +147,8 @@ async function check() {
   const unpacked = unzipStore(zip)
   assert.equal(unpacked.get('components/Hero.tsx')!.toString('utf8'), hero)
   assert.deepEqual(unpacked.get('public/evo-images/campus.jpg'), Buffer.from(image))
-  const dir = mkdtempSync(join(tmpdir(), 'evo-download-'))
-  try {
-    const zipPath = join(dir, 'cafe.zip')
-    writeFileSync(zipPath, zip)
-    const listed = execFileSync('tar', ['-tf', zipPath], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 8000, windowsHide: true }).toString().trim().split(/\r?\n/)
-    assert.deepEqual(listed.sort(), paths.slice().sort())
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+  assert.deepEqual(centralDirectoryNames(zip).sort(), paths.slice().sort())
+  assert.deepEqual([...unpacked.keys()].sort(), paths.slice().sort())
 
   await assert.rejects(collectProjectFiles({
     list: async () => [{ name: 'pages', path: '/home/user/pages', type: 'dir' }, { name: 'index.tsx', path: '/home/user/pages/index.tsx', type: 'file' }],

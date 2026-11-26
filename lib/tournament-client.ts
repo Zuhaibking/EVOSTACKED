@@ -1,9 +1,12 @@
 'use client'
 
 import { FragmentSchema, fragmentCodeText } from './schema'
-import { TournamentEvent, VARIANTS, VariantId, Verdict } from './tournament'
+import { CandidateModel, TournamentEvent, VARIANTS, VariantId, Verdict } from './tournament'
 import type { CandidateHealth } from './candidate-health'
 import type { ExecutionResult } from './types'
+import type { ProjectSpec } from './platform/types'
+import { DEFAULT_WEIGHTS, type EvidenceMetrics, type EvidenceWeights } from './evidence/types'
+import { rankCandidates } from './evidence/score'
 import { DeepPartial } from 'ai'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -28,6 +31,14 @@ export type Candidate = {
   scoreComposite?: number
   scoreComment?: string
   isWinner?: boolean
+  /** Model that produced this candidate (multi-model battle). */
+  model?: CandidateModel
+  /** Fallback note, e.g. "Gemini 3.5 Flash failed — switched to GPT-4.1." */
+  modelNote?: string
+  /** Measured preview evidence (POST /api/measure). */
+  evidence?: EvidenceMetrics
+  /** Why this candidate can no longer win ("Preview failed", "Failed health checks"…). Sticky until it is healthy again. */
+  dqReason?: string
   health?: CandidateHealth
   sandboxStatus?: 'starting' | 'ready' | 'error'
   sandboxError?: string
@@ -58,9 +69,95 @@ export type TournamentSubmitArgs = {
   projectID?: string
   runID?: string
   seedCandidates?: Partial<Record<VariantId, FragmentSchema>>
+  /** Structured discovery spec; drives the prompt + required working forms. */
+  spec?: ProjectSpec | null
+  /** Multi-model battle: each design direction runs on a different provider. */
+  battle?: boolean
 }
 
 export type TournamentResumeArgs = { projectID: string; runID: string }
+
+// ───────────── Winner reconciliation (a broken preview can never stay winner) ─────────────
+
+/** Current reason this candidate cannot win, or null when it is eligible so far. */
+export function disqualification(c: Candidate): string | null {
+  if (c.status === 'error') return 'Generation failed'
+  if (c.sandboxStatus === 'error') return 'Preview failed'
+  if (c.runtimeError) return 'Runtime error in preview'
+  if (c.health?.state === 'FAILED') return 'Failed health checks'
+  if (c.health?.runtimeStatus === 'failed') return 'Failed runtime check'
+  const resultError = (c.result as { error?: unknown } | undefined)?.error
+  if (resultError) return 'Preview failed'
+  return null
+}
+
+/** Positive proof the preview works (clears a sticky DQ after a successful retry). */
+function provenHealthy(c: Candidate): boolean {
+  if (disqualification(c)) return false
+  return c.sandboxStatus === 'ready' || Boolean(c.result && !(c.result as { error?: unknown }).error) || Boolean(c.evidence && c.evidence.errorRate < 1)
+}
+
+/**
+ * Re-decide the winner. Ineligible candidates (generation/preview/health failure) never keep the crown.
+ * Ranking: measured evidence when every eligible candidate has it → judge composite → (provisional
+ * verdict, no evidence) first candidate with a proven-healthy preview. Before a verdict exists nothing is crowned.
+ */
+export function reconcileWinner(
+  candidates: Record<VariantId, Candidate>,
+  opts: { verdictReady: boolean; weights?: EvidenceWeights },
+): Record<VariantId, Candidate> {
+  const next = { ...candidates }
+  const ids = VARIANTS.map((v) => v.id).filter((id) => next[id])
+  // Sticky DQ: set when a failure is observed, cleared only by a proven-healthy preview.
+  for (const id of ids) {
+    const c = next[id]
+    const reason = disqualification(c)
+    if (reason && c.status !== 'pending' && c.status !== 'generating') {
+      if (c.dqReason !== reason) next[id] = { ...c, dqReason: reason }
+    } else if (c.dqReason && provenHealthy(c)) {
+      next[id] = { ...c, dqReason: undefined }
+    }
+  }
+  if (!opts.verdictReady) return next
+  const eligible = ids.filter((id) => next[id].status === 'done' && !next[id].dqReason && !disqualification(next[id]))
+  const current = ids.find((id) => next[id].isWinner) ?? null
+  let winner: VariantId | null = null
+  if (eligible.length) {
+    const withEvidence = eligible.filter((id) => next[id].evidence)
+    if (withEvidence.length === eligible.length) {
+      const rows = eligible.map((id) => {
+        const c = next[id]
+        const judge = c.scoreClarity != null && c.scoreFit != null && c.scorePolish != null ? { clarity: c.scoreClarity, fit: c.scoreFit, polish: c.scorePolish } : null
+        return { id, evidence: c.evidence!, judge }
+      })
+      try {
+        const ranked = rankCandidates(rows.map((r) => ({ ...r, healthy: true })), opts.weights ?? DEFAULT_WEIGHTS)
+        winner = (ranked.find((r) => !r.score.disqualified && eligible.includes(r.id as VariantId))?.id as VariantId | undefined) ?? null
+      } catch {
+        winner = null // Evidence scoring failed → fall through to the judge composite.
+      }
+    }
+    if (!winner) {
+      const scored = eligible.filter((id) => typeof next[id].scoreComposite === 'number')
+      if (scored.length) {
+        winner = scored.reduce((a, b) => {
+          const sa = next[a].scoreComposite!, sb = next[b].scoreComposite!
+          return sb > sa || (sb === sa && b === current) ? b : a
+        })
+      } else if (current && eligible.includes(current)) {
+        winner = current
+      } else {
+        winner = eligible.find((id) => provenHealthy(next[id])) ?? null
+      }
+    }
+  }
+  if (winner === current) return next
+  for (const id of ids) {
+    const should = id === winner
+    if (Boolean(next[id].isWinner) !== should) next[id] = { ...next[id], isWinner: should }
+  }
+  return next
+}
 
 const runPath = ({ projectID, runID }: TournamentResumeArgs) =>
   `/api/tournament?${new URLSearchParams({ projectID, runID })}`
@@ -78,6 +175,10 @@ export function useTournament() {
   const [canResume, setCanResume] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const runRef = useRef<{ projectID?: string; runID: string } | null>(null)
+  const verdictRef = useRef<Verdict | undefined>(undefined)
+  const [weights, setWeightsState] = useState<EvidenceWeights>(DEFAULT_WEIGHTS)
+  const weightsRef = useRef<EvidenceWeights>(DEFAULT_WEIGHTS)
+  const settle = useCallback((c: Record<VariantId, Candidate>) => reconcileWinner(c, { verdictReady: Boolean(verdictRef.current), weights: weightsRef.current }), [])
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
@@ -93,6 +194,7 @@ export function useTournament() {
     setRunID(undefined)
     setCanResume(false)
     setCandidates(initialCandidates())
+    verdictRef.current = undefined
     setVerdict(undefined)
     setError(undefined)
     setPhase('idle')
@@ -125,12 +227,13 @@ export function useTournament() {
         }
         next[id] = candidate
       }
-      setCandidates(next)
+      verdictRef.current = snap.verdict
+      setCandidates(settle(next))
       setVerdict(snap.verdict)
       setError(undefined)
       setPhase(interrupted ? 'generating' : snap.phase)
     },
-    [detach],
+    [detach, settle],
   )
 
   const stop = useCallback(() => {
@@ -159,40 +262,49 @@ export function useTournament() {
         if (!candidate) return current
         // Replayed events describe original model output. A completed local
         // source may already contain inspector edits or a restored version.
-        if (candidate.status === 'done' && fragmentCodeText(candidate.fragment?.code).trim()) return current
+        const model = evt.model ?? candidate.model
+        if (candidate.status === 'done' && fragmentCodeText(candidate.fragment?.code).trim()) {
+          return evt.model && !candidate.model ? { ...current, [evt.id]: { ...candidate, model: evt.model } } : current
+        }
         if (evt.type === 'candidate_start') {
-          return { ...current, [evt.id]: { ...candidate, status: 'generating', error: undefined } }
+          return { ...current, [evt.id]: { ...candidate, status: 'generating', error: undefined, model, modelNote: evt.note ?? candidate.modelNote } }
         }
         if (evt.type === 'candidate_chunk' || evt.type === 'candidate_done') {
-          return { ...current, [evt.id]: { ...candidate, status: evt.type === 'candidate_done' ? 'done' : 'generating', fragment: evt.fragment, error: undefined } }
+          return { ...current, [evt.id]: { ...candidate, status: evt.type === 'candidate_done' ? 'done' : 'generating', fragment: evt.fragment, error: undefined, model } }
         }
-        return { ...current, [evt.id]: { ...candidate, status: 'error', error: evt.error } }
+        return settle({ ...current, [evt.id]: { ...candidate, status: 'error', error: evt.error, model } })
       })
     } else if (evt.type === 'verdict') {
+      verdictRef.current = evt.verdict
       setVerdict(evt.verdict)
       setPhase('judging')
       setCandidates((c) => {
         const next = { ...c }
-        for (const score of evt.verdict.scores) {
+        const num = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? n : undefined)
+        for (const id of Object.keys(next) as VariantId[]) {
+          if (next[id].isWinner) next[id] = { ...next[id], isWinner: false }
+        }
+        for (const score of evt.verdict.scores ?? []) {
           if (next[score.id]) {
             next[score.id] = {
               ...next[score.id],
-              scoreClarity: score.clarity,
-              scoreFit: score.fit,
-              scorePolish: score.polish,
-              scoreComposite: score.composite,
+              scoreClarity: num(score.clarity),
+              scoreFit: num(score.fit),
+              scorePolish: num(score.polish),
+              scoreComposite: num(score.composite),
               scoreComment: score.comment,
               isWinner: score.id === evt.verdict.winnerId,
             }
           }
         }
-        return next
+        // The judge only read source; health/evidence observed so far can still overturn it.
+        return settle(next)
       })
     } else if (evt.type === 'tournament_done') {
       setCanResume(false)
       setPhase('done')
     }
-  }, [])
+  }, [settle])
 
   const readStream = useCallback(async (res: Response, ctrl: AbortController) => {
     const isCurrent = () => abortRef.current === ctrl && !ctrl.signal.aborted
@@ -255,6 +367,7 @@ export function useTournament() {
         }
         return next
       })
+      verdictRef.current = undefined
       setVerdict(undefined)
       setPhase('generating')
     }
@@ -295,17 +408,35 @@ export function useTournament() {
   const noteHealth = useCallback((id: VariantId, health: CandidateHealth) => {
     setCandidates((c) => {
       if (!c[id]) return c
-      return { ...c, [id]: { ...c[id], health } }
+      return settle({ ...c, [id]: { ...c[id], health } })
     })
-  }, [])
+  }, [settle])
 
   const noteSandbox = useCallback((id: VariantId, update: Partial<Pick<Candidate, 'sandboxStatus' | 'sandboxError' | 'runtimeError' | 'result' | 'fragment'>>) => {
     setCandidates((c) => {
       if (!c[id]) return c
       const health = update.result && 'health' in update.result ? update.result.health : c[id].health
-      return { ...c, [id]: { ...c[id], ...update, health } }
+      return settle({ ...c, [id]: { ...c[id], ...update, health } })
     })
-  }, [])
+  }, [settle])
+
+  /** Record measured evidence for a candidate and re-rank (evidence beats source-only judging). */
+  const noteEvidence = useCallback((id: VariantId, evidence: EvidenceMetrics) => {
+    setCandidates((c) => {
+      if (!c[id]) return c
+      return settle({ ...c, [id]: { ...c[id], evidence } })
+    })
+  }, [settle])
+
+  /** Re-run winner reconciliation (optionally with new evidence weights from the EvidenceBoard). */
+  const reconcile = useCallback((nextWeights?: EvidenceWeights) => {
+    if (nextWeights) { weightsRef.current = nextWeights; setWeightsState(nextWeights) }
+    setCandidates((c) => settle(c))
+  }, [settle])
+
+  const setWeights = useCallback((w: EvidenceWeights) => reconcile(w), [reconcile])
+
+  const winnerId = (Object.values(candidates).find((c) => c.isWinner)?.id ?? null) as VariantId | null
 
   return {
     candidates,
@@ -322,5 +453,10 @@ export function useTournament() {
     hydrate,
     noteHealth,
     noteSandbox,
+    noteEvidence,
+    reconcileWinner: reconcile,
+    winnerId,
+    weights,
+    setWeights,
   }
 }

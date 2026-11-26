@@ -41,6 +41,27 @@
       "providerId": "openai",
       "name": "Asta 1.0 Nano",
       "multiModal": true
+    },
+    {
+      "id": "gemini-3-flash-preview",
+      "provider": "Google",
+      "providerId": "google",
+      "name": "Gemini 3 Flash",
+      "multiModal": true
+    },
+    {
+      "id": "gemini-3.1-flash-lite",
+      "provider": "Google",
+      "providerId": "google",
+      "name": "Gemini 3.1 Flash-Lite",
+      "multiModal": true
+    },
+    {
+      "id": "minimaxai/minimax-m3.1-flash",
+      "provider": "NVIDIA",
+      "providerId": "nvidia",
+      "name": "MiniMax M3.1 Flash",
+      "multiModal": false
     }
   ]
 }

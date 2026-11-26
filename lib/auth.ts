@@ -108,4 +108,36 @@ function useClerkBackedAuth(
   }
 }
 
-export const useAuth = clerkEnabled ? useClerkBackedAuth : useStubAuth
+// Dev-only headless session. Next inlines NODE_ENV, so production builds fold this to undefined.
+const devUserId =
+  process.env.NODE_ENV === 'development'
+    ? process.env.NEXT_PUBLIC_EVOSTACK_DEV_USER || undefined
+    : undefined
+
+function useDevAuth(
+  setAuthDialog: (value: boolean) => void,
+  _setAuthView: (value: ViewType) => void,
+) {
+  useEffect(() => setAuthDialog(false), [setAuthDialog])
+  const session = useMemo<AuthSession>(
+    () => ({
+      user: {
+        id: devUserId!,
+        email: `${devUserId}@dev.local`,
+        user_metadata: { is_fragments_user: true },
+      },
+    }),
+    [],
+  )
+  const userTeam = useMemo<UserTeam>(
+    () => ({ id: devUserId!, email: session.user.email, name: devUserId!, tier: 'free' }),
+    [session],
+  )
+  return { session: session as AuthSession | null, userTeam: userTeam as UserTeam | undefined, signOut: async () => {} }
+}
+
+export const useAuth = devUserId
+  ? useDevAuth
+  : clerkEnabled
+    ? useClerkBackedAuth
+    : useStubAuth

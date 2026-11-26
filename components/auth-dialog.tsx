@@ -16,21 +16,21 @@ const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
 export type ViewType = 'sign_in' | 'sign_up'
 
 const editorialAppearance = {
-  baseTheme: dark,
+  theme: dark,
   variables: {
     colorPrimary: 'hsl(40 28% 92%)',
     colorBackground: 'hsl(30 12% 7%)',
-    colorText: 'hsl(40 28% 92%)',
-    colorTextSecondary: 'hsl(35 14% 62%)',
-    colorInputBackground: 'hsl(30 10% 10%)',
-    colorInputText: 'hsl(40 28% 92%)',
+    colorForeground: 'hsl(40 28% 92%)',
+    colorMutedForeground: 'hsl(35 14% 62%)',
+    colorInput: 'hsl(30 10% 10%)',
+    colorInputForeground: 'hsl(40 28% 92%)',
     colorNeutral: 'hsl(40 28% 92%)',
     colorDanger: 'hsl(8 76% 60%)',
     fontFamily: 'var(--font-body), ui-sans-serif, system-ui',
     fontFamilyButtons: 'var(--font-mono), ui-monospace, monospace',
     fontSize: '14px',
     borderRadius: '0',
-    spacingUnit: '0.875rem',
+    spacing: '0.875rem',
   },
   elements: {
     rootBox: 'w-full',
@@ -92,12 +92,12 @@ const editorialAppearance = {
 
     spinner: 'text-foreground',
   },
-  layout: {
+  options: {
     socialButtonsPlacement: 'top' as const,
     socialButtonsVariant: 'blockButton' as const,
     showOptionalFields: true,
   },
-}
+} satisfies ClerkAppearanceRegistry['theme']
 
 export function AuthDialog({
   open,
@@ -163,7 +163,7 @@ export function AuthDialog({
             </p>
           ) : mode === 'sign_in' ? (
             <SignIn
-              routing="virtual"
+              routing="hash"
               signUpUrl="#"
               forceRedirectUrl="/app"
               fallbackRedirectUrl="/app"
@@ -171,7 +171,7 @@ export function AuthDialog({
             />
           ) : (
             <SignUp
-              routing="virtual"
+              routing="hash"
               signInUrl="#"
               forceRedirectUrl="/app"
               fallbackRedirectUrl="/app"

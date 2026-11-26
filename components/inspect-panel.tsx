@@ -49,7 +49,7 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1 min-w-0">
-      <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-muted-foreground">
+      <span className="label-caps">
         {label}
       </span>
       {children}
@@ -141,7 +141,7 @@ export function InspectPanel({
   return (
     <aside className="flex flex-col h-full min-h-0 w-[min(100%,20.5rem)] shrink-0 border-l border-border bg-background">
       <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-border">
-        <span className="inline-flex items-center h-5 px-1.5 font-mono text-[10px] tracking-[0.12em] uppercase bg-brand text-brand-foreground">
+        <span className="inline-flex items-center h-5 px-1.5 font-mono text-[11px] tracking-[0.12em] uppercase bg-brand text-brand-foreground">
           {selection?.tag || 'inspect'}
           {selection ? (
             <button
@@ -154,7 +154,7 @@ export function InspectPanel({
             </button>
           ) : null}
         </span>
-        <span className="flex-1 min-w-0 truncate font-mono text-[10px] text-muted-foreground">
+        <span className="flex-1 min-w-0 truncate font-mono text-[11px] text-muted-foreground">
           {selection?.selector || 'Click an element in Preview'}
         </span>
         <button
@@ -177,7 +177,7 @@ export function InspectPanel({
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <section className="px-3 py-3 border-b border-border/70 space-y-2">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Source
           </p>
           <p className="font-mono text-[11px] truncate" title={source.filePath}>
@@ -185,7 +185,7 @@ export function InspectPanel({
             {source.line ? `:${source.line}` : ''}
           </p>
           {source.snippet ? (
-            <pre className="text-[10px] leading-relaxed whitespace-pre-wrap text-muted-foreground bg-muted/40 px-2 py-1.5">
+            <pre className="text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground bg-muted/40 px-2 py-1.5">
               {source.snippet}
             </pre>
           ) : (
@@ -198,7 +198,7 @@ export function InspectPanel({
         </section>
 
         <section className="px-3 py-3 border-b border-border/70 space-y-2">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Content
           </p>
           <textarea
@@ -212,7 +212,7 @@ export function InspectPanel({
         </section>
 
         <section className="px-3 py-3 border-b border-border/70 space-y-2.5">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Typography
           </p>
           <div className="grid grid-cols-2 gap-2">
@@ -284,7 +284,7 @@ export function InspectPanel({
                 type="button"
                 disabled={!draft || applying}
                 onClick={() => set('textAlign', align)}
-                className={`flex-1 h-7 inline-flex items-center justify-center font-mono text-[9px] uppercase border border-border ${
+                className={`flex-1 h-7 inline-flex items-center justify-center rounded-md font-mono text-[11px] uppercase border border-border transition-colors hover:text-foreground disabled:opacity-50 ${
                   draft?.textAlign === align
                     ? 'bg-foreground text-background'
                     : 'text-muted-foreground'
@@ -301,7 +301,7 @@ export function InspectPanel({
                 type="button"
                 disabled={!draft || applying}
                 onClick={() => set('textTransform', c)}
-                className={`flex-1 h-7 px-1 inline-flex items-center justify-center font-mono text-[8px] uppercase border border-border ${
+                className={`flex-1 h-7 px-1 inline-flex items-center justify-center rounded-md font-mono text-[11px] uppercase border border-border transition-colors hover:text-foreground disabled:opacity-50 ${
                   draft?.textTransform === c
                     ? 'bg-foreground text-background'
                     : 'text-muted-foreground'
@@ -318,7 +318,7 @@ export function InspectPanel({
                 type="button"
                 disabled={!draft || applying}
                 onClick={() => set('textDecoration', d)}
-                className={`flex-1 h-7 inline-flex items-center justify-center font-mono text-[8px] uppercase border border-border ${
+                className={`flex-1 h-7 inline-flex items-center justify-center rounded-md font-mono text-[11px] uppercase border border-border transition-colors hover:text-foreground disabled:opacity-50 ${
                   draft?.textDecoration === d
                     ? 'bg-foreground text-background'
                     : 'text-muted-foreground'
@@ -331,7 +331,7 @@ export function InspectPanel({
         </section>
 
         <section className="px-3 py-3 border-b border-border/70 space-y-2.5">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Color
           </p>
           <ColorRow
@@ -349,7 +349,7 @@ export function InspectPanel({
         </section>
 
         <section className="px-3 py-3 border-b border-border/70 space-y-2.5">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Layout
           </p>
           <label className="flex items-center gap-2 text-[12px]">
@@ -398,7 +398,7 @@ export function InspectPanel({
         </section>
 
         <section className="px-3 py-3 border-b border-border/70 space-y-2.5">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Border / Shadow
           </p>
           <div className="grid grid-cols-2 gap-2">
@@ -449,7 +449,7 @@ export function InspectPanel({
         </section>
 
         <section className="px-3 py-3 space-y-2.5">
-          <p className="font-mono text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+          <p className="label-caps">
             Instructions
           </p>
           <div className="flex flex-wrap gap-1">
@@ -463,7 +463,7 @@ export function InspectPanel({
                     prev ? `${prev.trim()} ${pillInstruction(pill)}` : pillInstruction(pill),
                   )
                 }
-                className="h-6 px-1.5 font-mono text-[10px] border border-border text-muted-foreground hover:text-foreground hover:border-foreground"
+                className="h-6 px-1.5 font-mono text-[11px] border border-border text-muted-foreground hover:text-foreground hover:border-foreground"
               >
                 {pill}
               </button>
@@ -568,7 +568,7 @@ function ColorRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-10 font-mono text-[9px] uppercase text-muted-foreground">{label}</span>
+      <span className="w-12 shrink-0 font-mono text-[11px] uppercase text-muted-foreground">{label}</span>
       <input
         type="color"
         disabled={disabled}
@@ -612,13 +612,13 @@ export function InspectToolbar({
       style={{ top, left }}
     >
       <input
-        className="w-24 h-6 px-1 font-mono text-[10px] bg-transparent outline-none"
+        className="w-24 h-6 px-1 font-mono text-[11px] bg-transparent outline-none"
         disabled={applying}
         value={draft.fontFamily}
         onChange={(e) => onDraft({ ...draft, fontFamily: e.target.value })}
       />
       <input
-        className="w-12 h-6 px-1 font-mono text-[10px] bg-transparent outline-none"
+        className="w-12 h-6 px-1 font-mono text-[11px] bg-transparent outline-none"
         disabled={applying}
         value={draft.fontSize}
         onChange={(e) => onDraft({ ...draft, fontSize: e.target.value })}

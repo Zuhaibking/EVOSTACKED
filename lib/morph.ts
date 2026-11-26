@@ -30,7 +30,9 @@ export async function applyPatch({
 
   try {
     const { text: mergedCode } = await generateText({
-      model: openai('morph-v3-large') as LanguageModel,
+      // Morph only speaks chat-completions; the bare provider call defaults to
+      // the Responses API (/v1/responses) since @ai-sdk/openai v2.
+      model: openai.chat('morph-v3-large') as LanguageModel,
       prompt: `<instruction>${instructions}</instruction>\n<code>${initialCode}</code>\n<update>${codeEdit}</update>`,
     })
 

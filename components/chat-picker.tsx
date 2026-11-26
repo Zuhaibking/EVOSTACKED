@@ -29,14 +29,14 @@ export function ChatPicker({
   onLanguageModelChange: (config: LLMModelConfig) => void
 }) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
-      <div className="flex w-[76px] shrink-0 flex-col">
+    <div className="flex min-w-0 flex-1 items-center gap-0.5">
+      <div className="flex min-w-0 shrink-0 flex-col">
         <Select
           name="template"
           value={selectedTemplate}
           onValueChange={onSelectedTemplateChange}
         >
-          <SelectTrigger aria-label="App framework" className="h-8 min-w-0 rounded-md border-transparent bg-transparent px-1.5 text-[11px] text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-1 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0">
+          <SelectTrigger aria-label="App framework" className="h-8 w-auto min-w-0 max-w-[132px] justify-start gap-1 rounded-md border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-foreground data-[state=open]:text-foreground [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0">
             <SelectValue placeholder="App framework" />
           </SelectTrigger>
           <SelectContent side="top">
@@ -72,13 +72,13 @@ export function ChatPicker({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex min-w-0 max-w-[130px] flex-[1.3] flex-col">
+      <div className="flex min-w-0 shrink flex-col">
         <Select
           name="languageModel"
           value={languageModel.model}
           onValueChange={(e) => onLanguageModelChange({ model: e })}
         >
-          <SelectTrigger aria-label="Language model" className="h-8 min-w-0 rounded-md border-transparent bg-transparent px-1.5 text-[11px] text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-1 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0">
+          <SelectTrigger aria-label="Language model" className="h-8 w-auto min-w-0 max-w-[168px] justify-start gap-1 rounded-md border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-foreground data-[state=open]:text-foreground [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0">
             <SelectValue placeholder="Language model" />
           </SelectTrigger>
           <SelectContent>

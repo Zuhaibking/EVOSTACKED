@@ -1,8 +1,28 @@
 const PROTOCOL = [
-  { n: '01', title: 'Write the brief', body: 'Describe your idea, key features, and visual direction. Choose a framework and model, or let EvoStack pick a starting point.', tag: 'Intake' },
-  { n: '02', title: 'Explore three designs', body: 'Three implementations are generated in parallel, each with its own approach to your idea.', tag: 'Generation' },
-  { n: '03', title: 'Choose your favorite', body: 'An AI editor compares the designs and recommends a winner. You can select any candidate and see it running in a live sandbox.', tag: 'Selection' },
-  { n: '04', title: 'Refine and share', body: 'Iterate through chat, inspect individual elements, download the source, or share your sandbox preview with a timed link.', tag: 'Iteration' },
+  {
+    n: '01',
+    tag: 'Discovery',
+    title: 'Describe the idea',
+    body: 'Start with a sentence. EvoStack asks a few adaptive follow-up questions and turns your answers into a structured spec.',
+  },
+  {
+    n: '02',
+    tag: 'Tournament',
+    title: 'Three builds compete',
+    body: 'Different models build three candidates in parallel, each running live in its own sandbox.',
+  },
+  {
+    n: '03',
+    tag: 'Evidence',
+    title: 'Judge on evidence',
+    body: 'Every candidate is measured — performance, accessibility and fit to the brief — and ranked on the results. You make the final call.',
+  },
+  {
+    n: '04',
+    tag: 'Launch',
+    title: 'Launch the product',
+    body: 'Your pick becomes a working product: its own backend and database, plus a control center tailored to what you built.',
+  },
 ]
 
 export function HowItWorks() {
@@ -10,52 +30,48 @@ export function HowItWorks() {
     <section
       id="protocol"
       aria-labelledby="protocol-heading"
-      className="relative border-t border-border noise-overlay"
+      className="noise-overlay relative scroll-mt-20 border-t border-border"
     >
-      <div className="max-w-[1400px] mx-auto px-6 md:px-10 py-16 md:py-24">
-        <div className="grid grid-cols-12 gap-6 md:gap-10">
+      <div className="mx-auto max-w-[1400px] px-6 py-16 md:px-10 md:py-24">
+        <div className="grid grid-cols-12 gap-x-6 gap-y-10 md:gap-x-10">
           <div className="col-span-12 lg:col-span-4">
             <p className="label-caps mb-4">The method</p>
             <h2
               id="protocol-heading"
-              className="font-display text-4xl md:text-5xl lg:text-6xl font-black leading-[0.95] tracking-tight"
+              className="font-display text-4xl font-black leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
             >
               The method,
               <br />
-              <span className="italic font-normal">in four steps.</span>
+              <span className="font-normal italic">in four steps.</span>
             </h2>
-            <p className="mt-6 text-muted-foreground leading-relaxed max-w-sm">
-              A considered path from the first idea to a running design.
-              Explore alternatives, make the call, then refine the details.
+            <p className="mt-6 max-w-sm leading-relaxed text-muted-foreground">
+              From a single sentence to a running product. Explore real alternatives, decide on
+              evidence, then launch.
             </p>
-
           </div>
 
-          <ol className="col-span-12 lg:col-span-8 overflow-hidden rounded-lg border border-border bg-card">
+          <ol className="col-span-12 overflow-hidden rounded-xl border border-border bg-card lg:col-span-8">
             {PROTOCOL.map((step, i) => (
               <li
                 key={step.n}
-                className="group grid grid-cols-12 gap-4 md:gap-6 px-5 py-6 border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors relative"
+                className="group grid grid-cols-12 gap-4 border-b border-border px-5 py-6 transition-colors last:border-b-0 hover:bg-muted/40 md:gap-6 md:px-6"
               >
                 <div className="col-span-3 md:col-span-2">
-                  <div className="font-display italic text-3xl md:text-4xl font-black leading-none tabular text-foreground/90 group-hover:text-brand transition-colors">
+                  <div className="tabular font-display text-3xl font-black italic leading-none text-foreground/90 transition-colors group-hover:text-brand md:text-4xl">
                     {step.n}
                   </div>
-                  <div className="mt-2 label-caps">{step.tag}</div>
+                  <div className="label-caps mt-2.5">{step.tag}</div>
                 </div>
                 <div className="col-span-9 md:col-span-10">
                   <div className="flex items-baseline justify-between gap-4">
-                    <h3 className="font-display text-2xl md:text-3xl font-bold">
-                      {step.title}
-                    </h3>
-                    <span className="font-mono text-xs tabular text-muted-foreground shrink-0">
-                      step&nbsp;{i + 1}/{PROTOCOL.length}
+                    <h3 className="font-display text-2xl font-bold md:text-3xl">{step.title}</h3>
+                    <span className="tabular hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">
+                      {i + 1}/{PROTOCOL.length}
                     </span>
                   </div>
-                  <p
-                    className="mt-3 text-sm md:text-base text-muted-foreground leading-relaxed max-w-2xl"
-                    dangerouslySetInnerHTML={{ __html: step.body }}
-                  />
+                  <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base">
+                    {step.body}
+                  </p>
                 </div>
               </li>
             ))}

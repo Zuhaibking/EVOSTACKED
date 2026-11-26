@@ -30,7 +30,7 @@ import {
   type ProbeResult,
   type RepairContext,
 } from '@/lib/verify'
-import { auth } from '@clerk/nextjs/server'
+import { getUserId } from '@/lib/server-auth'
 import { Sandbox as InterpreterSandbox } from '@e2b/code-interpreter'
 import { LanguageModel, generateText } from 'ai'
 import { NotFoundError, Sandbox as WebSandbox } from 'e2b'
@@ -38,7 +38,8 @@ import { createHash } from 'node:crypto'
 
 const sandboxTimeout = 10 * 60 * 1000 // 10 minute in ms
 // ponytail: process-local dedupe; multiple hosts need a shared durable job store.
-const previewCreations = new Map<string, { promise: Promise<Response>; expiresAt: number }>()
+type PreviewJob = { promise: Promise<Response>; expiresAt: number; waiters: number; cancel: AbortController }
+const previewCreations = new Map<string, PreviewJob>()
 function prunePreviewCreations() {
   for (const [key, job] of previewCreations) {
     if (job.expiresAt && job.expiresAt <= Date.now()) previewCreations.delete(key)
@@ -64,6 +65,10 @@ type Sandbox = {
 export const maxDuration = 300
 
 export async function POST(req: Request) {
+  // The owner is always the verified session; a body userID is never trusted.
+  const sessionUserId = await getUserId()
+  if (!sessionUserId) return Response.json({ error: 'Sign in to open a preview.' }, { status: 401 })
+  const ownerID: string = sessionUserId
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -80,9 +85,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid saved preview.' }, { status: 400 })
   }
   const {
-    userID,
     teamID,
-    accessToken,
     model,
     config,
     runtimeError,
@@ -91,9 +94,7 @@ export async function POST(req: Request) {
     candidateID,
     runID,
   }: {
-    userID?: string
     teamID?: string
-    accessToken?: string
     model?: LLMModel
     config?: LLMModelConfig
     runtimeError?: string
@@ -102,30 +103,18 @@ export async function POST(req: Request) {
     candidateID?: string
     runID?: string
   } = body as {
-    userID?: string; teamID?: string; accessToken?: string; model?: LLMModel; config?: LLMModelConfig
+    teamID?: string; model?: LLMModel; config?: LLMModelConfig
     runtimeError?: string; cachedResult?: ExecutionResult; projectID?: string; candidateID?: string; runID?: string
   }
   let fragment = parsed.data
   let provisioningStarted = false
+  let createdSandboxId: string | undefined
+  let discarded = false
   let sourceFiles: WrittenFile[]
   try { sourceFiles = fragmentFiles(fragment) } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Invalid project source paths.' }, { status: 400 })
   }
   const cachedWeb = cachedResult && cachedResult.template !== 'code-interpreter-v1' ? cachedResult as ExecutionResultWeb : undefined
-  // Existing keyless fresh-generation checks remain usable. Reopening a saved
-  // sandbox always requires a verified Clerk session, never a body userID.
-  let ownerID = typeof userID === 'string' ? userID : ''
-  let verifiedOwner = false
-  if (cachedWeb || (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)) {
-    try {
-      ownerID = (await auth()).userId || ''
-    } catch {
-      return Response.json({ error: 'Sign in to reopen this saved preview.' }, { status: 401 })
-    }
-    if (!ownerID) return Response.json({ error: 'Sign in to open a preview.' }, { status: 401 })
-    verifiedOwner = true
-  }
-
   // Strip any "-dev" suffix the prompt-side template ids carry in development.
   // E2B's hosted templates don't have the suffix; the -dev convention only
   // applies if a user has published a *-dev custom template to their account.
@@ -209,7 +198,7 @@ export async function POST(req: Request) {
   }
 
   // Auth/reconnect failures return above; only fresh web creation shares a paid job.
-  if (sandboxTemplate === 'code-interpreter-v1' || !verifiedOwner) return createPreview()
+  if (sandboxTemplate === 'code-interpreter-v1') return createPreview(req.signal)
   prunePreviewCreations()
   const sourceHash = createHash('sha256').update(JSON.stringify({
     template: sandboxTemplate,
@@ -221,37 +210,61 @@ export async function POST(req: Request) {
   })).digest('hex')
   const key = JSON.stringify([ownerID, typeof projectID === 'string' ? projectID : '', typeof candidateID === 'string' ? candidateID : 'primary', typeof runID === 'string' ? runID : '', sourceHash])
   const existing = previewCreations.get(key)
-  if (existing) return (await existing.promise).clone()
+  if (existing) return (await waitForJob(existing, req.signal)).clone()
   if ([...previewCreations.values()].filter((job) => !job.expiresAt).length >= 8) {
     return Response.json({ error: 'Preview creation is busy. Please retry shortly.' }, { status: 429 })
   }
-  const job = { promise: Promise.resolve().then(createPreview), expiresAt: 0 }
+  const cancel = new AbortController()
+  const job: PreviewJob = { promise: Promise.resolve().then(() => createPreview(cancel.signal)), expiresAt: 0, waiters: 0, cancel }
   previewCreations.set(key, job)
   job.promise = job.promise.then(async (response) => {
-    const value = await response.clone().json() as ExecutionResultWeb
     if (previewCreations.get(key) !== job) return response
-    // A timed-out paid request may finish remotely. Briefly retain its terminal
-    // response, release the active slot, and avoid an overlapping refresh create.
+    // A timed-out creation was killed. Briefly retain its terminal response,
+    // release the active slot, and avoid an immediate overlapping refresh create.
     if (response.status === 504 && provisioningStarted) job.expiresAt = Date.now() + 30_000
-    else if (!response.ok || value.health?.state === 'FAILED') previewCreations.delete(key)
+    else if (await unusablePreview(response)) previewCreations.delete(key)
     else job.expiresAt = Date.now() + sandboxTimeout
     prunePreviewCreations()
     return response
   }).catch((error) => { if (previewCreations.get(key) === job) previewCreations.delete(key); throw error })
-  return (await job.promise).clone()
+  return (await waitForJob(job, req.signal)).clone()
 
-  async function createPreview() {
+  /** Every failure, timeout or cancellation kills the sandbox it created; only a usable preview survives. */
+  async function createPreview(cancelSignal: AbortSignal) {
     const controller = new AbortController()
     const deadline = Date.now() + maxDuration * 1000
     const timer = setTimeout(() => controller.abort(previewTimeout('Preview preparation timed out after five minutes. Wait 30 seconds, then retry.')), maxDuration * 1000)
+    const onCancel = () => controller.abort(previewCanceled())
+    if (cancelSignal.aborted) onCancel()
+    else cancelSignal.addEventListener('abort', onCancel, { once: true })
     try {
-      return await withSignal(preparePreview(controller.signal, deadline), controller.signal)
+      const response = await withSignal(preparePreview(controller.signal, deadline), controller.signal)
+      if (await unusablePreview(response)) discardSandbox('preview failed its checks')
+      return response
     } catch (error) {
+      // Abort first so a sandbox whose creation lands later is killed as well.
+      if (!controller.signal.aborted) controller.abort(error)
+      discardSandbox(error instanceof Error ? error.name : 'error')
       if (error instanceof Error && error.name === 'PreviewTimeoutError') {
         return Response.json({ error: error.message, code: 'PREVIEW_TIMEOUT' }, { status: 504 })
       }
+      if (error instanceof Error && error.name === 'PreviewCanceledError') {
+        return Response.json({ error: error.message, code: 'PREVIEW_CANCELED' }, { status: 499 })
+      }
       throw error
-    } finally { clearTimeout(timer) }
+    } finally {
+      clearTimeout(timer)
+      cancelSignal.removeEventListener('abort', onCancel)
+    }
+  }
+
+  function discardSandbox(reason: string) {
+    if (!createdSandboxId || discarded) return
+    discarded = true
+    const id = createdSandboxId
+    console.log(`[EvoStack][SANDBOX] killing ${id}: ${reason}`)
+    void WebSandbox.kill(id, { requestTimeoutMs: 15_000 }).catch((error) =>
+      console.warn('[EvoStack][SANDBOX] kill failed', id, error instanceof Error ? error.name : error))
   }
 
   async function preparePreview(signal: AbortSignal, deadline: number) {
@@ -261,33 +274,30 @@ export async function POST(req: Request) {
     metadata: {
       template: sandboxTemplate,
       userID: ownerID,
-      teamID: teamID ?? '',
+      teamID: typeof teamID === 'string' ? teamID.slice(0, 128) : '',
       ...(typeof projectID === 'string' ? { projectID: projectID.slice(0, 128) } : {}),
       ...(typeof candidateID === 'string' ? { candidateID: candidateID.slice(0, 128) } : {}),
       ...(typeof runID === 'string' ? { runID: runID.slice(0, 128) } : {}),
     },
     timeoutMs: sandboxTimeout,
     requestTimeoutMs: 60_000,
-    // Hosted baseline templates predate secured envd access. Match the
-    // interpreter SDK's previous access setting while enabling persistence.
-    secure: false,
-    ...(teamID && accessToken
-      ? {
-          headers: {
-            'X-Supabase-Team': teamID,
-            'X-Supabase-Token': accessToken,
-          },
-        }
-      : {}),
+    // Secured envd needs a token only API-key holders get. vue/streamlit/gradio
+    // hosted templates reject it ("not compatible with secured access").
+    secure: SECURE_TEMPLATES.has(sandboxTemplate),
   }
   const createdAt = Date.now()
   provisioningStarted = true
-  const sandboxTask = withSignal<Sandbox>(sandboxTemplate === 'code-interpreter-v1'
+  const creating: Promise<Sandbox> = sandboxTemplate === 'code-interpreter-v1'
     ? InterpreterSandbox.create(sandboxTemplate, options)
     : WebSandbox.create(sandboxTemplate, {
         ...options,
         lifecycle: { onTimeout: 'pause', autoResume: true },
-      }), signal)
+      })
+  void creating.then((sbx) => {
+    createdSandboxId = sbx.sandboxId
+    if (signal.aborted) discardSandbox('request ended before creation finished')
+  }, () => {})
+  const sandboxTask = withSignal<Sandbox>(creating, signal)
   const imageTask = withSignal(resolveImages(sourceFiles, signal), signal)
   let created: Sandbox
   let imaged: Awaited<ReturnType<typeof resolveImages>>
@@ -450,6 +460,67 @@ export async function POST(req: Request) {
 
 function previewTimeout(message: string) {
   return Object.assign(new Error(message), { name: 'PreviewTimeoutError' })
+}
+
+// Verified with real sandboxes (create + connect + files.write); the other hosted templates return 400.
+const SECURE_TEMPLATES = new Set(['nextjs-developer', 'code-interpreter-v1'])
+
+function previewCanceled() {
+  return Object.assign(new Error('Preview request was canceled.'), { name: 'PreviewCanceledError' })
+}
+
+/** Mirrors lib/sandbox-client.ts: the client discards these, so the sandbox would only leak. */
+async function unusablePreview(response: Response) {
+  if (!response.ok) return true
+  try {
+    const { health } = await response.clone().json() as ExecutionResultWeb
+    return health?.state === 'FAILED' ||
+      (health?.state === 'UNVERIFIED' && !health.log?.some((line) => line.includes('[EvoStack][HTTP] PASS')))
+  } catch { return true }
+}
+
+/** A shared creation is canceled (and its sandbox killed) once every waiting request has disconnected. */
+async function waitForJob(job: PreviewJob, signal: AbortSignal) {
+  job.waiters++
+  let left = false
+  const leave = () => {
+    if (left) return
+    left = true
+    if (--job.waiters <= 0 && !job.expiresAt) job.cancel.abort(previewCanceled())
+  }
+  if (signal.aborted) leave()
+  else signal.addEventListener('abort', leave, { once: true })
+  try {
+    return await job.promise
+  } finally {
+    signal.removeEventListener('abort', leave)
+    if (!left) { left = true; job.waiters-- }
+  }
+}
+
+/** DELETE {sbxIds} kills only sandboxes whose metadata.userID is the caller. */
+export async function DELETE(req: Request) {
+  const userId = await getUserId()
+  if (!userId) return Response.json({ error: 'Sign in to stop previews.' }, { status: 401 })
+  let ids: unknown
+  try { ids = (await req.json())?.sbxIds } catch { ids = undefined }
+  if (!Array.isArray(ids) || !ids.length || ids.length > 32 ||
+    !ids.every((id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id))) {
+    return Response.json({ error: 'sbxIds must be 1-32 preview ids.' }, { status: 400 })
+  }
+  const result = { killed: [] as string[], missing: [] as string[], forbidden: [] as string[], failed: [] as string[] }
+  await Promise.all([...new Set(ids as string[])].map(async (id) => {
+    try {
+      const info = await WebSandbox.getInfo(id, { requestTimeoutMs: 10_000 })
+      if (info.metadata?.userID !== userId) return void result.forbidden.push(id)
+      if (await WebSandbox.kill(id, { requestTimeoutMs: 15_000 })) result.killed.push(id)
+      else result.missing.push(id)
+    } catch (error) {
+      if (isMissingSandbox(error)) result.missing.push(id)
+      else result.failed.push(id)
+    }
+  }))
+  return Response.json(result)
 }
 
 /** Also bounds adapters that fail to honor cancellation; their late result is ignored. */

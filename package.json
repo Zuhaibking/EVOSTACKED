@@ -6,7 +6,9 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "fail=0; for f in lib/*-check.ts; do echo \"> $f\"; tsx \"$f\" || fail=1; done; exit $fail"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.71",
@@ -65,12 +67,13 @@
     "@types/prismjs": "^1.26.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "eslint": "^10.11.0",
+    "esbuild": "~0.28.2",
+    "eslint": "^9.39.5",
     "eslint-config-next": "16.3.8",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "~5.9.3"
   },
   "overrides": {
     "eslint-config-next": {

@@ -11,11 +11,12 @@ export interface APIError {
  * Checks if an error is a rate limit error
  */
 export function isRateLimitError(error: any): boolean {
+  const message = String(error?.message ?? '').toLowerCase()
   return (
     error &&
     (error.statusCode === 429 ||
-      error.message.toLowerCase().includes('limit') ||
-      error.message.toLowerCase().includes('billing'))
+      message.includes('limit') ||
+      message.includes('billing'))
   )
 }
 
@@ -42,6 +43,11 @@ export function handleAPIError(
 ): Response {
   // Log the error for debugging
   console.error('API Error:', error)
+
+  // lib/models.ts allowlist rejection (server keys only run listed models).
+  if (error?.name === 'ModelNotAllowedError') {
+    return Response.json({ error: error.message }, { status: 400 })
+  }
 
   if (isRateLimitError(error)) {
     const message = context?.hasOwnApiKey

@@ -1,6 +1,80 @@
+import type { ProjectSpec } from '@/lib/platform/types'
 import { Templates, templatesToPrompt } from '@/lib/templates'
 
-export function toPrompt(template: Templates) {
+/** Collections the CONNECTOR bridge knows how to route website form submissions into. */
+export const FORM_COLLECTIONS = ['orders', 'reservations', 'appointments', 'leads', 'signups'] as const
+export type FormCollection = (typeof FORM_COLLECTIONS)[number]
+
+const FORM_GUIDE: Record<FormCollection, { action: string; fields: string }> = {
+  orders: { action: 'order / checkout (e.g. "Place order", "Checkout")', fields: 'customer_name, email, phone, items (or product), quantity, fulfillment (pickup|delivery), address, notes, total' },
+  reservations: { action: 'table / ticket / room reservation', fields: 'customer_name, email, phone, date, time, party_size, notes' },
+  appointments: { action: 'appointment / session / service booking', fields: 'customer_name, email, phone, service, staff (optional), date, time, notes' },
+  leads: { action: 'contact / quote / inquiry', fields: 'name, email, phone, company, budget, message' },
+  signups: { action: 'signup / waitlist / newsletter / registration', fields: 'name, email, plan (optional), company (optional)' },
+}
+
+const TYPE_DEFAULTS: Record<ProjectSpec['projectType'], FormCollection[]> = {
+  ecommerce: ['orders', 'signups', 'leads'],
+  restaurant: ['reservations', 'orders', 'leads'],
+  booking: ['appointments', 'leads'],
+  saas: ['signups', 'leads'],
+  agency: ['leads'],
+  portfolio: ['leads'],
+  events: ['reservations', 'signups', 'leads'],
+  education: ['signups', 'leads'],
+  nonprofit: ['signups', 'leads'],
+  marketplace: ['orders', 'signups', 'leads'],
+  community: ['signups', 'leads'],
+  custom: ['leads'],
+}
+
+const KEYWORDS: [FormCollection, RegExp][] = [
+  ['orders', /\b(order|orders|cart|checkout|purchase|buy|shop|delivery|pickup|pre-?order)\b/i],
+  ['reservations', /\b(reserv\w*|table|tickets?|rsvp)\b/i],
+  ['appointments', /\b(appointments?|book(ing|ings)?|schedul\w*|sessions?|consultations?)\b/i],
+  ['leads', /\b(contact|inquir\w*|enquir\w*|quotes?|leads?|estimate)\b/i],
+  ['signups', /\b(sign ?-?ups?|register|registration|waitlist|newsletter|subscribe|enrol\w*|join|membership|trial)\b/i],
+]
+
+/** Which public forms a spec needs, in priority order (pure; used by the prompt and tests). */
+export function specFormTargets(spec: ProjectSpec): FormCollection[] {
+  const text = [
+    ...spec.features.filter((f) => f.priority !== 'could').map((f) => `${f.name} ${f.description}`),
+    ...spec.entities.map((e) => `${e.name} ${e.description}`),
+    ...spec.workflows.map((w) => `${w.name} ${w.trigger}`),
+  ].join(' \n ')
+  const found = new Set<FormCollection>(TYPE_DEFAULTS[spec.projectType] ?? ['leads'])
+  for (const [collection, re] of KEYWORDS) if (re.test(text)) found.add(collection)
+  return FORM_COLLECTIONS.filter((c) => found.has(c))
+}
+
+const clip = (value: unknown, max = 240) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+const list = (items: string[], max = 12) => items.map((s) => clip(s, 120)).filter(Boolean).slice(0, max)
+
+function specSection(spec: ProjectSpec): string {
+  const targets = specFormTargets(spec)
+  const lines = [
+    'PROJECT SPECIFICATION (from discovery — build exactly this business, not a generic demo):',
+    `- Name: ${clip(spec.name, 80)}${spec.tagline ? ` — ${clip(spec.tagline, 140)}` : ''}`,
+    `- Type: ${spec.projectType}${spec.industry ? ` · industry: ${clip(spec.industry, 80)}` : ''}`,
+    spec.summary ? `- Summary: ${clip(spec.summary, 400)}` : '',
+    spec.audience?.customers?.length ? `- Website visitors: ${list(spec.audience.customers, 6).join('; ')}` : '',
+    spec.features.length ? `- Features:\n${spec.features.slice(0, 14).map((f) => `  · [${f.priority}] ${clip(f.name, 80)}: ${clip(f.description, 160)}`).join('\n')}` : '',
+    spec.entities.length ? `- Entities: ${spec.entities.slice(0, 12).map((e) => `${clip(e.name, 40)} (${clip(e.description, 80)})`).join('; ')}` : '',
+    spec.workflows.length ? `- Workflows: ${spec.workflows.slice(0, 8).map((w) => `${clip(w.name, 60)}: when ${clip(w.trigger, 80)} → ${clip(w.outcome, 80)}`).join('; ')}` : '',
+    spec.pages.length ? `- Pages/sections: ${list(spec.pages, 10).join(', ')}` : '',
+    spec.brand ? `- Brand: tone ${clip(spec.brand.tone, 60) || 'n/a'}; style ${clip(spec.brand.style, 80) || 'n/a'}${spec.brand.colors?.length ? `; colors ${list(spec.brand.colors, 6).join(', ')}` : ''}` : '',
+    spec.constraints.length ? `- Constraints: ${list(spec.constraints, 8).join('; ')}` : '',
+    '',
+    'REQUIRED WORKING FORMS — this site is wired to a real backend. Implement each of these as a real, working form in the page (not a fake button):',
+    ...targets.map((c) => `  · data-evo-collection="${c}" — ${FORM_GUIDE[c].action}. Suggested name attributes: ${FORM_GUIDE[c].fields}.`),
+  ]
+  return lines.filter(Boolean).join('\n')
+}
+
+const FORMS_CONTRACT = `Website forms contract (the EvoStack bridge captures submissions and stores them in the project's backend): every form for a key business action — order/checkout, reservation/booking, appointment, contact/lead, signup/waitlist/newsletter — must be a real <form> element with data-evo-collection set to exactly one of: orders | reservations | appointments | leads | signups. Every input/select/textarea inside it has a meaningful snake_case name attribute (customer_name, email, phone, date, time, party_size, quantity, message…), a visible <label>, and the right type (email, tel, date, time, number). Use required where the business needs it. Handle onSubmit with event.preventDefault(), read the values via new FormData(event.currentTarget), validate, then show a clear in-page success state (e.g. "Thanks — your order is in") and reset the form. Never navigate away, never post to a made-up URL, and never call fetch for form submission yourself. Do not wrap inputs in <div onClick> fakes; buttons that submit use type="submit".`
+
+export function toPrompt(template: Templates, spec?: ProjectSpec | null) {
   return `
     You are a skilled software engineer.
     You do not make mistakes.
@@ -14,7 +88,8 @@ export function toPrompt(template: Templates) {
     Motion/framer-motion: spring and inertia only accept two keyframes. Never write type: "spring" or type: "inertia" (and do not rely on the default spring) with arrays of 3+ values such as scale: [1.13, 0.97, 1] or rotate: [0, 2, 0]. Use a single target with spring (scale: 1), or set type: "tween" for multi-keyframe sequences.
     Next.js pages router server-renders React, then React hydrates that HTML in the browser. The server and first client render must match exactly. Prefer locally imported CSS modules; do not import global CSS from a page or component. If a style tag is needed, use <style dangerouslySetInnerHTML={{ __html: css }} />. Initialize useState with deterministic literals, restore browser preferences in useEffect, and gate next-themes useTheme/resolvedTheme icons on a mounted flag. Never read window, localStorage, matchMedia, dates, or randomness during render/state initialization. Never hide mismatches with suppressHydrationWarning or disabled SSR.
     Real images only. Never generate images. Never invent image URLs. Never use placeholder image services (picsum, placeholder.com, unsplash.it, lorempixel, via.placeholder, placehold.co, dummyimage). Whenever an actual photograph/image is needed, use evo-image:// followed by a concise, specific search query, e.g. src="evo-image://Samsung Galaxy S25 product photograph" or background-image: url("evo-image://Goa beach sunset"). Do not use evo-image:// for icons, logos, gradients, decorative CSS shapes, SVG icons, or simple UI graphics unless an actual real-world image is genuinely required. Make image queries specific and descriptive. Different sections should use different relevant image queries when appropriate. Do not reuse one image everywhere unless the design genuinely calls for it. Do not invent remote Unsplash/Pexels/Wikimedia URLs.
+    ${FORMS_CONTRACT}
     You can use one of the following templates:
     ${templatesToPrompt(template)}
-  `
+  ${spec ? `\n${specSection(spec)}\n` : ''}`
 }
