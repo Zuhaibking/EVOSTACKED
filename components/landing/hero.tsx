@@ -1,147 +1,157 @@
 import { LandingChatInput } from './landing-chat-input'
+import { ArrowRight } from 'lucide-react'
+import Link from 'next/link'
+
+const PIPELINE = ['Discover', 'Compete', 'Measure', 'Launch']
+
+const EVIDENCE = [
+  { k: 'Performance', v: 0.94 },
+  { k: 'Accessibility', v: 0.97 },
+  { k: 'Brief fit', v: 0.88 },
+]
+
+const BRIEF_TIPS = [
+  'Who it is for and what it should do.',
+  'A visual style or a reference you like.',
+  'A preferred framework, if you have one.',
+]
 
 export function Hero() {
   return (
-    <section
-      aria-labelledby="hero-heading"
-      className="relative noise-overlay"
-    >
-      <div className="max-w-[1400px] mx-auto px-6 md:px-10 py-12 md:py-20 lg:py-24 relative">
-        <div className="grid grid-cols-12 gap-6 md:gap-10 relative">
+    <section aria-labelledby="hero-heading" className="noise-overlay relative">
+      <div className="relative mx-auto max-w-[1400px] px-6 pb-16 pt-12 md:px-10 md:pb-24 md:pt-20 lg:pt-24">
+        <div className="relative grid grid-cols-12 gap-x-6 gap-y-12 md:gap-x-10">
           {/* Headline column */}
-          <div className="col-span-12 lg:col-span-7 relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="inline-block h-[1px] w-10 bg-foreground" />
-              <span className="font-mono text-[10px] tracking-[0.3em] uppercase text-muted-foreground">
-                A new perspective — on building software
-              </span>
-            </div>
+          <div className="relative z-10 col-span-12 lg:col-span-7">
+            <ol
+              aria-label="How EvoStack works"
+              className="mb-7 flex flex-wrap items-center gap-x-2.5 gap-y-1"
+            >
+              {PIPELINE.map((step, i) => (
+                <li key={step} className="label-caps flex items-center gap-2.5">
+                  <span className={i === 0 ? 'text-foreground' : undefined}>{step}</span>
+                  {i < PIPELINE.length - 1 && (
+                    <span aria-hidden className="text-brand">→</span>
+                  )}
+                </li>
+              ))}
+            </ol>
 
             <h1
               id="hero-heading"
-              className="font-display font-black tracking-tight leading-[0.92] text-foreground"
+              className="font-display text-[clamp(2.75rem,7vw,5.75rem)] font-black leading-[0.92] tracking-tight text-foreground"
             >
-              <span className="block text-[clamp(2.75rem,7vw,5.75rem)]">
-                Three
-                <span className="italic font-normal text-muted-foreground">
-                  {' '}specimens.
-                </span>
+              <span className="block">
+                Three{' '}
+                <span className="font-normal italic text-muted-foreground">specimens.</span>
               </span>
-              <span className="block text-[clamp(2.75rem,7vw,5.75rem)] text-brand">
-                One survives.
-              </span>
+              <span className="block text-brand">One survives.</span>
             </h1>
 
-            <div className="mt-10 max-w-xl">
-              <p className="font-display text-lg md:text-xl leading-relaxed text-foreground/90">
-                One idea. Three distinct implementations. EvoStack explores
-                different approaches to your brief, uses an AI editor to choose
-                a favorite, and lets you preview and refine the result.
-              </p>
-              <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[0.12em] uppercase text-muted-foreground">
-                <span>Three approaches</span><span className="text-border">/</span><span>One editorial verdict</span><span className="text-border">/</span><span>Live preview</span>
-              </div>
+            <p className="mt-8 max-w-[38rem] text-pretty text-lg leading-relaxed text-foreground/90 md:text-xl">
+              Describe an idea. EvoStack asks the right questions, then three models compete on
+              measured evidence.{' '}
+              <span className="text-muted-foreground">
+                The build you pick ships with its own backend, database and tailored control center.
+              </span>
+            </p>
+
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <a
+                href="#start"
+                className="group inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-medium text-brand-foreground shadow-xs transition-colors hover:bg-brand/90 active:bg-brand/85"
+              >
+                Start with an idea
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </a>
+              <Link
+                href="/app"
+                className="inline-flex h-11 items-center justify-center rounded-lg border border-border px-5 text-sm font-medium text-foreground transition-colors hover:border-foreground/30 hover:bg-accent active:bg-accent/80"
+              >
+                Open the workspace
+              </Link>
             </div>
           </div>
 
-          {/* Specimen card — exhibit A */}
+          {/* Specimen card — an example verdict */}
           <aside
-            aria-label="Exhibit A — winning specimen"
-            className="col-span-12 lg:col-span-5 relative z-10"
+            aria-label="Example verdict"
+            className="relative z-10 col-span-12 lg:col-span-5"
           >
-            <div className="relative lg:mt-12">
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
-                <header className="flex items-center justify-between border-b border-border px-4 py-2">
-                  <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
-                    Illustrative verdict
-                  </span>
-                  <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-brand-accent">
-                    Selected design
-                  </span>
-                </header>
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_0_hsl(var(--foreground)/0.04),0_24px_48px_-24px_rgb(0_0_0/0.45)] lg:mt-10">
+              <header className="flex items-center justify-between border-b border-border px-5 py-3">
+                <span className="label-caps">Example verdict</span>
+                <span className="label-caps inline-flex items-center gap-2 text-foreground">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-accent" />
+                  Winner
+                </span>
+              </header>
 
-                <div className="px-5 pt-5 pb-4">
-                  <p className="font-display italic text-muted-foreground text-sm mb-1">
-                    Stack
-                  </p>
-                  <p className="font-display text-2xl leading-tight">
-                    Next.js
-                    <span className="text-muted-foreground"> · </span>
-                    React
-                    <span className="text-muted-foreground"> · </span>
-                    Tailwind
-                  </p>
-                </div>
-
-                <div className="border-y border-border px-5 py-4 text-sm leading-relaxed text-muted-foreground">“A focused layout, clear hierarchy, and thoughtful details — the strongest fit for the brief.”</div>
-
-                <div className="px-5 py-4">
-                  <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-muted-foreground mb-2">
-                    Editorial criteria
-                  </p>
-                  <div className="space-y-2 font-mono text-[11px] tabular">
-                    {[
-                      { k: 'Clarity', v: 0.93 },
-                      { k: 'Fit', v: 0.86 },
-                      { k: 'Polish', v: 0.90 },
-                    ].map((row) => (
-                      <div key={row.k} className="flex items-center gap-3">
-                        <span className="w-20 text-muted-foreground uppercase tracking-[0.12em] text-[10px]">
-                          {row.k}
-                        </span>
-                        <span className="flex-1 h-1 rounded-full bg-border relative overflow-hidden">
-                          <span
-                            className="absolute inset-y-0 left-0 bg-brand-accent"
-                            style={{ width: `${row.v * 100}%` }}
-                          />
-                        </span>
-                        <span className="w-10 text-right">{row.v.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <footer className="border-t border-border px-5 py-3 text-xs text-muted-foreground">Example only. Your verdict is generated from your designs.</footer>
+              <div className="px-5 pb-4 pt-5">
+                <p className="mb-1 font-display text-sm italic text-muted-foreground">Candidate B</p>
+                <p className="font-display text-2xl leading-tight">
+                  Next.js<span className="text-muted-foreground"> · </span>React
+                  <span className="text-muted-foreground"> · </span>Tailwind
+                </p>
               </div>
 
+              <p className="border-y border-border px-5 py-4 text-sm leading-relaxed text-muted-foreground">
+                “Fastest build, the clearest hierarchy and the closest fit to the brief.”
+              </p>
 
+              <div className="px-5 py-4">
+                <p className="label-caps mb-3">Measured evidence</p>
+                <dl className="space-y-2.5">
+                  {EVIDENCE.map((row) => (
+                    <div key={row.k} className="flex items-center gap-3">
+                      <dt className="w-28 shrink-0 text-xs text-muted-foreground">{row.k}</dt>
+                      <dd className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-full bg-brand-accent"
+                          style={{ width: `${row.v * 100}%` }}
+                        />
+                      </dd>
+                      <dd className="tabular w-10 text-right font-mono text-xs text-foreground">
+                        {row.v.toFixed(2)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              <footer className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
+                Example only — your verdict is measured from your own builds.
+              </footer>
             </div>
           </aside>
         </div>
 
         {/* Submission */}
-        <div className="mt-16 md:mt-20 grid grid-cols-12 gap-6 md:gap-10 relative">
+        <div
+          id="start"
+          className="relative mt-20 grid scroll-mt-24 grid-cols-12 gap-x-6 gap-y-8 md:mt-24 md:gap-x-10"
+        >
           <div className="col-span-12 lg:col-span-4">
             <p className="label-caps mb-3">Start with an idea</p>
-            <h2 className="font-display text-3xl md:text-4xl font-black leading-tight">
+            <h2 className="font-display text-3xl font-black leading-tight md:text-4xl">
               Submit a brief.
               <br />
-              <span className="italic font-normal">Explore the possibilities.</span>
+              <span className="font-normal italic">Explore the possibilities.</span>
             </h2>
-            <p className="mt-5 text-sm text-muted-foreground leading-relaxed">
-              Tell us who it is for, what it should do, and the look you have
-              in mind. A clear brief gives each design a stronger starting point.
+            <p className="mt-5 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              A sentence is enough to begin — EvoStack asks follow-up questions. A clearer brief
+              gives every candidate a stronger starting point.
             </p>
-            <ul className="mt-6 space-y-2 text-sm text-muted-foreground">
-              <li className="flex gap-3">
-                <span className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground/70 translate-y-1">
-                  i
-                </span>
-                Describe the main features.
-              </li>
-              <li className="flex gap-3">
-                <span className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground/70 translate-y-1">
-                  ii
-                </span>
-                Share a visual style or reference.
-              </li>
-              <li className="flex gap-3">
-                <span className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground/70 translate-y-1">
-                  iii
-                </span>
-                Add a preferred framework, if you have one.
-              </li>
-            </ul>
+            <ol className="mt-6 space-y-2.5 text-sm text-foreground/85">
+              {BRIEF_TIPS.map((tip, i) => (
+                <li key={tip} className="flex gap-3">
+                  <span className="tabular w-5 shrink-0 pt-px font-mono text-xs text-muted-foreground">
+                    0{i + 1}
+                  </span>
+                  {tip}
+                </li>
+              ))}
+            </ol>
           </div>
           <div className="col-span-12 lg:col-span-8">
             <LandingChatInput />

@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Tailwind v4 ignores tailwind.config.ts unless it is loaded explicitly: it
+   carries font-display, the custom keyframes and the tailwindcss-animate plugin. */
+@config "../tailwind.config.ts";
 
 @theme inline {
   --color-background: hsl(var(--background));
@@ -38,6 +41,7 @@
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
   --color-brand-accent: hsl(var(--brand-accent));
+  --color-brand-accent-foreground: hsl(var(--brand-accent-foreground));
   --color-brand-danger: hsl(var(--brand-danger));
 
   --radius: var(--radius);
@@ -76,6 +80,7 @@
     --brand: 235 72% 52%;
     --brand-foreground: 40 30% 97%;
     --brand-accent: 75 78% 42%;
+    --brand-accent-foreground: 28 18% 10%;
     --brand-danger: 8 72% 48%;
   }
 
@@ -110,6 +115,7 @@
     --brand: 235 82% 68%;
     --brand-foreground: 40 30% 97%;
     --brand-accent: 75 78% 58%;
+    --brand-accent-foreground: 30 12% 7%;
     --brand-danger: 8 76% 60%;
   }
 }
@@ -158,11 +164,13 @@
     height: 1px;
   }
 
-  /* Small-caps editorial label */
+  /* Small-caps editorial label — 11px floor + full muted token keeps AA contrast */
   .label-caps {
     font-family: var(--font-mono);
     font-size: 0.6875rem;
-    letter-spacing: 0.1em;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: hsl(var(--muted-foreground));
   }
@@ -205,8 +213,8 @@
     border: 1px solid currentColor;
     padding: 0.3rem 0.75rem;
     font-family: var(--font-mono);
-    font-size: 0.625rem;
-    letter-spacing: 0.24em;
+    font-size: 0.6875rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     border-radius: 4px;
     opacity: 0.85;
@@ -274,9 +282,18 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  :is(a, button, input, textarea, select):focus-visible {
+  :is(a, button, input, textarea, select, summary, [role="button"]):focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 3px;
+  }
+
+  /* Tailwind 4 preflight resets buttons to cursor:default — restore affordance. */
+  :is(button, [role="button"], summary, label[for], select):not(:disabled, [aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  kbd {
+    font-family: var(--font-mono);
   }
 }
 

@@ -4,8 +4,10 @@ import { fragmentCodeText } from '@/lib/schema'
 import { Candidate } from '@/lib/tournament-client'
 import { candidateHealthLabel } from '@/lib/candidate-health'
 import { VariantId } from '@/lib/tournament'
+import { rankCandidates, type RankedCandidate } from '@/lib/evidence/score'
+import { DEFAULT_WEIGHTS } from '@/lib/evidence/types'
 import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const STATUS_COPY: Record<Candidate['status'], string> = {
   pending: 'Waiting',
@@ -28,6 +30,17 @@ function statusDot(status: Candidate['status'], sandboxStatus?: Candidate['sandb
   if (status === 'done') return 'bg-brand-accent'
   if (status === 'error') return 'bg-destructive'
   return 'bg-muted-foreground/40'
+}
+
+/** Evidence-board view of a tournament candidate (measured metrics + judge + health). */
+function evidenceInput(c: Candidate) {
+  const failed = !!c.dqReason || c.status === 'error' || c.sandboxStatus === 'error' || c.health?.state === 'FAILED'
+  return {
+    id: c.id,
+    evidence: c.evidence,
+    judge: c.scoreClarity != null ? { clarity: c.scoreClarity, fit: c.scoreFit ?? 0, polish: c.scorePolish ?? 0 } : null,
+    healthy: failed ? false : c.health?.verified || c.sandboxStatus === 'ready' ? true : null,
+  }
 }
 
 /**
@@ -55,6 +68,10 @@ export function SpecimenStrip({
   const winner = list.find((c) => c.isWinner)
   const doneCount = list.filter((c) => c.status === 'done').length
   const isLive = phase === 'generating' || phase === 'judging'
+  const evidenceScores = useMemo(() => {
+    const ranked = rankCandidates(Object.values(candidates).map(evidenceInput), DEFAULT_WEIGHTS)
+    return new Map(ranked.filter((r) => r.measured).map((r) => [r.id, r]))
+  }, [candidates])
 
   // Auto-open while live; collapse on verdict. User can still toggle manually.
   const [open, setOpen] = useState(true)
@@ -69,6 +86,7 @@ export function SpecimenStrip({
       idx={idx}
       isSelected={selectedId === c.id}
       onSelect={() => onSelect(c.id)}
+      evidence={evidenceScores.get(c.id)}
     />
   ))
 
@@ -194,11 +212,13 @@ function CandidateTab({
   idx,
   isSelected,
   onSelect,
+  evidence,
 }: {
   c: Candidate
   idx: number
   isSelected: boolean
   onSelect: () => void
+  evidence?: RankedCandidate
 }) {
   const isGen = c.status === 'generating'
   const isError = c.status === 'error'
@@ -233,6 +253,11 @@ function CandidateTab({
           <span className="flex items-center gap-2 font-sans text-[11px] leading-none text-muted-foreground">
             <span className="truncate">{c.label}</span>
             <span className="font-mono text-[9px] text-muted-foreground/40">{String(idx + 1).padStart(2, '0')}</span>
+            {c.model?.name && (
+              <span title={`Model: ${c.model.name}`} className="min-w-0 max-w-[110px] truncate rounded-full border border-border px-1.5 py-[3px] font-mono text-[9px] leading-none text-muted-foreground">
+                {c.model.name}
+              </span>
+            )}
           </span>
           <span className="truncate font-sans text-[13px] font-medium leading-snug text-foreground">{title}</span>
         </span>
@@ -243,7 +268,19 @@ function CandidateTab({
           <span aria-hidden className={`h-1 w-1 shrink-0 rounded-full ${statusDot(c.status, c.sandboxStatus)}`} />
           <span className="truncate">{status}</span>
         </span>
-        {c.scoreComposite != null && <span title="Editorial score" className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">{c.scoreComposite.toFixed(2)}</span>}
+        <span className="flex shrink-0 items-center gap-2">
+          {evidence && (
+            <span
+              title={`Evidence score — ${evidence.score.reasons.slice(0, 3).join(' · ')}`}
+              className={`rounded px-1.5 py-[3px] font-mono text-[10px] leading-none tabular-nums ${
+                evidence.score.disqualified ? 'bg-destructive/10 text-destructive' : evidence.rank === 1 ? 'bg-brand-accent/10 text-foreground' : 'bg-foreground/[0.05] text-muted-foreground'
+              }`}
+            >
+              {evidence.score.disqualified ? 'DQ' : `${evidence.rank === 1 ? '★ ' : ''}${Math.round(evidence.score.total)}`}
+            </span>
+          )}
+          {c.scoreComposite != null && <span title="Editorial score" className="font-mono text-[10px] tabular-nums text-muted-foreground/60">{c.scoreComposite.toFixed(2)}</span>}
+        </span>
       </span>
     </button>
   )

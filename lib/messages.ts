@@ -1,6 +1,6 @@
 import { FragmentSchema, fragmentCodeText, fragmentSourceText } from './schema'
 import { ExecutionResult } from './types'
-import { CoreMessage, DeepPartial } from 'ai'
+import { ModelMessage, DeepPartial } from 'ai'
 
 export type MessageText = {
   type: 'text'
@@ -24,7 +24,7 @@ export type Message = {
   result?: ExecutionResult
 }
 
-export function toAISDKMessages(messages: Message[]): CoreMessage[] {
+export function toAISDKMessages(messages: Message[]): ModelMessage[] {
   return messages.map((message) => {
     const source = fragmentSourceText(message.object)
     let includedSource = false

@@ -1,11 +1,12 @@
 import { handleAPIError, createRateLimitResponse } from '@/lib/api-errors'
 import { Duration } from '@/lib/duration'
-import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
+import { getModelClient, hasOwnApiKey, LLMModel, LLMModelConfig, modelRejection, sanitizeModelParams } from '@/lib/models'
 import { applyPatch } from '@/lib/morph'
-import ratelimit from '@/lib/ratelimit'
+import ratelimit, { OWN_KEY_LIMIT_MULTIPLIER, rateLimitKey } from '@/lib/ratelimit'
+import { requireUserId } from '@/lib/server-auth'
 import { normalizeProjectPath, validateProjectFiles } from '@/lib/project-paths'
 import { FragmentSchema, fragmentSchema, fragmentSourceFiles, fragmentSourceText, morphProjectEditSchema } from '@/lib/schema'
-import { generateObject, LanguageModel, CoreMessage } from 'ai'
+import { generateObject, LanguageModel, ModelMessage } from 'ai'
 
 export const maxDuration = 300
 
@@ -19,13 +20,15 @@ const ratelimitWindow = process.env.RATE_LIMIT_WINDOW
 // System prompt is constructed dynamically below using the current file context
 
 export async function POST(req: Request) {
+  const authz = await requireUserId()
+  if ('response' in authz) return authz.response
   const {
     messages,
     model,
-    config,
+    config = {},
     currentFragment: currentInput,
   }: {
-    messages: CoreMessage[]
+    messages: ModelMessage[]
     model: LLMModel
     config: LLMModelConfig
     currentFragment: FragmentSchema
@@ -37,20 +40,22 @@ export async function POST(req: Request) {
   try { validateProjectFiles(fragmentSourceFiles(currentFragment)) }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Invalid project files.' }, { status: 400 }) }
 
+  const ownKey = hasOwnApiKey(config)
+  const rejected = modelRejection(model, config)
+  if (rejected) return rejected
+
   // Rate limiting (same as chat route)
-  const limit = !config.apiKey
-    ? await ratelimit(
-        req.headers.get('x-forwarded-for'),
-        rateLimitMaxRequests,
-        ratelimitWindow,
-      )
-    : false
+  const limit = await ratelimit(
+    rateLimitKey(req, authz.userId, ownKey),
+    ownKey ? rateLimitMaxRequests * OWN_KEY_LIMIT_MULTIPLIER : rateLimitMaxRequests,
+    ratelimitWindow,
+  )
 
   if (limit) {
     return createRateLimitResponse(limit)
   }
 
-  const { model: modelNameString, apiKey: modelApiKey, ...modelParams } = config
+  const modelParams = sanitizeModelParams(config)
   const modelClient = getModelClient(model, config)
 
   try {
@@ -124,6 +129,6 @@ ${fragmentSourceText(currentFragment)}
       },
     })
   } catch (error: any) {
-    return handleAPIError(error, { hasOwnApiKey: !!config.apiKey })
+    return handleAPIError(error, { hasOwnApiKey: ownKey })
   }
 }

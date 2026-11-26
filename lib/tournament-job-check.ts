@@ -51,10 +51,11 @@ async function check() {
     plugins: [{ name: 'job-fixtures', setup(b) {
       const mocks: Record<string, string> = {
         '@clerk/nextjs/server': `export async function auth(){return {userId:globalThis.__evoTournamentFixture.userId}}`,
-        '@/lib/models': `export function getModelClient(){return 'fixture-model'}`,
+        '@/lib/models': `export function getModelClient(){return 'fixture-model'};export function modelRejection(){return null};export function hasOwnApiKey(c){return Boolean(c&&typeof c.apiKey==='string'&&c.apiKey.trim())};export function sanitizeModelParams(){return {}}`,
         '@/lib/prompt': `export function toPrompt(){return 'Fixture template'}`,
-        '@/lib/ratelimit': `export default async function ratelimit(){globalThis.__evoTournamentFixture.rateCalls++;return false}`,
-        ai: `export async function streamObject(args){return globalThis.__evoTournamentFixture.stream(args)};export async function generateObject(){return globalThis.__evoTournamentFixture.judge()}`,
+        '@/lib/ratelimit': `export default async function ratelimit(){globalThis.__evoTournamentFixture.rateCalls++;return false};export const OWN_KEY_LIMIT_MULTIPLIER=10;export function rateLimitKey(){return 'fixture'}`,
+        // streamObject is synchronous in ai v7 (the route no longer awaits it); generateObject stays async.
+        ai: `export function streamObject(args){return globalThis.__evoTournamentFixture.stream(args)};export async function generateObject(){return globalThis.__evoTournamentFixture.judge()}`,
       }
       b.onResolve({ filter: /^(@clerk\/nextjs\/server|@\/lib\/(models|prompt|ratelimit)|ai)$/ }, args => ({ path: args.path, namespace: 'fixture' }))
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: mocks[args.path], loader: 'js' }))

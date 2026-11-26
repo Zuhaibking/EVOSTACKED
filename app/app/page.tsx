@@ -8,6 +8,7 @@ import { ChatSettings } from '@/components/chat-settings'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
 import { SpecimenStrip } from '@/components/specimen-strip'
+import { LaunchBackend, controlCenterPath } from '@/components/platform/launch-backend'
 import {
   Dialog,
   DialogContent,
@@ -17,9 +18,12 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth'
+import { DEFAULT_WEIGHTS, type EvidenceMetrics, type EvidenceWeights } from '@/lib/evidence/types'
+import type { ProjectSpec } from '@/lib/platform/types'
 import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
 import { InspectSelection, toCompleteFragment } from '@/lib/inspect'
 import {
+  ProjectPlatform,
   ProjectRecord,
   ProjectStore,
   ProjectWorkspace,
@@ -41,18 +45,20 @@ import {
 } from '@/lib/projects'
 import { LLMModelConfig } from '@/lib/models'
 import modelsList from '@/lib/models.json'
-import { FragmentSchema, fragmentCodeText, sameFragmentSource, fragmentSchema as schema } from '@/lib/schema'
+import { FragmentSchema, fragmentCodeText, fragmentSourceFiles, sameFragmentSource, fragmentSchema as schema } from '@/lib/schema'
 import templates from '@/lib/templates'
 import { VariantId } from '@/lib/tournament'
-import { useTournament } from '@/lib/tournament-client'
+import { TournamentSubmitArgs, useTournament } from '@/lib/tournament-client'
 import { ExecutionResult } from '@/lib/types'
 import { createSandbox } from '@/lib/sandbox-client'
+import { DiscoveryPanel } from '@/components/discovery/discovery-panel'
+import { EvidenceBoard } from '@/components/evidence/evidence-board'
 import { DeepPartial } from 'ai'
 import { experimental_useObject as useObject } from '@ai-sdk/react'
 import { usePostHog } from 'posthog-js/react'
 import { ReactNode, SetStateAction, useEffect, useRef, useState } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
-import { ArrowUpRight, Check, History, Layers3, Loader2 } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronDown, Gauge, History, Layers3, Loader2 } from 'lucide-react'
 
 export default function Home() {
   const [chatInput, setChatInput] = useState('')
@@ -80,7 +86,20 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState('')
   const [selectedCandidate, setSelectedCandidate] = useState<VariantId | undefined>()
   const [hasTournament, setHasTournament] = useState(false)
+  const [spec, setSpec] = useState<ProjectSpec | null>(null)
+  const [brief, setBrief] = useState<string | null>(null)
+  const [platform, setPlatform] = useState<ProjectPlatform | null>(null)
+  // Discovery runs before the first tournament; holds the idea + the message that started it.
+  const [discovery, setDiscovery] = useState<{ idea: string; messages: Message[] } | null>(null)
+  const [measuring, setMeasuring] = useState<Partial<Record<VariantId, boolean>>>({})
+  const [evidenceWeights, setEvidenceWeights] = useLocalStorage<EvidenceWeights>('evostack.evidence.weights', DEFAULT_WEIGHTS)
+  const [evidenceOpen, setEvidenceOpen] = useLocalStorage('evostack.evidence.open', true)
   const tournament = useTournament()
+  // Persisted evidence weights drive the tournament's winner reconciliation.
+  useEffect(() => {
+    tournament.setWeights(evidenceWeights)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evidenceWeights])
   const { session, userTeam, signOut } = useAuth(setAuthDialog, setAuthView)
   const [useMorphApply, setUseMorphApply] = useLocalStorage(
     'useMorphApply',
@@ -124,7 +143,7 @@ export default function Home() {
   const sandboxGen = useRef(0)
   const chatRequestGen = useRef(-1)
   const chatRequestSequence = useRef(0)
-  const chatBaseFragmentRef = useRef<DeepPartial<FragmentSchema> | undefined>()
+  const chatBaseFragmentRef = useRef<DeepPartial<FragmentSchema> | undefined>(undefined)
   const inspectGen = useRef(0)
   const previewJobs = useRef(new Map<VariantId | 'standalone', AbortController>())
 
@@ -153,6 +172,9 @@ export default function Home() {
 
   workspaceRef.current = {
     messages,
+    spec,
+    brief,
+    platform,
     fragment,
     result,
     selectedCandidate,
@@ -188,6 +210,15 @@ export default function Home() {
     setResult(project.result)
     setSelectedCandidate(project.selectedCandidate)
     setHasTournament(Boolean(project.hasTournament))
+    setSpec(project.spec ?? null)
+    setBrief(project.brief ?? null)
+    setPlatform(project.platform ?? null)
+    setMeasuring({})
+    // A first prompt saved mid-discovery reopens discovery instead of a blank canvas.
+    const pendingIdea = !project.hasTournament && !project.fragment && !project.spec && project.messages?.length === 1 && project.messages[0].role === 'user'
+      ? project.messages[0].content.find((c) => c.type === 'text')?.text?.trim()
+      : undefined
+    setDiscovery(pendingIdea ? { idea: pendingIdea, messages: project.messages } : null)
     setCurrentTab(project.currentTab === 'fragment' ? 'fragment' : 'code')
     setChatInput(project.chatInput ?? '')
     setFiles([])
@@ -223,12 +254,21 @@ export default function Home() {
 
   const persistCurrent = (force = false) => {
     const store = storeRef.current
+    // Until the loaded project has rendered, workspaceRef still holds the blank initial
+    // workspace. Saving then would overwrite the project (React Strict Mode runs the
+    // save-on-cleanup below between the two dev mounts; an early unmount can do it in prod).
+    if (!hydratedRef.current) return
     if (!store || missingProjectRef.current) return
     if (!force && skipSaveRef.current) return
     const next = saveWorkspace(store, store.activeId, workspaceRef.current)
     storeRef.current = next
     setProjectStore(next)
   }
+
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    hydratedRef.current = hydrated
+  }, [hydrated])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -306,6 +346,9 @@ export default function Home() {
     result,
     selectedCandidate,
     hasTournament,
+    spec,
+    brief,
+    platform,
     currentTab,
     chatInput,
     tournament.candidates,
@@ -503,6 +546,8 @@ export default function Home() {
           sandboxError: undefined,
           runtimeError: undefined,
         })
+        // Evidence: measure the live preview (fire-and-forget; never blocks the preview).
+        if ('url' in nextResult && nextResult.sbxId && !c.evidence) measureCandidate(c.id, nextResult.sbxId, gen)
       }).catch((e) => {
         if (gen !== sandboxGen.current || controller.signal.aborted) return
         tournament.noteSandbox(c.id, { sandboxStatus: 'error', sandboxError: e instanceof Error ? e.message : 'Preview failed to start.' })
@@ -512,6 +557,30 @@ export default function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, session, tournament.candidates])
+
+  const measureJobs = useRef(new Set<string>())
+  function measureCandidate(id: VariantId, sbxId: string, gen: number) {
+    const key = `${id}:${sbxId}`
+    if (measureJobs.current.has(key)) return
+    measureJobs.current.add(key)
+    setMeasuring((m) => ({ ...m, [id]: true }))
+    fetch('/api/measure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sbxId, projectID: storeRef.current?.activeId, candidateID: id }),
+    })
+      .then(async (res) => (res.ok ? ((await res.json().catch(() => null)) as { evidence?: EvidenceMetrics } | null) : null))
+      .then((data) => {
+        const evidence = data?.evidence
+        if (gen !== sandboxGen.current || !evidence) return
+        tournament.noteEvidence(id, evidence)
+      })
+      .catch(() => {})
+      .finally(() => {
+        measureJobs.current.delete(key)
+        setMeasuring((m) => ({ ...m, [id]: false }))
+      })
+  }
 
   // Legacy single-fragment projects also restore their preview on reopen.
   useEffect(() => {
@@ -651,7 +720,16 @@ export default function Home() {
 
     const isFirstGeneration = !fragment && !shouldUseMorph
 
-    if (isFirstGeneration) {
+    if (isFirstGeneration && !hasTournament) {
+      // Discovery first: shape a structured spec before the 3-candidate run.
+      cancelPreviews()
+      promotedIdRef.current = undefined
+      setSelectedCandidate(undefined)
+      setFragment(undefined)
+      setResult(undefined)
+      setDiscovery({ idea: chatInput.trim(), messages: updatedMessages })
+      posthog.capture('discovery_start', { model: languageModel.model })
+    } else if (isFirstGeneration) {
       cancelPreviews()
       promotedIdRef.current = undefined
       // Tournament: 3 specimens generated in parallel, judged by editor.
@@ -725,9 +803,42 @@ export default function Home() {
     })
   }
 
-  function startTournament(runMessages: Message[], preserveCompleted = false) {
+  function completeDiscovery(nextSpec: ProjectSpec, nextBrief: string) {
+    const pending = discovery
+    if (!pending) return
+    const runBrief = nextBrief?.trim() || null
+    setDiscovery(null)
+    setSpec(nextSpec)
+    setBrief(runBrief)
+    setHasTournament(true)
+    startTournament(pending.messages, false, { spec: nextSpec, brief: runBrief, battle: true })
+    posthog.capture('tournament_submit', { template: selectedTemplate, model: languageModel.model, discovery: 'complete', projectType: nextSpec.projectType })
+  }
+
+  function skipDiscovery() {
+    const pending = discovery
+    if (!pending) return
+    setDiscovery(null)
+    setHasTournament(true)
+    startTournament(pending.messages)
+    posthog.capture('tournament_submit', { template: selectedTemplate, model: languageModel.model, discovery: 'skipped' })
+  }
+
+  /** The tournament builds from the discovery brief; the visible chat keeps the user's own words. */
+  function withBrief(runMessages: Message[], runBrief: string): Message[] {
+    const index = runMessages.findIndex((m) => m.role === 'user')
+    if (index < 0) return runMessages
+    const first = runMessages[index]
+    const content: Message['content'] = [{ type: 'text', text: runBrief }, ...first.content.filter((c) => c.type !== 'text')]
+    return [...runMessages.slice(0, index), { ...first, content }, ...runMessages.slice(index + 1)]
+  }
+
+  function startTournament(runMessages: Message[], preserveCompleted = false, opts: { spec?: ProjectSpec | null; brief?: string | null; battle?: boolean } = {}) {
     const projectID = storeRef.current?.activeId
     if (!projectID) return
+    const runSpec = opts.spec !== undefined ? opts.spec : workspaceRef.current.spec
+    const runBrief = (opts.brief !== undefined ? opts.brief : workspaceRef.current.brief)?.trim() || null
+    if (!preserveCompleted) setMeasuring({})
     const runID = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
     const seedCandidates: Partial<Record<VariantId, FragmentSchema>> = {}
     if (preserveCompleted) for (const c of Object.values(tournament.candidates)) {
@@ -737,13 +848,21 @@ export default function Home() {
     workspaceRef.current = {
       ...workspaceRef.current,
       messages: runMessages,
+      spec: runSpec,
+      brief: runBrief,
       hasTournament: true,
       ...(preserveCompleted ? {} : { fragment: undefined, result: undefined, selectedCandidate: undefined }),
       tournament: { candidates: preserveCompleted ? tournament.candidates : undefined, phase: 'generating', runID },
     }
     saverRef.current.cancel()
     persistCurrent(true)
-    tournament.submit({ projectID, runID, seedCandidates, userID: session?.user?.id, teamID: userTeam?.id, messages: toAISDKMessages(runMessages), template: currentTemplate, model: currentModel, config: languageModel }, preserveCompleted)
+    const args: TournamentSubmitArgs = {
+      projectID, runID, seedCandidates, userID: session?.user?.id, teamID: userTeam?.id,
+      messages: toAISDKMessages(runBrief ? withBrief(runMessages, runBrief) : runMessages),
+      template: currentTemplate, model: currentModel, config: languageModel,
+      ...(runSpec ? { spec: runSpec, battle: opts.battle ?? true } : {}),
+    }
+    tournament.submit(args, preserveCompleted)
   }
 
   function addMessage(message: Message) {
@@ -783,6 +902,10 @@ export default function Home() {
     tournament.stop()
     tournament.reset()
     setHasTournament(false)
+    setSpec(null)
+    setBrief(null)
+    setDiscovery(null)
+    setMeasuring({})
     setSelectedCandidate(undefined)
     setChatInput('')
     setFiles([])
@@ -946,6 +1069,31 @@ export default function Home() {
     ? tournament.candidates[selectedCandidate]
     : undefined
 
+  const evidenceCandidates = Object.values(tournament.candidates)
+    .filter((c) => c.fragment || c.status !== 'pending')
+    .map((c) => {
+      return {
+        id: c.id,
+        label: c.label,
+        modelName: c.model?.name,
+        evidence: c.evidence,
+        judge: typeof c.scoreClarity === 'number' && typeof c.scoreFit === 'number' && typeof c.scorePolish === 'number'
+          ? { clarity: c.scoreClarity, fit: c.scoreFit, polish: c.scorePolish }
+          : null,
+        healthy: c.dqReason || c.sandboxStatus === 'error' || c.health?.state === 'FAILED' ? false : c.sandboxStatus === 'ready' ? true : null,
+        stage: c.evidence ? undefined : c.status === 'pending' || c.status === 'generating' ? 'Generating…' : c.sandboxStatus === 'ready' ? 'Measuring…' : c.sandboxStatus === 'error' ? undefined : 'Deploying preview…',
+      }
+    })
+  const measuredCount = evidenceCandidates.filter((c) => c.evidence).length
+  const isMeasuring = Object.values(measuring).some(Boolean)
+  const showEvidence = hasTournament && (measuredCount > 0 || isMeasuring)
+  const winnerId = tournament.winnerId ?? tournament.verdict?.winnerId ?? null
+  const activeProjectId = projectStore?.activeId
+  const showLaunch = Boolean(
+    activeProjectId && fragment && tournament.phase === 'done' && selectedSpec?.status === 'done' &&
+    selectedSpec.sandboxStatus === 'ready' && result && 'url' in result,
+  )
+
   const isBuilding =
     tournament.phase === 'generating' ||
     tournament.phase === 'judging' ||
@@ -974,11 +1122,18 @@ export default function Home() {
       isLoading={isBuilding}
       isRateLimited={isRateLimited}
       stop={() => {
+        // A tournament in flight owns its sandboxes: release them all except the preview on screen.
+        const runActive = tournament.phase === 'generating' || tournament.phase === 'judging'
+        const released = Object.values(tournament.candidates).filter((c) => c.id !== selectedCandidate && c.result?.sbxId && (runActive || c.sandboxStatus === 'starting'))
         stop()
         tournament.stop()
         cancelPreviews()
         for (const c of Object.values(tournament.candidates)) {
-          if (c.sandboxStatus === 'starting') tournament.noteSandbox(c.id, { sandboxStatus: 'error', sandboxError: 'Preview canceled. Retry to continue.' })
+          if (c.sandboxStatus === 'starting' || released.includes(c)) tournament.noteSandbox(c.id, { sandboxStatus: 'error', sandboxError: 'Preview canceled. Retry to continue.' })
+        }
+        const sbxIds = Array.from(new Set(released.map((c) => c.result!.sbxId)))
+        if (sbxIds.length) {
+          fetch('/api/sandbox', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sbxIds }), keepalive: true }).catch(() => {})
         }
         setIsPreviewLoading(false)
       }}
@@ -1173,6 +1328,54 @@ export default function Home() {
               <Button variant="outline" size="sm" className="shrink-0" onClick={retry}>Retry preview</Button>
             </div>
           )}
+          {showLaunch && activeProjectId && (
+            <LaunchBackend
+              projectId={activeProjectId}
+              name={spec?.name || (projectStore ? getActive(projectStore).name : '') || 'your project'}
+              spec={spec}
+              brief={brief || firstPrompt || ''}
+              files={fragmentSourceFiles(fragment).map((f) => ({ file_path: f.file_path, file_content: f.file_content }))}
+              sbxId={result?.sbxId}
+              platform={platform}
+              onProvisioned={setPlatform}
+            />
+          )}
+          {showEvidence && (
+            <div className="shrink-0 border-b border-border/60 bg-background">
+              <button
+                type="button"
+                onClick={() => setEvidenceOpen(!evidenceOpen)}
+                aria-expanded={evidenceOpen}
+                className="flex h-10 w-full items-center justify-between gap-3 px-5 text-left text-xs transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Gauge className="h-3.5 w-3.5 shrink-0 text-brand" />
+                  <span className="font-medium text-foreground">Evidence</span>
+                  <span className="truncate text-muted-foreground">
+                    {measuredCount} of {evidenceCandidates.length} measured{isMeasuring ? ' · measuring live previews…' : ''}
+                  </span>
+                  {isMeasuring && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-brand" />}
+                </span>
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${evidenceOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {evidenceOpen && (
+                <div className="workspace-scrollbar max-h-[42vh] overflow-y-auto px-5 pb-4">
+                  {measuredCount > 0 ? (
+                    <EvidenceBoard
+                      candidates={evidenceCandidates}
+                      winnerId={tournament.verdict?.winnerId ?? null}
+                      weights={evidenceWeights}
+                      onWeightsChange={setEvidenceWeights}
+                      onSelect={(id) => setSelectedCandidate(id as VariantId)}
+                      selectedId={selectedCandidate ?? null}
+                    />
+                  ) : (
+                    <EvidenceSkeleton count={Math.max(evidenceCandidates.length, 1)} />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {fragment ? (
             <div className="flex-1 min-h-0 overflow-hidden">
               <Preview
@@ -1184,6 +1387,7 @@ export default function Home() {
                 isPreviewLoading={isPreviewLoading}
                 fragment={fragment}
                 result={result as ExecutionResult}
+                controlCenter={platform?.provisioned && activeProjectId ? { href: controlCenterPath(activeProjectId), appName: platform.appName } : null}
                 onClose={() => setFragment(undefined)}
                 onRuntimeError={(message) => {
                   if (selectedCandidate) tournament.noteSandbox(selectedCandidate, {
@@ -1216,6 +1420,17 @@ export default function Home() {
                     if (activeVersions[0]) restoreVersionAt(0)
                   },
                 }}
+              />
+            </div>
+          ) : discovery ? (
+            <div className="workspace-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <DiscoveryPanel
+                key={discovery.idea}
+                idea={discovery.idea}
+                onComplete={completeDiscovery}
+                onSkip={skipDiscovery}
+                model={currentModel}
+                config={languageModel}
               />
             </div>
           ) : isBuilding ? (
@@ -1280,6 +1495,24 @@ function ProcessingPane({ seconds, stage, readyCount }: { seconds: number; stage
         </div>
         {stage === 0 && <p className="mt-5 text-[11px] text-muted-foreground/70">{readyCount} of 3 designs ready · You can explore each direction as it takes shape.</p>}
       </div>
+    </div>
+  )
+}
+
+function EvidenceSkeleton({ count }: { count: number }) {
+  return (
+    <div className="grid gap-2 pt-1 sm:grid-cols-3" aria-busy="true" aria-label="Measuring previews">
+      {Array.from({ length: Math.min(count, 3) }, (_, i) => (
+        <div key={i} className="rounded-lg border border-border/70 bg-card/60 p-3">
+          <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+          <div className="mt-3 h-6 w-14 animate-pulse rounded bg-muted" />
+          <div className="mt-3 space-y-1.5">
+            <div className="h-2 w-full animate-pulse rounded bg-muted" />
+            <div className="h-2 w-4/5 animate-pulse rounded bg-muted" />
+            <div className="h-2 w-3/5 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

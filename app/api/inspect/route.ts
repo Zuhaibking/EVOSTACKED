@@ -5,9 +5,10 @@ import {
   isValidPatchedFragment,
   locateProjectSourceSnippet,
 } from '@/lib/inspect'
-import { getModelClient, LLMModel, LLMModelConfig } from '@/lib/models'
+import { getModelClient, hasOwnApiKey, LLMModel, LLMModelConfig, modelRejection, sanitizeModelParams } from '@/lib/models'
 import { applyPatch } from '@/lib/morph'
-import ratelimit from '@/lib/ratelimit'
+import ratelimit, { OWN_KEY_LIMIT_MULTIPLIER, rateLimitKey } from '@/lib/ratelimit'
+import { requireUserId } from '@/lib/server-auth'
 import { normalizeProjectPath, validateProjectFiles } from '@/lib/project-paths'
 import {
   FragmentSchema,
@@ -16,7 +17,7 @@ import {
   fragmentSourceText,
   morphEditSchema,
 } from '@/lib/schema'
-import { generateObject, LanguageModel, CoreMessage } from 'ai'
+import { generateObject, LanguageModel, ModelMessage } from 'ai'
 
 export const maxDuration = 300
 
@@ -54,13 +55,15 @@ async function mergeEdit(args: {
 }
 
 export async function POST(req: Request) {
+  const authz = await requireUserId()
+  if ('response' in authz) return authz.response
   const {
     fragment: currentInput,
     selection,
     instruction,
     targetFile,
     model,
-    config,
+    config = {},
   }: {
     fragment: FragmentSchema
     selection: InspectSelection | null
@@ -83,24 +86,26 @@ export async function POST(req: Request) {
     }
   } catch (error) { return new Response(error instanceof Error ? error.message : 'Invalid project files.', { status: 400 }) }
 
-  const limit = !config.apiKey
-    ? await ratelimit(
-        req.headers.get('x-forwarded-for'),
-        rateLimitMaxRequests,
-        ratelimitWindow,
-      )
-    : false
-
-  if (limit) {
-    return createRateLimitResponse(limit)
-  }
-
   const prompt = (instruction || '').trim()
   if (!prompt) {
     return new Response('Instruction is required.', { status: 400 })
   }
 
-  const { model: _modelName, apiKey: _modelApiKey, ...modelParams } = config
+  const ownKey = hasOwnApiKey(config)
+  const rejected = modelRejection(model, config)
+  if (rejected) return rejected
+
+  const limit = await ratelimit(
+    rateLimitKey(req, authz.userId, ownKey),
+    ownKey ? rateLimitMaxRequests * OWN_KEY_LIMIT_MULTIPLIER : rateLimitMaxRequests,
+    ratelimitWindow,
+  )
+
+  if (limit) {
+    return createRateLimitResponse(limit)
+  }
+
+  const modelParams = sanitizeModelParams(config)
   const modelClient = getModelClient(model, config)
   const useMorph = Boolean(process.env.MORPH_API_KEY)
 
@@ -146,7 +151,7 @@ ${fragmentSourceText(fragment)}
 `
 
   try {
-    const messages: CoreMessage[] = [{ role: 'user', content: prompt }]
+    const messages: ModelMessage[] = [{ role: 'user', content: prompt }]
     const result = await generateObject({
       model: modelClient as LanguageModel,
       system,
@@ -184,6 +189,6 @@ ${fragmentSourceText(fragment)}
 
     return Response.json(updated)
   } catch (error: unknown) {
-    return handleAPIError(error, { hasOwnApiKey: !!config.apiKey })
+    return handleAPIError(error, { hasOwnApiKey: ownKey })
   }
 }

@@ -1,6 +1,21 @@
 import type { ExecutionResult } from './types'
 import { sameFragmentSource } from './schema'
 
+/** Stop previews (Stop button, new run). The server kills only sandboxes this user owns; best effort. */
+export async function killSandboxes(sbxIds: readonly (string | null | undefined)[]): Promise<void> {
+  const ids = [...new Set(sbxIds.filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id)))]
+  for (let i = 0; i < ids.length; i += 32) {
+    try {
+      await fetch('/api/sandbox', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sbxIds: ids.slice(i, i + 32) }),
+        keepalive: true,
+      })
+    } catch { /* Unreachable sandboxes still expire on their own timeout. */ }
+  }
+}
+
 /** Shared by tournament previews, chat regeneration, and inspector edits. */
 export async function createSandbox(
   payload: Record<string, unknown>,
@@ -26,6 +41,8 @@ export async function createSandbox(
     // Preserve saved edits and portable assets while replacing an older preview.
     payload = { ...payload, fragment: portable, cachedResult: changed || payload.runtimeError ? undefined : cached }
   }
+  // Identity comes from the server session; never ship the Clerk JWT or a claimed user id.
+  const { accessToken: _accessToken, userID: _userID, ...body } = payload
   const deadline = AbortSignal.timeout(330_000)
   let response: Response
   let text: string
@@ -33,7 +50,7 @@ export async function createSandbox(
     response = await fetch('/api/sandbox', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
     })
     text = await response.text()

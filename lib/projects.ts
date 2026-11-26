@@ -4,6 +4,7 @@ import { VariantId, Verdict } from './tournament'
 import { Candidate } from './tournament-client'
 import { ExecutionResult } from './types'
 import { DeepPartial } from 'ai'
+import type { ProjectSpec } from './platform/types'
 
 export const PROJECTS_KEY = 'evostack.projects.v1'
 const LEGACY_RUN_KEY = 'evostack:run:v1'
@@ -27,8 +28,20 @@ export function projectIdFromPath(pathname: string): string | null {
   }
 }
 
+/** Backend provisioned for this project (isolated DB + API + Control Center). */
+export type ProjectPlatform = {
+  provisioned: boolean
+  provisionedAt: string | null
+  appName?: string
+}
+
 export type ProjectWorkspace = {
   messages: Message[]
+  /** Structured discovery output; null when discovery was skipped or never ran. */
+  spec: ProjectSpec | null
+  /** Generation-ready brief derived from the spec (sent to the tournament + provisioner). */
+  brief: string | null
+  platform: ProjectPlatform | null
   fragment?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
   selectedCandidate?: VariantId
@@ -89,6 +102,9 @@ export function prepareProjectForOpen(project: ProjectRecord): ProjectRecord {
 export function blankWorkspace(): ProjectWorkspace {
   return {
     messages: [],
+    spec: null,
+    brief: null,
+    platform: null,
     fragment: undefined,
     result: undefined,
     selectedCandidate: undefined,
@@ -143,6 +159,21 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
+/** Lenient on purpose: a spec from an older discovery build must not drop the project. */
+function sanitizeSpec(raw: unknown): ProjectSpec | null {
+  if (!isRecord(raw) || typeof raw.name !== 'string' || typeof raw.projectType !== 'string') return null
+  return raw as unknown as ProjectSpec
+}
+
+function sanitizePlatform(raw: unknown): ProjectPlatform | null {
+  if (!isRecord(raw)) return null
+  return {
+    provisioned: raw.provisioned === true,
+    provisionedAt: typeof raw.provisionedAt === 'string' ? raw.provisionedAt : null,
+    ...(typeof raw.appName === 'string' && raw.appName ? { appName: raw.appName.slice(0, 120) } : {}),
+  }
+}
+
 function sanitizeProject(raw: unknown): ProjectRecord | null {
   if (!isRecord(raw) || typeof raw.id !== 'string' || !raw.id) return null
   const ws = blankWorkspace()
@@ -160,6 +191,9 @@ function sanitizeProject(raw: unknown): ProjectRecord | null {
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
     messages,
+    spec: sanitizeSpec(raw.spec),
+    brief: typeof raw.brief === 'string' && raw.brief.trim() ? raw.brief.slice(0, 20_000) : null,
+    platform: sanitizePlatform(raw.platform),
     fragment: (raw.fragment as ProjectRecord['fragment']) ?? ws.fragment,
     result: (raw.result as ProjectRecord['result']) ?? ws.result,
     selectedCandidate: raw.selectedCandidate as VariantId | undefined,
@@ -330,7 +364,7 @@ export function saveWorkspace(
   const nextProject: ProjectRecord = {
     ...prev,
     ...workspace,
-    name: meta.name,
+    name: workspace.spec?.name?.trim().slice(0, 48) || meta.name,
     purpose: meta.purpose,
     updatedAt: Date.now(),
   }

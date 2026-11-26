@@ -56,14 +56,15 @@ async function check() {
       entryPoints: [entry], absWorkingDir: process.cwd(), platform: 'node', format: 'cjs', bundle: true, packages: 'external', write: false,
       plugins: [{ name: 'generated-project-fixture', setup(b) {
         const mocks: Record<string, string> = {
-          '@/lib/models': 'export function getModelClient(){return "fixture"}',
-          '@/lib/ratelimit': 'export default async function ratelimit(){return false}',
+          '@clerk/nextjs/server': 'export async function auth(){return {userId:"fixture-user"}}',
+          '@/lib/models': 'export function getModelClient(){return "fixture"};export function hasOwnApiKey(c){return Boolean(c&&c.apiKey)};export function modelRejection(){return null};export function sanitizeModelParams(){return {}}',
+          '@/lib/ratelimit': 'export const OWN_KEY_LIMIT_MULTIPLIER=10;export function rateLimitKey(){return "fixture"};export default async function ratelimit(){return false}',
           '@/lib/morph': 'export async function applyPatch(args){globalThis.__evoProjectFixture.applied.push(args);return {code:args.codeEdit}}',
           '@/lib/api-errors': 'export function handleAPIError(error){return Response.json({error:error.message},{status:422})};export function createRateLimitResponse(){return new Response(null,{status:429})}',
           ai: `export async function generateObject(args){globalThis.__evoProjectFixture.seen.push(args);return {object:args.schema.parse(globalThis.__evoProjectFixture.edits)}}
             export async function streamObject(args){const object=args.schema.parse(globalThis.__evoProjectFixture.output);globalThis.__evoProjectFixture.seen.push(args);return {object:Promise.resolve(object),toTextStreamResponse(){return new Response(JSON.stringify(object),{headers:{'Content-Type':'text/plain'}})}}}`,
         }
-        b.onResolve({ filter: /^(@\/lib\/(models|ratelimit|morph|api-errors)|ai)$/ }, args => ({ path: args.path, namespace: 'fixture' }))
+        b.onResolve({ filter: /^(@clerk\/nextjs\/server|@\/lib\/(models|ratelimit|morph|api-errors)|ai)$/ }, args => ({ path: args.path, namespace: 'fixture' }))
         b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: mocks[args.path], loader: 'js' }))
       } }],
     })

@@ -22,7 +22,7 @@ import { FragmentSchema, fragmentSourceFiles } from '@/lib/schema'
 import { getTemplateId } from '@/lib/templates'
 import { ExecutionResult, ExecutionResultWeb } from '@/lib/types'
 import { DeepPartial } from 'ai'
-import { Crosshair, Download, LoaderCircle, X } from 'lucide-react'
+import { ArrowUpRight, Crosshair, Download, LayoutDashboard, LoaderCircle, X } from 'lucide-react'
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react'
 
 export type InspectControls = {
@@ -52,6 +52,7 @@ export function Preview({
   onClose,
   inspect,
   onRuntimeError,
+  controlCenter,
 }: {
   teamID: string | undefined
   accessToken: string | undefined
@@ -64,6 +65,8 @@ export function Preview({
   onClose: () => void
   inspect?: InspectControls
   onRuntimeError?: (message: string) => void
+  /** Set once this project's backend is provisioned: compact link to its Control Center. */
+  controlCenter?: { href: string; appName?: string } | null
 }) {
   const [guides, setGuides] = useState(false)
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | undefined>()
@@ -208,6 +211,19 @@ export function Preview({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            {controlCenter && (
+              <a
+                href={controlCenter.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={controlCenter.appName ? `Open the ${controlCenter.appName} Control Center` : 'Open the Control Center'}
+                className="mr-1 inline-flex h-8 items-center gap-1.5 rounded-lg border border-brand/30 bg-brand/[0.07] px-2.5 text-xs font-medium text-brand transition-colors hover:bg-brand/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Control Center</span>
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
+            )}
             {inspectAvailable && (
               <TooltipProvider>
                 <Tooltip delayDuration={0}>

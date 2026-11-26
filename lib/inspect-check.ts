@@ -157,6 +157,13 @@ runInNewContext(inspectBridgeSource(), {
   parent: { postMessage: (message: unknown) => reports.push(message) },
   console: bridgeConsole,
   Error,
+  // The bridge watches renders (1f4a1d8); this fake DOM has no documentElement, so it never observes.
+  MutationObserver: class { observe() {} disconnect() {} takeRecords() { return [] } },
+  // Inert timers: the bridge polls renders every 250 ms, and a real interval would keep this process alive.
+  setInterval: () => 0,
+  clearInterval: () => {},
+  setTimeout: () => 0,
+  clearTimeout: () => {},
 })
 events.get('error')!({ message: 'ReferenceError: window is not defined' })
 events.get('unhandledrejection')!({ reason: new Error('Promise crashed') })
@@ -205,13 +212,14 @@ async function checkProjectAPI() {
     define: { 'process.env.MORPH_API_KEY': '"fixture-only-key"' },
     plugins: [{ name: 'inspect-project-fixture', setup(b) {
       const mocks: Record<string, string> = {
-        '@/lib/models': 'export function getModelClient(){return "fixture"}',
-        '@/lib/ratelimit': 'export default async function ratelimit(){return false}',
+        '@clerk/nextjs/server': 'export async function auth(){return {userId:"fixture-user"}}',
+        '@/lib/models': 'export function getModelClient(){return "fixture"};export function hasOwnApiKey(c){return Boolean(c&&c.apiKey)};export function modelRejection(){return null};export function sanitizeModelParams(){return {}}',
+        '@/lib/ratelimit': 'export const OWN_KEY_LIMIT_MULTIPLIER=10;export function rateLimitKey(){return "fixture"};export default async function ratelimit(){return false}',
         '@/lib/morph': 'export async function applyPatch(args){globalThis.__evoInspectFixture.applies.push(args);return {code:args.codeEdit}}',
         '@/lib/api-errors': 'export function handleAPIError(error){return Response.json({error:error.message},{status:422})};export function createRateLimitResponse(){return new Response(null,{status:429})}',
         ai: 'export async function generateObject(args){globalThis.__evoInspectFixture.prompts.push(args.system);return {object:args.schema.parse(globalThis.__evoInspectFixture.edit)}}',
       }
-      b.onResolve({ filter: /^(@\/lib\/(models|ratelimit|morph|api-errors)|ai)$/ }, args => ({ path: args.path, namespace: 'fixture' }))
+      b.onResolve({ filter: /^(@clerk\/nextjs\/server|@\/lib\/(models|ratelimit|morph|api-errors)|ai)$/ }, args => ({ path: args.path, namespace: 'fixture' }))
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: mocks[args.path], loader: 'js' }))
     } }],
   })

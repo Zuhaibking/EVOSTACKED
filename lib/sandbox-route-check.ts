@@ -13,6 +13,9 @@ async function check() {
   let repairExport = false
   let requests = 0
   let creates = 0
+  // POST requires a verified owner; use lib/server-auth.ts's documented dev identity.
+  const originalEnv = { NODE_ENV: process.env.NODE_ENV, EVOSTACK_DEV_USER: process.env.EVOSTACK_DEV_USER }
+  Object.assign(process.env, { NODE_ENV: 'development', EVOSTACK_DEV_USER: 'route-fixture-user' })
   try {
     Sandbox.create = async () => {
       creates++
@@ -64,7 +67,9 @@ async function check() {
         { file_path: 'data/site.json', file_content: '{"title":"Welcome"}' },
       ],
     }
-    const submit = async (runtimeError?: string) => (await (await POST(new Request('http://fixture.invalid/api/sandbox', { method: 'POST', body: JSON.stringify({ fragment, runtimeError }) }))).json()) as ExecutionResultWeb
+    // Verified owners share identical-source jobs; a distinct runID keeps each scenario a fresh verification.
+    let runs = 0
+    const submit = async (runtimeError?: string) => (await (await POST(new Request('http://fixture.invalid/api/sandbox', { method: 'POST', body: JSON.stringify({ fragment, runtimeError, runID: `route-check-${++runs}` }) }))).json()) as ExecutionResultWeb
     const ready = await submit()
     assert.equal(ready.fragment?.file_path, 'pages/index.tsx')
     assert.equal(ready.fragment?.code, writes.get('pages/index.tsx'))
@@ -108,6 +113,10 @@ async function check() {
   } finally {
     Sandbox.create = originalCreate
     globalThis.fetch = originalFetch
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
   }
 }
 

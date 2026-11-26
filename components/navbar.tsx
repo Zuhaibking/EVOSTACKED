@@ -1,5 +1,6 @@
 'use client'
 
+import Logo from '@/components/logo'
 import { Avatar, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -28,16 +29,17 @@ export function NavBar({ session, showLogin, signOut, onClear, canClear, onSocia
   onDeleteProject?: (id: string) => void
 }) {
   return (
-    <nav aria-label="Workspace" className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-background px-4 py-2 sm:min-h-[60px] sm:px-6">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-        <Link href="/" className="shrink-0 font-display text-[22px] font-bold tracking-tight text-foreground leading-none">
-          Evo<span className="italic text-brand-accent">Stack</span>
+    <nav aria-label="Workspace" className="flex min-h-[56px] flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 sm:min-h-[60px] sm:px-5">
+      <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+        <Link href="/" aria-label="EvoStack home" className="flex shrink-0 items-center gap-2 rounded-md px-1 font-display text-[21px] font-black leading-none tracking-tight text-foreground">
+          <Logo width={18} height={18} className="hidden text-foreground sm:block" />
+          <span>Evo<span className="font-normal italic text-brand-accent">Stack</span></span>
         </Link>
-        <span aria-hidden className="hidden h-5 w-px bg-border/60 sm:block" />
+        <span aria-hidden className="hidden h-5 w-px bg-border sm:block" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 max-w-[9rem] gap-2 px-2 sm:max-w-[15rem]" aria-label="Choose project">
-              <span className="truncate text-[13px] font-medium">{activeProjectName}</span><ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+            <Button variant="ghost" className="h-8 max-w-[9rem] gap-1.5 px-2 data-[state=open]:bg-accent sm:max-w-[15rem]" aria-label="Choose project">
+              <span className="truncate text-sm font-medium">{activeProjectName}</span><ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72 rounded-lg p-2 shadow-lg">
@@ -55,22 +57,22 @@ export function NavBar({ session, showLogin, signOut, onClear, canClear, onSocia
         <Button onClick={onNewProject} variant="ghost" size="sm" className="hidden h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground md:inline-flex"><Plus className="h-3.5 w-3.5" />New project</Button>
       </div>
       <div className="flex items-center gap-1">
-        <span className="mr-3 hidden items-center gap-2 text-[11px] text-muted-foreground lg:inline-flex">
-          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" /> : <span className={`h-1.5 w-1.5 rounded-full ${hasFragment ? 'bg-brand-accent' : 'bg-muted-foreground/50'}`} />}
+        <span role="status" className="mr-2 hidden h-7 items-center gap-2 rounded-full border border-border px-2.5 text-xs text-muted-foreground lg:inline-flex">
+          {isLoading ? <Loader2 className="h-3 w-3 animate-spin text-brand" /> : <span className={`h-1.5 w-1.5 rounded-full ${hasFragment ? 'bg-brand-accent' : 'bg-muted-foreground'}`} />}
           {isLoading ? 'Building' : hasFragment ? 'Ready to preview' : 'Ready to create'}
         </span>
         <div className="flex items-center gap-0.5">
           <Button variant="ghost" size="icon" onClick={onUndo} disabled={!canUndo} aria-label="Undo last message" title="Undo last message" className="h-8 w-8 text-muted-foreground hover:text-foreground"><Undo className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" onClick={onClear} disabled={!canClear} aria-label="Clear chat" title="Clear chat" className="h-8 w-8 text-muted-foreground hover:text-foreground"><Trash className="h-3.5 w-3.5" /></Button>
         </div>
-        <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
+        <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
         <span className="hidden sm:inline-flex"><ThemeToggle /></span>
         {session ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="Account menu" className="h-8 w-8 rounded-full"><Avatar className="h-6 w-6"><AvatarImage src={session.user.user_metadata?.avatar_url || 'https://avatar.vercel.sh/' + session.user.email} alt={session.user.email} /></Avatar></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64 rounded-lg p-2"><DropdownMenuLabel className="truncate text-sm">{session.user.email}</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem onClick={() => onSocialClick('github')}><GitHubLogoIcon className="mr-2 h-4 w-4" />View on GitHub</DropdownMenuItem><DropdownMenuItem onClick={signOut}><LogOut className="mr-2 h-4 w-4" />Sign out</DropdownMenuItem></DropdownMenuContent>
           </DropdownMenu>
-        ) : <Button onClick={showLogin} size="sm" className="h-8 px-3 text-xs">Sign in</Button>}
+        ) : <Button onClick={showLogin} size="sm" className="ml-1 h-8 px-3.5 text-[13px]">Sign in</Button>}
       </div>
     </nav>
   )

@@ -109,16 +109,18 @@ export function ChatInput({
     return Array.from(files).map((file) => {
       return (
         <div className="relative" key={file.name}>
-          <span
+          <button
+            type="button"
+            aria-label={`Remove ${file.name}`}
             onClick={() => handleFileRemove(file)}
-            className="absolute -top-1.5 -right-1.5 bg-foreground text-background rounded-full p-0.5 cursor-pointer"
+            className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background shadow-xs transition-transform hover:scale-110"
           >
             <X className="h-2.5 w-2.5" />
-          </span>
+          </button>
           <img
             src={URL.createObjectURL(file)}
             alt={file.name}
-            className="h-8 w-8 rounded-md object-cover border border-border/60"
+            className="h-10 w-10 rounded-md border border-border object-cover"
           />
         </div>
       )
@@ -154,7 +156,8 @@ export function ChatInput({
     >
       {isErrored && (
         <div
-          className={`mb-2 flex items-center rounded-md border px-3 py-2 text-xs leading-relaxed ${
+          role="alert"
+          className={`mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs leading-relaxed ${
             isRateLimited
               ? 'border-orange-400/40 bg-orange-400/10 text-orange-500'
               : 'border-red-400/40 bg-red-400/10 text-red-500'
@@ -163,7 +166,7 @@ export function ChatInput({
           <span className="flex-1">{errorMessage}</span>
           <button
             type="button"
-            className={`ml-2 shrink-0 rounded px-2 py-1 border text-xs ${
+            className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
               isRateLimited
                 ? 'border-orange-400/60 hover:bg-orange-400/20'
                 : 'border-red-400/60 hover:bg-red-400/20'
@@ -177,8 +180,8 @@ export function ChatInput({
 
       <div className="relative">
         <div
-          className={`relative z-10 overflow-hidden rounded-lg border border-border/70 bg-card transition-colors focus-within:border-brand-accent/40 ${
-            dragActive ? 'ring-2 ring-brand ring-offset-0' : ''
+          className={`relative z-10 overflow-hidden rounded-xl border border-border bg-card shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:ring-4 focus-within:ring-ring/10 ${
+            dragActive ? 'border-ring ring-4 ring-ring/20' : ''
           }`}
         >
           {/* Composer surface — no header, just typing space */}
@@ -187,7 +190,7 @@ export function ChatInput({
               autoFocus
               minRows={2}
               maxRows={6}
-              className="m-0 block w-full resize-none bg-inherit px-3.5 py-3.5 text-[13px] leading-6 outline-none ring-0 placeholder:text-muted-foreground/65"
+              className="m-0 block w-full resize-none bg-inherit px-4 pb-2 pt-3.5 text-sm leading-6 outline-none ring-0 placeholder:text-muted-foreground focus-visible:outline-none"
               required
               placeholder="Describe your idea, or tell us what to change…"
               disabled={isErrored}
@@ -196,12 +199,12 @@ export function ChatInput({
               onPaste={isMultiModal ? handlePaste : undefined}
             />
             {files.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 px-3.5 pb-3">{filePreview}</div>
+              <div className="flex flex-wrap items-center gap-2.5 px-4 pb-3 pt-1">{filePreview}</div>
             )}
           </div>
 
           {/* Footer: pickers (left) · attachments · send (right) */}
-          <div className="flex items-center gap-1.5 border-t border-border/40 bg-background/20 px-2 py-2">
+          <div className="flex items-center gap-1 px-2 pb-2 pt-1">
             {/* Pickers cluster — children are <ChatPicker /> + <ChatSettings /> */}
             <div className="flex min-w-0 flex-1 items-center gap-1">
               {children}
@@ -242,11 +245,11 @@ export function ChatInput({
             {/* Dispatch / Halt */}
             {!isLoading ? (
               <Button
-                disabled={isErrored}
+                disabled={isErrored || input.trim().length === 0}
                 size="sm"
                 type="submit"
                 aria-label="Send prompt"
-                className="group h-8 w-8 shrink-0 rounded-md bg-brand-accent p-0 text-foreground hover:bg-brand-accent/90 dark:text-background"
+                className="group ml-0.5 h-8 w-8 shrink-0 rounded-lg bg-brand-accent p-0 text-brand-accent-foreground hover:bg-brand-accent/90 active:bg-brand-accent/80 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
               >
                 <ArrowUp className="h-4 w-4 transition-transform group-hover:-translate-y-0.5" />
               </Button>
@@ -259,7 +262,7 @@ export function ChatInput({
                   e.preventDefault()
                   stop()
                 }}
-                className="h-8 shrink-0 gap-1.5 rounded-md border border-border/60 px-2.5 text-xs font-medium"
+                className="ml-0.5 h-8 shrink-0 gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium"
               >
                 Stop
                 <Square className="h-3 w-3" />
@@ -269,7 +272,10 @@ export function ChatInput({
         </div>
       </div>
 
-      <p className="mt-2 text-center text-[10px] text-muted-foreground/65">Enter to send · Shift + Enter for a new line</p>
+      <p className="mt-2 hidden text-center text-[11px] text-muted-foreground sm:block">
+        <kbd className="font-sans font-medium text-foreground/80">Enter</kbd> to send ·{' '}
+        <kbd className="font-sans font-medium text-foreground/80">Shift + Enter</kbd> for a new line
+      </p>
     </form>
   )
 }

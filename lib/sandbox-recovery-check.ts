@@ -149,7 +149,7 @@ async function check() {
     assert.equal(rebuilt.sbxId, 'rebuilt-fixture')
     assert.equal(fixture.creates.length, 1)
     assert.deepEqual(fixture.creates[0].options.lifecycle, { onTimeout: 'pause', autoResume: true })
-    assert.equal(fixture.creates[0].options.secure, false, 'Legacy hosted templates do not support secured envd access')
+    assert.equal(fixture.creates[0].options.secure, true, 'nextjs-developer is a SECURE_TEMPLATES template: secured envd access')
     assert.equal(fixture.creates[0].options.metadata.userID, 'verified-user')
     assert.equal(fixture.creates[0].options.metadata.projectID, 'project-fixture')
     assert.equal(rebuilt.fragment?.code, actualCode)

@@ -76,14 +76,14 @@ export default function RootLayout({
   return (
     <ClerkProvider
       appearance={{
-        baseTheme: dark,
+        theme: dark,
         variables: {
           colorPrimary: 'hsl(var(--brand))',
           colorBackground: 'hsl(var(--card))',
-          colorText: 'hsl(var(--foreground))',
-          colorTextSecondary: 'hsl(var(--muted-foreground))',
-          colorInputBackground: 'hsl(var(--background))',
-          colorInputText: 'hsl(var(--foreground))',
+          colorForeground: 'hsl(var(--foreground))',
+          colorMutedForeground: 'hsl(var(--muted-foreground))',
+          colorInput: 'hsl(var(--background))',
+          colorInputForeground: 'hsl(var(--foreground))',
           colorNeutral: 'hsl(var(--foreground))',
           colorDanger: 'hsl(var(--destructive))',
           fontFamily: 'var(--font-body), ui-sans-serif, system-ui',
