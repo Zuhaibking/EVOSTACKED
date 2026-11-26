@@ -101,3 +101,11 @@ These are real captures, not mockups. Each one comes from a headless Chrome run 
 
 **26 — Mobile (390×844).** The launch bar, evidence row and preview stack in order, and the preview no longer covers them.
 ![Mobile](26-preview-layout-after-mobile.png)
+
+## 7. Images in generated sites (before / after)
+
+**27 — Before: broken image.** The image source (Openverse) was timing out and returning 5xx errors, which used up the whole image budget. Every reference became an empty `src`, so cards showed only their alt text.
+![Broken image](27-images-before-broken-card.png)
+
+**28 — After: on-brand AI photos.** The images are generated per `evo-image://` query (`gpt-image-2.6-flare`, about 6 s each, WebP). They are cached and restored after inspector edits. Stock photos are now a resilient fallback, and the last fallback is a clean placeholder (the pastel advisor card here comes from a deliberately string-concatenated reference). Nothing renders broken.
+![AI photos](28-images-after-ai-photos.png)
